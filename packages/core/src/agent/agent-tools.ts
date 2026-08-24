@@ -21,6 +21,9 @@ import {
 } from "../models/book.js";
 import { generateShortFictionCover, runShortFictionProduction } from "../pipeline/short-fiction-runner.js";
 import { runInteractiveFilmCreation, runScriptCreation, runStoryboardCreation } from "../pipeline/script-storyboard-runner.js";
+import { createIssue, run as runPublication, type RunnerContext } from "../pipeline/publication-runner.js";
+import { findPublicationDefinition, loadPublicationRegistry } from "../publications/registry.js";
+import { PublicationAgent } from "../agents/publication.js";
 import { createTranslationProjectFromFile } from "../translation/index.js";
 import { runResearchReport } from "../agents/researcher.js";
 import { ingestMaterial } from "../materials/ingest.js";
@@ -2207,6 +2210,111 @@ export function createTranslationCreateTool(
 // ---------------------------------------------------------------------------
 // 4. Script and Storyboard tools
 // ---------------------------------------------------------------------------
+
+const PublicationCreateParams = Type.Object({
+  type: Type.String({
+    description: "Publication type id, e.g. magazine or cookbook. Ask the user if unclear.",
+  }),
+  subject: Type.String({
+    description: "What the publication is about.",
+  }),
+  angle: Type.Optional(Type.String({
+    description: "The particular take on the subject, if the user gave one.",
+  })),
+  extent: Type.Optional(Type.Number({
+    description: "Page count. Defaults to the publication type's own default.",
+  })),
+  notes: Type.Optional(Type.String({
+    description: "The user's own material: sources, corrections, things only they know.",
+  })),
+  stopAt: Type.Optional(Type.Union([
+    Type.Literal("research"),
+    Type.Literal("plan"),
+    Type.Literal("write"),
+  ], {
+    description:
+      "Where to stop. Defaults to write. Art and PDF are deliberately not reachable here: "
+      + "both need the copy approved by the user first.",
+  })),
+});
+
+type PublicationCreateParamsType = Static<typeof PublicationCreateParams>;
+
+export function createPublicationCreateTool(
+  pipeline: PipelineRunner,
+  projectRoot: string,
+): AgentTool<typeof PublicationCreateParams> {
+  return {
+    name: "publication_create",
+    description:
+      "Create a publication — a magazine, a cookbook, or any other installed publication type — "
+      + "from a subject. Runs research, builds the flatplan, then writes every page, checking each "
+      + "stage against that publication type's own structure law. Stops before art and PDF, which "
+      + "need the user to approve the copy first.",
+    label: "Publication",
+    parameters: PublicationCreateParams,
+    async execute(
+      _toolCallId: string,
+      params: PublicationCreateParamsType,
+      _signal?: AbortSignal,
+      onUpdate?: AgentToolUpdateCallback,
+    ): Promise<AgentToolResult<unknown>> {
+      const definition = await findPublicationDefinition(projectRoot, params.type);
+      if (!definition) {
+        const registry = await loadPublicationRegistry(projectRoot);
+        const known = registry.definitions.map((d) => d.definition.id).join(", ") || "none installed";
+        throw new Error(`unknown publication type "${params.type}". Installed: ${known}`);
+      }
+
+      const agent = new PublicationAgent(pipeline.createAgentContext("publication"));
+      const ctx: RunnerContext = {
+        projectRoot,
+        definition,
+        ask: (prompt, tag) => agent.askJson(prompt, tag),
+        onEvent: (event) => {
+          // Surfaced as tool progress so a forty-page run is visible while it
+          // happens rather than only in its final result.
+          if (event.type === "publication:stage") {
+            onUpdate?.(textResult(
+              `${event.stage}${event.page ? " p" + event.page : ""}: ${event.state}`,
+            ));
+          }
+        },
+        shimUrl: `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
+      };
+
+      const created = await createIssue(ctx, {
+        subject: params.subject,
+        angle: params.angle,
+        extent: params.extent,
+      });
+      if (params.notes) {
+        const { setNotes } = await import("../pipeline/publication-runner.js");
+        await setNotes(ctx, created.id, params.notes);
+      }
+
+      const issue = await runPublication(ctx, created.id, { stopAt: params.stopAt ?? "write" });
+      const written = issue.pages.filter((p) => p.body !== null && p.body !== undefined).length;
+
+      return textResult([
+        `${definition.label} "${issue.title || issue.subject}" (${issue.id}) is at stage: ${issue.status}.`,
+        `${written}/${issue.pages.length} pages written of ${issue.extent} planned.`,
+        issue.warnings?.length
+          ? `Structure notes:\n- ${issue.warnings.join("\n- ")}`
+          : "Structure: no problems found.",
+        definition.needsImages || definition.needsPdf
+          ? "Approve the copy before art or PDF: both are gated on it."
+          : "",
+      ].filter(Boolean).join("\n"), {
+        kind: "publication",
+        id: issue.id,
+        type: definition.id,
+        status: issue.status,
+        warnings: issue.warnings ?? [],
+      });
+    },
+  };
+}
 
 const ScriptCreateParams = Type.Object({
   title: Type.String({

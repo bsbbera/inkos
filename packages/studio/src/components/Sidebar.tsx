@@ -48,6 +48,7 @@ import {
   Rows3,
   Film,
   Languages,
+  Newspaper,
 } from "lucide-react";
 import { QuireMark } from "./QuireMark";
 
@@ -98,6 +99,11 @@ export function Sidebar({ nav, activePage, sse, t }: {
 }) {
   const { data, refetch: refetchBooks, mutate: mutateBooks } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
   const { data: filmsData, refetch: refetchFilms } = useApi<{ films: ReadonlyArray<{ projectId: string; title: string }> }>("/interactive-films");
+  // The publication types installed on this machine. Built from definition
+  // files, so a type the user adds appears here without a code change.
+  const { data: publicationTypes } = useApi<{
+    types: ReadonlyArray<{ id: string; label: string; labelZh: string | null; description: string | null }>;
+  }>("/publications/types");
   const { data: daemon, refetch: refetchDaemon } = useApi<{ running: boolean }>("/daemon");
   const sessions = useChatStore((s) => s.sessions);
   const sessionIdsByBook = useChatStore((s) => s.sessionIdsByBook);
@@ -253,6 +259,25 @@ export function Sidebar({ nav, activePage, sse, t }: {
     nav.toChat();
   };
 
+  /**
+   * Start a publication.
+   *
+   * Deliberately the same path as every other item here: a real chat session,
+   * on the real chat route, with the agent's publication_create tool available.
+   * The composer is seeded with the opening instruction so the user only has
+   * to type the subject.
+   */
+  const launchPublication = (type: { id: string; label: string }) => {
+    setProjectChatExpanded(true);
+    const sessionId = createDraftSession(null, "chat");
+    setProjectChatSessionId(sessionId);
+    setInput(tr(
+      `做一本${type.label}，主题：`,
+      `Create a ${type.label.toLowerCase()} about `,
+    ));
+    nav.toChat();
+  };
+
   const handleOpenBookCreate = () => {
     setInput("");
     nav.toBookCreate();
@@ -319,6 +344,14 @@ export function Sidebar({ nav, activePage, sse, t }: {
             <CreateItem icon={<Wand2 size={16} />} label={t("nav.createImitation")} onClick={handleCreateProjectChatSession} />
             <CreateItem icon={<FileInput size={16} />} label={t("nav.createContinuation")} onClick={handleCreateProjectChatSession} />
             <CreateItem icon={<Languages size={16} />} label={t("nav.createTranslation")} onClick={handleCreateProjectChatSession} />
+            {(publicationTypes?.types ?? []).map((type) => (
+              <CreateItem
+                key={type.id}
+                icon={<Newspaper size={16} />}
+                label={tr(type.labelZh ?? type.label, type.label)}
+                onClick={() => launchPublication(type)}
+              />
+            ))}
             <CreateItem icon={<GitBranch size={16} />} label={t("nav.createBranching")} onClick={() => launchProjectMode("play", "guided")} />
             <CreateItem icon={<Gamepad2 size={16} />} label={t("nav.createFree")} onClick={() => launchProjectMode("play", "open")} />
           </div>

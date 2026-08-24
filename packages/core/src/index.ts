@@ -739,3 +739,22 @@ export { exportInk } from "./interactive-film/export-ink.js";
 export { buildPlayableHtml } from "./interactive-film/export-html.js";
 export { ingestMaterial, type IngestMaterialInput, type MaterialAsset } from "./materials/ingest.js";
 export { runWorkerAgent, type WorkerAgentOptions } from "./agent/worker-agent.js";
+
+export { loadPublicationRegistry, findPublicationDefinition, userDefinitionsDir } from "./publications/registry.js";
+export type { PublicationRegistry, PublicationDiagnostic } from "./publications/registry.js";
+export type { PublicationDefinition, PublicationDefinitionSource } from "./publications/types.js";
+export { validateDefinition, renderTemplate } from "./publications/types.js";
+export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
+export {
+  listIssues, readIssue, createIssue, setNotes as setPublicationNotes, removeIssue,
+  checkPlan as checkPublicationPlan, checkDesign as checkPublicationDesign,
+  approve as approvePublication, unapprove as unapprovePublication,
+  runResearch, runPlan, writePage, artPage, build as buildPublication,
+  startQueue as startPublicationQueue, stopQueue as stopPublicationQueue,
+  queueState as publicationQueueState, outstanding as outstandingPublicationPages,
+  run as runPublication,
+} from "./pipeline/publication-runner.js";
+export type {
+  PublicationIssue, PublicationPage, PublicationSection, PublicationSummary,
+  PublicationDesign, DesignWorld, RunnerContext as PublicationRunnerContext,
+} from "./pipeline/publication-runner.js";

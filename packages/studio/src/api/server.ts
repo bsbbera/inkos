@@ -131,6 +131,8 @@ import {
   type RequestedIntent,
   type SessionKind,
   type AgentSessionAttachment,
+  loadPublicationRegistry,
+  listIssues,
 } from "@actalk/inkos-core";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
@@ -4014,6 +4016,43 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   app.get("/api/v1/skills", async (c) => {
     const result = await loadStudioSkills(root);
     return c.json(result);
+  });
+
+  // Installed publication types. The sidebar builds itself from this, so a
+  // definition dropped into the workspace becomes a real entry with no code
+  // change — which is the whole point of definitions being data.
+  app.get("/api/v1/publications/types", async (c) => {
+    const registry = await loadPublicationRegistry(root);
+    return c.json({
+      types: registry.definitions.map(({ definition, source }) => ({
+        id: definition.id,
+        label: definition.label,
+        labelZh: definition.labelZh ?? null,
+        description: definition.description ?? null,
+        needsImages: definition.needsImages,
+        needsPdf: definition.needsPdf,
+        extent: definition.extent,
+        source,
+      })),
+      // A malformed definition is reported rather than swallowed, exactly as a
+      // malformed SKILL.md is.
+      diagnostics: registry.diagnostics,
+    });
+  });
+
+  // Everything the user has actually made, across every installed type.
+  app.get("/api/v1/publications", async (c) => {
+    const registry = await loadPublicationRegistry(root);
+    const all = [];
+    for (const { definition } of registry.definitions) {
+      const ctx = {
+        projectRoot: root,
+        definition,
+        ask: async () => { throw new Error("listing does not call the model"); },
+      };
+      all.push(...await listIssues(ctx));
+    }
+    return c.json({ publications: all });
   });
 
   app.get("/api/v1/prompt-packs", async (c) => {

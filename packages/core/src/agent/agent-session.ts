@@ -45,6 +45,7 @@ import {
   createSpinoffBookTool,
   createImitationBookTool,
   createResearchWebTool,
+  createPublicationCreateTool,
   createIngestMaterialTool,
   createRetrieveMaterialTool,
   createManageBookReferenceTool,
@@ -833,6 +834,9 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
     attachmentPaths: params.attachmentPaths,
   });
   const researchTool = createResearchWebTool(params.projectRoot);
+  // Available in every mode: a publication is started from a subject, which is
+  // a thing the user says in ordinary chat, not a mode they switch into first.
+  const publicationTool = createPublicationCreateTool(params.pipeline, params.projectRoot);
   const materialTool = createIngestMaterialTool(params.projectRoot);
   const materialRetrievalTool = createRetrieveMaterialTool(params.projectRoot);
   const projectReadTool = createReadTool(params.projectRoot, { scope: "project" });
@@ -872,7 +876,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, researchTool, materialTool, materialRetrievalTool, importChaptersTool];
+    return [proposalTool, researchTool, publicationTool, materialTool, materialRetrievalTool, importChaptersTool];
   }
 
   if (params.sessionKind === "short") {
@@ -987,7 +991,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         workerSkills: params.workerSkills,
       })];
     }
-    return [proposalTool, researchTool, materialTool, materialRetrievalTool];
+    return [proposalTool, researchTool, publicationTool, materialTool, materialRetrievalTool];
   }
 
   if (!params.bookId) {
