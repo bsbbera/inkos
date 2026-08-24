@@ -3971,6 +3971,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       name: m.name,
       ...(m.maxOutput !== undefined ? { maxOutput: m.maxOutput } : {}),
       ...(m.contextWindow > 0 ? { contextWindow: m.contextWindow } : {}),
+      // Carried to the client so the composer can refuse an image the model
+      // cannot read, instead of sending it and getting a confusing failure.
+      ...(m.capabilities ? { capabilities: m.capabilities } : {}),
     }));
     const models = mergeServiceModelIds(liveModels.map((model) => model.id), configuredModels)
       .map((id) => liveModels.find((model) => model.id.toLowerCase() === id.toLowerCase()) ?? { id, name: id });

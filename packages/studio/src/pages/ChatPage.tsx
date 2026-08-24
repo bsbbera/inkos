@@ -128,6 +128,12 @@ const CHAT_ATTACHMENT_ACCEPT = [
   ".pdf",
 ].join(",");
 
+// Same list without image/*, for models that cannot read images.
+const CHAT_ATTACHMENT_ACCEPT_NO_IMAGES = CHAT_ATTACHMENT_ACCEPT
+  .split(",")
+  .filter((type) => type !== "image/*")
+  .join(",");
+
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -446,6 +452,20 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     return group ? `${group.label} · ${modelLabel}` : modelLabel;
   }, [groupedModels, selectedModel, selectedService, isZh]);
 
+  // Same CLI, same interface, different model: devin serves both glm-5-2,
+  // which cannot read images, and kimi, which can. Sending an image to the
+  // first one fails somewhere deep in the CLI with an unhelpful message, so
+  // the composer refuses it up front.
+  //
+  // Only an explicit false blocks. A live /models probe cannot report
+  // capabilities at all, so most models arrive with none and must keep
+  // working exactly as before.
+  const modelRejectsImages = useMemo(() => {
+    const group = groupedModels.find((item) => item.service === selectedService);
+    const model = group?.models.find((item) => item.id === selectedModel);
+    return model?.capabilities?.imageInput === false;
+  }, [groupedModels, selectedModel, selectedService]);
+
   // Auto-select from saved service config first, then fall back to the first available model.
   useEffect(() => {
     if (!serviceConfigLoaded) return;
@@ -580,17 +600,31 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     const incoming = Array.from(files);
     const accepted: File[] = [];
     const rejected: string[] = [];
+    const blockedByModel: string[] = [];
     for (const file of incoming) {
       if (file.size > MAX_CHAT_ATTACHMENT_BYTES) {
         rejected.push(`${file.name} > ${formatFileSize(MAX_CHAT_ATTACHMENT_BYTES)}`);
         continue;
       }
+      if (modelRejectsImages && file.type.startsWith("image/")) {
+        blockedByModel.push(file.name);
+        continue;
+      }
       accepted.push(file);
     }
     setAttachedFiles((prev) => [...prev, ...accepted].slice(0, MAX_CHAT_ATTACHMENTS));
-    setAttachmentError(rejected.length > 0
-      ? (isZh ? `以下文件过大，未添加：${rejected.join("、")}` : `Some files were too large: ${rejected.join(", ")}`)
-      : null);
+    const problems: string[] = [];
+    if (rejected.length > 0) {
+      problems.push(isZh
+        ? `以下文件过大，未添加：${rejected.join("、")}`
+        : `Some files were too large: ${rejected.join(", ")}`);
+    }
+    if (blockedByModel.length > 0) {
+      problems.push(isZh
+        ? `当前模型不支持图片输入，未添加：${blockedByModel.join("、")}`
+        : `${selectedModel ?? "This model"} cannot read images, so these were not attached: ${blockedByModel.join(", ")}`);
+    }
+    setAttachmentError(problems.length > 0 ? problems.join(" ") : null);
   };
 
   const onSend = async (text: string) => {
@@ -1005,7 +1039,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept={CHAT_ATTACHMENT_ACCEPT}
+                accept={modelRejectsImages ? CHAT_ATTACHMENT_ACCEPT_NO_IMAGES : CHAT_ATTACHMENT_ACCEPT}
                 className="hidden"
                 onChange={(event) => {
                   if (event.currentTarget.files) addAttachedFiles(event.currentTarget.files);

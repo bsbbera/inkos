@@ -1,4 +1,5 @@
 import { getEndpoint } from "./providers/index.js";
+import type { InkosModel } from "./providers/types.js";
 import { probeModelsFromUpstream } from "./providers/probe.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 
@@ -137,14 +138,22 @@ export interface ModelInfo {
   readonly contextWindow: number;
   /** 模型输出上限（来自 providers bank 或 live /models 补充） */
   readonly maxOutput?: number;
+  /**
+   * From the provider bank. A live /models probe cannot report this — the
+   * OpenAI list format has no field for it — so it is only present for models
+   * the bank knows. Absent means unknown, not unsupported: callers gate on an
+   * explicit false, never on a missing value.
+   */
+  readonly capabilities?: InkosModel["capabilities"];
 }
 
-function toModelInfo(inkosModel: { id: string; maxOutput: number; contextWindowTokens: number }): ModelInfo {
+function toModelInfo(inkosModel: InkosModel): ModelInfo {
   return {
     id: inkosModel.id,
     name: inkosModel.id,
     contextWindow: inkosModel.contextWindowTokens,
     maxOutput: inkosModel.maxOutput,
+    ...(inkosModel.capabilities ? { capabilities: inkosModel.capabilities } : {}),
   };
 }
 

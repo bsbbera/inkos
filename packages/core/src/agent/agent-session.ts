@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createExternalMcpTools } from "./mcp-tools.js";
+import { lookupModel } from "../llm/providers/lookup.js";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 import { getModel, getEnvApiKey, createAssistantMessageEventStream } from "@mariozechner/pi-ai";
@@ -789,6 +791,29 @@ type CreateAgentToolsForModeParams = {
   readonly productionSkills?: (capability: ProductionSkillCapability) => ReadonlyArray<ActivatedSkillGuidance>;
 };
 
+/**
+ * A model served by one of the agent CLIs. Those run their own tool loop and
+ * are handed the MCP servers directly at launch, so wrapping the same servers
+ * as agent tools would give them every tool twice — once to call themselves
+ * and once to ask us to call.
+ */
+/**
+ * Said to a model that cannot call tools, so that "I could not look this up"
+ * is an available answer. Without it the model has no way to know why the
+ * research tool it was told about is missing, and fills the gap itself.
+ */
+const NO_TOOLS_NOTICE =
+  "This model cannot call tools, so no research, file or skill tool is available in this session. "
+  + "Do not describe tool results, cite sources, or claim to have looked anything up. "
+  + "If the request needs a tool, say plainly that it cannot be done with the current model "
+  + "and suggest switching to a model that supports tools.";
+
+const CLI_MODEL_PREFIXES = ["claude/", "codex/", "devin/", "antigravity/"];
+function isCliBackedModel(model: { readonly id?: string } | undefined): boolean {
+  const id = model?.id ?? "";
+  return CLI_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix));
+}
+
 function createAgentToolsForMode(params: CreateAgentToolsForModeParams) {
   const tools = createModeTools(params);
   return params.intentSkillTool ? [...tools, params.intentSkillTool] : tools;
@@ -1160,6 +1185,21 @@ async function runAgentSessionUnlocked(
           onActivate: (activation) => turnSkills.set(activation.skill.id, activation),
         })
       : undefined;
+    // External MCP servers, for models that cannot reach them on their own. A
+    // CLI model already has its own MCP client, so it would get these twice —
+    // the shim hands it the same servers directly at launch.
+    const externalMcpTools = isCliBackedModel(model)
+      ? []
+      : await createExternalMcpTools();
+
+    // Some models cannot call tools at all. Handing them a tool table anyway
+    // produces the worst outcome available: asked to research something they
+    // write a confident report out of nothing rather than saying they cannot
+    // look anything up. So the tools come off and the model is told why.
+    // Empty service id: lookupModel then scans every provider, which is what
+    // is wanted here — the model may have arrived through any of them.
+    const modelRejectsTools = lookupModel("", model?.id ?? "")?.capabilities?.tools === false;
+
     const agentTools = createAgentToolsForMode({
       pipeline,
       bookId,
@@ -1187,12 +1227,17 @@ async function runAgentSessionUnlocked(
     const agent = new Agent({
       initialState: {
         model,
-        systemPrompt: config.backgroundTaskContext
-          ? `${baseSystemPrompt}\n\n${config.backgroundTaskContext}`
-          : baseSystemPrompt,
-        tools: suppressProductionTools
-          ? agentTools.filter((tool) => !PRODUCTION_MUTATION_TOOL_NAMES.has(tool.name))
-          : agentTools,
+        systemPrompt: [
+          baseSystemPrompt,
+          config.backgroundTaskContext,
+          modelRejectsTools ? NO_TOOLS_NOTICE : undefined,
+        ].filter(Boolean).join("\n\n"),
+        tools: modelRejectsTools ? [] : [
+          ...(suppressProductionTools
+            ? agentTools.filter((tool) => !PRODUCTION_MUTATION_TOOL_NAMES.has(tool.name))
+            : agentTools),
+          ...externalMcpTools,
+        ],
         messages: initialAgentMessages,
       },
       transformContext: sessionKind === "interactive-film-authoring" && bookId

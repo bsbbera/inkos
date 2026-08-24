@@ -19,6 +19,18 @@ export interface ModelInfo {
   readonly name?: string;
   readonly maxOutput?: number;
   readonly contextWindow?: number;
+  /**
+   * Only present for models the provider bank knows; a live /models probe has
+   * no field for it. Absent means unknown, so callers must gate on an explicit
+   * false rather than on falsiness.
+   */
+  readonly capabilities?: {
+    readonly text?: boolean;
+    readonly imageInput?: boolean;
+    readonly imageOutput?: boolean;
+    readonly tools?: boolean;
+    readonly reasoning?: boolean;
+  };
 }
 
 export type ModelPickerStatus = "loading" | "no-models" | "ready";
