@@ -725,6 +725,9 @@ export async function generateImageFromPrompt(
   size: string,
   signal?: AbortSignal,
 ): Promise<{ readonly buffer: Buffer; readonly extension: "png" | "jpg" }> {
+  if (request.api === "comfy") {
+    return generateComfyCover(request, prompt, size, signal);
+  }
   if (request.api === "gemini") {
     const payload = await generateGeminiCover(request, prompt, signal);
     return { buffer: Buffer.from(payload.base64, "base64"), extension: payload.extension };
@@ -804,8 +807,10 @@ export async function resolveCoverGenerationRequest(input: {
   if (!preset) {
     throw new Error(`Unsupported cover service: ${projectCover.service}`);
   }
+  // A local renderer has nothing to authenticate against, so requiring a key
+  // here made the offline provider the one provider that could not be used.
   const apiKey = await resolveProjectCoverApiKey(input.root, projectCover.service);
-  if (!apiKey) {
+  if (!apiKey && preset.needsKey !== false) {
     throw new Error(`Cover API key is required. Configure a cover key for ${preset.label}.`);
   }
 
@@ -848,6 +853,51 @@ async function resolveProjectCoverApiKey(root: string, service: string): Promise
     || secrets.services[service]?.apiKey
     || process.env[`${service.replace(/[^a-zA-Z0-9]/g, "_").toUpperCase()}_API_KEY`]
     || "";
+}
+
+/**
+ * Render a cover on this machine through Quire's shim, which owns the ComfyUI
+ * install and the workflow. The shim answers with the image inline so nothing
+ * here has to know where it put the file.
+ */
+async function generateComfyCover(
+  request: ShortFictionCoverRequest,
+  prompt: string,
+  size: string,
+  signal?: AbortSignal,
+): Promise<{ readonly buffer: Buffer; readonly extension: "png" | "jpg" }> {
+  const [width, height] = size.split("x").map((n) => Number(n));
+  const base = request.baseUrl.replace(/\/+$/u, "");
+  // Ask for the runtime first: a local provider that fails with "not running"
+  // is a provider the user has to know to go and start by hand.
+  const start = await fetch(`${base}/comfy/start`, { method: "POST", body: "{}", signal });
+  if (!start.ok) {
+    throw new Error(`could not start ComfyUI: HTTP ${start.status} ${(await start.text()).slice(0, 300)}`);
+  }
+  const response = await fetch(`${base}/comfy/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      ...(Number.isFinite(width) && Number.isFinite(height) ? { width, height } : {}),
+      prefix: "cover",
+    }),
+    signal,
+  });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`local cover generation failed: HTTP ${response.status} ${text.slice(0, 500)}`);
+  }
+  let payload: { ok?: boolean; b64?: string; error?: string };
+  try {
+    payload = JSON.parse(text) as typeof payload;
+  } catch (error) {
+    throw new Error(`local cover generation returned non-JSON response: ${String(error)}`);
+  }
+  if (!payload.b64) {
+    throw new Error(`local cover generation produced no image: ${payload.error ?? text.slice(0, 300)}`);
+  }
+  return { buffer: Buffer.from(payload.b64, "base64"), extension: "png" };
 }
 
 async function generateImagesCover(

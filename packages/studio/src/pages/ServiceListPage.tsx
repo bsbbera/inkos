@@ -59,6 +59,7 @@ interface CoverProviderInfo {
   readonly defaultModel: string;
   readonly models: readonly string[];
   readonly connected: boolean;
+  readonly needsKey?: boolean;
 }
 
 interface CoverConfigPayload {
@@ -79,6 +80,9 @@ function CoverConfigCard() {
   const [message, setMessage] = useState("");
 
   const selected = providers.find((provider) => provider.service === service);
+  // A provider that renders on this machine has no endpoint to point at and no
+  // key to hold; showing both fields anyway reads as "unfinished setup".
+  const needsKey = selected?.needsKey !== false;
 
   useEffect(() => {
     let cancelled = false;
@@ -130,11 +134,13 @@ function CoverConfigCard() {
     setStatus("saving");
     setMessage("");
     try {
-      await fetchJson(`/cover/secret/${encodeURIComponent(provider.service)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: apiKey.trim() }),
-      });
+      if (provider.needsKey !== false) {
+        await fetchJson(`/cover/secret/${encodeURIComponent(provider.service)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ apiKey: apiKey.trim() }),
+        });
+      }
       await fetchJson("/cover/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -168,7 +174,7 @@ function CoverConfigCard() {
         </div>
         {selected?.connected && (
           <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
-            {tr("已有密钥", "Key saved")}
+            {needsKey ? tr("已有密钥", "Key saved") : tr("本机渲染", "Runs on this machine")}
           </span>
         )}
       </div>
@@ -200,6 +206,7 @@ function CoverConfigCard() {
         </label>
       </div>
 
+      {needsKey && (
       <label className="space-y-1.5">
         <span className="block text-xs font-medium text-muted-foreground/70">Base URL</span>
         <input
@@ -216,7 +223,9 @@ function CoverConfigCard() {
           )}
         </span>
       </label>
+      )}
 
+      {needsKey ? (
       <label className="space-y-1.5">
         <span className="block text-xs font-medium text-muted-foreground/70">API Key</span>
         <div className="relative">
@@ -236,6 +245,14 @@ function CoverConfigCard() {
           </button>
         </div>
       </label>
+      ) : (
+        <p className="text-[11px] leading-5 text-muted-foreground/55">
+          {tr(
+            "图像在本机的 ComfyUI 中生成：无需密钥，离线可用。工作流与硬件设置在 Quire 的设置面板中。",
+            "Images render locally in ComfyUI: no key, works offline. The workflow and hardware settings live in Quire's settings panel.",
+          )}
+        </p>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <button

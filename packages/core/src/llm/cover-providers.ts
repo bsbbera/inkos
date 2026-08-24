@@ -1,15 +1,32 @@
-export type CoverProviderId = "kkaiapi" | "openai" | "google";
+export type CoverProviderId = "kkaiapi" | "openai" | "google" | "comfy";
 
 export interface CoverProviderPreset {
   readonly service: CoverProviderId;
   readonly label: string;
   readonly baseUrl: string;
-  readonly api: "responses" | "images" | "gemini";
+  readonly api: "responses" | "images" | "gemini" | "comfy";
   readonly defaultModel: string;
   readonly models: readonly string[];
+  /**
+   * Whether the provider needs an API key at all. The hosted three do; the
+   * local one renders on this machine, and demanding a key for it meant the
+   * only provider that works offline was the only one you could not turn on.
+   */
+  readonly needsKey?: boolean;
 }
 
 export const COVER_PROVIDER_PRESETS: readonly CoverProviderPreset[] = [
+  {
+    service: "comfy",
+    label: "ComfyUI (this machine)",
+    // Quire's shim, which owns the ComfyUI install, the selected workflow and
+    // the device tier benchmarked for this hardware.
+    baseUrl: `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
+    api: "comfy",
+    defaultModel: "workflow",
+    models: ["workflow"],
+    needsKey: false,
+  },
   {
     service: "kkaiapi",
     label: "kkaiapi",

@@ -2240,6 +2240,90 @@ const PublicationCreateParams = Type.Object({
 
 type PublicationCreateParamsType = Static<typeof PublicationCreateParams>;
 
+// ---------------------------------------------------------------------------
+// Local image generation (comfy_generate)
+// ---------------------------------------------------------------------------
+
+const ComfyGenerateParams = Type.Object({
+  prompt: Type.String({
+    description: "What to draw. Describe subject, composition, light and medium; the workflow adds its own negative prompt.",
+  }),
+  out_file: Type.Optional(Type.String({
+    description: "Absolute path to write the PNG to. Omit to render without saving.",
+  })),
+  width: Type.Optional(Type.Number({ description: "Pixel width. Omit to use the benchmarked default for this machine." })),
+  height: Type.Optional(Type.Number({ description: "Pixel height. Omit to use the benchmarked default for this machine." })),
+  seed: Type.Optional(Type.Number({ description: "Fixed seed, for reproducing or varying one image." })),
+  workflow: Type.Optional(Type.String({ description: "Workflow id. Omit to use the selected one." })),
+});
+
+type ComfyGenerateParamsType = Static<typeof ComfyGenerateParams>;
+
+/**
+ * Render an image on this machine.
+ *
+ * CLI-backed models reach ComfyUI through Quire's MCP server, which they are
+ * handed at launch. Models talking to an API have no such channel, so without
+ * this they could plan a page's artwork and then have no way to make it.
+ */
+export function createComfyGenerateTool(shimUrl: string): AgentTool<typeof ComfyGenerateParams> {
+  return {
+    name: "comfy_generate",
+    description:
+      "Generate an image locally with ComfyUI. Runs on this machine, needs no API key, and takes "
+      + "tens of seconds on a GPU or several minutes on CPU. Returns where the image was written.",
+    label: "Generate Image",
+    parameters: ComfyGenerateParams,
+    async execute(
+      _toolCallId: string,
+      params: ComfyGenerateParamsType,
+      signal?: AbortSignal,
+      onUpdate?: AgentToolUpdateCallback,
+    ): Promise<AgentToolResult<unknown>> {
+      onUpdate?.(textResult(`Rendering: ${params.prompt.slice(0, 80)}`));
+      const base = shimUrl.replace(/\/+$/u, "");
+      // Starting is idempotent and cheap once it is up; a first call that fails
+      // with "not running" is a dead end for a model, which cannot go and
+      // launch it.
+      const started = await fetch(`${base}/comfy/start`, { method: "POST", body: "{}", signal });
+      if (!started.ok) {
+        return textResult(`ComfyUI could not be started: HTTP ${started.status}. `
+          + "Install or start it from Quire's settings panel.");
+      }
+      const response = await fetch(`${base}/comfy/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: params.prompt,
+          ...(params.out_file ? { outFile: params.out_file } : {}),
+          ...(params.width ? { width: params.width } : {}),
+          ...(params.height ? { height: params.height } : {}),
+          ...(params.seed !== undefined ? { seed: params.seed } : {}),
+          ...(params.workflow ? { workflow: params.workflow } : {}),
+        }),
+        signal,
+      });
+      const payload = await response.json().catch(() => ({})) as {
+        ok?: boolean; error?: string; file?: string; seed?: number;
+        ms?: number; width?: number; height?: number; workflow?: string; device?: string;
+      };
+      if (!response.ok || !payload.ok) {
+        return textResult(`Image generation failed: ${payload.error ?? `HTTP ${response.status}`}`);
+      }
+      // The base64 is deliberately not returned: a 2MB image in the transcript
+      // costs the whole context window and the model cannot look at it anyway.
+      return textResult(
+        [
+          payload.file ? `Image written to ${payload.file}` : "Image rendered (not saved: no out_file given)",
+          `${payload.width}x${payload.height}, seed ${payload.seed}, workflow ${payload.workflow}`,
+          `on ${payload.device} in ${Math.round((payload.ms ?? 0) / 1000)}s.`,
+        ].join(" "),
+        { kind: "comfy_image", file: payload.file ?? null, seed: payload.seed, workflow: payload.workflow },
+      );
+    },
+  };
+}
+
 export function createPublicationCreateTool(
   pipeline: PipelineRunner,
   projectRoot: string,

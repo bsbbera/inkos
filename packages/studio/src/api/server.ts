@@ -3637,6 +3637,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const secrets = await loadSecrets(root);
     const keyFor = (service: string): boolean =>
       Boolean(secrets.services[coverSecretKey(service)]?.apiKey || secrets.services[service]?.apiKey);
+    // A provider that renders on this machine has no key to hold, so "has a
+    // key" is the wrong question to ask it: it is ready as soon as it is picked.
+    const ready = (service: string): boolean =>
+      resolveCoverProviderPreset(service)?.needsKey === false || keyFor(service);
     // "Configured" = a cover service is selected AND has a key, OR a cover
     // endpoint is provided via env (the CLI/power-user path). This is the gate
     // for the Play auto-illustration toggles.
@@ -3644,7 +3648,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       (process.env.INKOS_COVER_BASE_URL || process.env.INKOS_COVER_ENDPOINT)
       && (process.env.INKOS_COVER_API_KEY || keyFor("kkaiapi")),
     );
-    const configured = Boolean(cover?.service && keyFor(cover.service)) || envConfigured;
+    const configured = Boolean(cover?.service && ready(cover.service)) || envConfigured;
     return c.json({
       service: cover?.service ?? null,
       model: cover?.model ?? null,
@@ -3656,7 +3660,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         baseUrl: provider.baseUrl,
         defaultModel: provider.defaultModel,
         models: provider.models,
-        connected: keyFor(provider.service),
+        needsKey: provider.needsKey !== false,
+        connected: ready(provider.service),
       })),
     });
   });

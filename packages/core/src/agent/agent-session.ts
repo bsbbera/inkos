@@ -46,6 +46,7 @@ import {
   createImitationBookTool,
   createResearchWebTool,
   createPublicationCreateTool,
+  createComfyGenerateTool,
   createIngestMaterialTool,
   createRetrieveMaterialTool,
   createManageBookReferenceTool,
@@ -837,6 +838,11 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   // Available in every mode: a publication is started from a subject, which is
   // a thing the user says in ordinary chat, not a mode they switch into first.
   const publicationTool = createPublicationCreateTool(params.pipeline, params.projectRoot);
+  // CLI-backed models already reach ComfyUI through Quire's MCP server; API
+  // models have no other route to a local renderer.
+  const imageTool = createComfyGenerateTool(
+    process.env.QUIRE_SHIM_URL || `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
+  );
   const materialTool = createIngestMaterialTool(params.projectRoot);
   const materialRetrievalTool = createRetrieveMaterialTool(params.projectRoot);
   const projectReadTool = createReadTool(params.projectRoot, { scope: "project" });
@@ -876,7 +882,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, researchTool, publicationTool, materialTool, materialRetrievalTool, importChaptersTool];
+    return [proposalTool, researchTool, publicationTool, imageTool, materialTool, materialRetrievalTool, importChaptersTool];
   }
 
   if (params.sessionKind === "short") {
@@ -991,7 +997,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         workerSkills: params.workerSkills,
       })];
     }
-    return [proposalTool, researchTool, publicationTool, materialTool, materialRetrievalTool];
+    return [proposalTool, researchTool, publicationTool, imageTool, materialTool, materialRetrievalTool];
   }
 
   if (!params.bookId) {
