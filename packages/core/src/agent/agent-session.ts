@@ -4,6 +4,7 @@ import { lookupModel } from "../llm/providers/lookup.js";
 import { Agent } from "@mariozechner/pi-agent-core";
 import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
 import { getModel, getEnvApiKey, createAssistantMessageEventStream } from "@mariozechner/pi-ai";
+import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 import type {
   Model,
   Api,
@@ -1267,7 +1268,17 @@ async function runAgentSessionUnlocked(
       },
       getApiKey: (provider: string) => {
         if (config.apiKey) return config.apiKey;
-        return getEnvApiKey(provider);
+        const fromEnv = getEnvApiKey(provider);
+        if (fromEnv) return fromEnv;
+        // Loopback endpoints authenticate nothing — the CLI providers, Ollama,
+        // LM Studio. pi-ai refuses to send without a key all the same, so chat
+        // died on "No API key for provider: openai" for every one of them.
+        // The workbench's own transport already knows to skip the header; this
+        // is the same decision, one layer further out.
+        if (isApiKeyOptionalForEndpoint({ provider, baseUrl: model.baseUrl })) {
+          return "local";
+        }
+        return fromEnv;
       },
     });
 

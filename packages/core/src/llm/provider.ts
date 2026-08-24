@@ -807,6 +807,14 @@ async function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<vo
 }
 
 function shouldUseNativeCustomTransport(client: LLMClient): boolean {
+  // Any OpenAI-compatible endpoint on loopback that needs no key goes through
+  // the native transport. It used to be a list of service ids — ollama,
+  // lmstudio, custom — so the CLI providers added later fell through to pi-ai,
+  // which demands a key and threw "No API key for provider: openai" on the
+  // first message. What matters is the endpoint, not its name.
+  if (client.provider === "openai" && shouldUseNativeLocalOpenAICompatibleTransport(client)) {
+    return true;
+  }
   if (client.service === "minimax" && client.provider === "openai") {
     return true;
   }
