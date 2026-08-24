@@ -23,7 +23,7 @@
     "dev:client": "vite --host --port 4567",
     "dev:server": "INKOS_STUDIO_PORT=4569 INKOS_PROJECT_ROOT=../.. tsx watch src/api/index.ts",
     "build": "npm run build:client && npm run build:server",
-    "build:client": "vite build",
+    "build:client": "node --no-maglev ./node_modules/vite/bin/vite.js build",
     "build:server": "tsc -p tsconfig.server.json",
     "preview": "vite preview",
     "test": "vitest run",

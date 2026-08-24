@@ -189,8 +189,6 @@ export function App() {
              >
                <House size={18} />
                <span>{t("bread.home")}</span>
-               <span className="text-muted-foreground/70">/</span>
-               <span className="font-serif">InkOS Studio</span>
              </button>
           </div>
 

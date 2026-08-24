@@ -103,6 +103,12 @@ export async function resolveStudioLaunch(root: string): Promise<StudioLaunchSpe
     join(cliPackageRoot, "node_modules", "@actalk", "inkos-studio", "server.cjs"),
     join(cliPackageRoot, "..", "inkos-studio", "dist", "api", "index.js"),
     join(cliPackageRoot, "..", "inkos-studio", "server.cjs"),
+    // In this repo the workspace directory is packages/studio, not
+    // packages/inkos-studio, so a built monorepo checkout matched none of
+    // the paths above and fell through to "Studio not found" even though
+    // `pnpm build` had just produced it.
+    join(cliPackageRoot, "..", "studio", "dist", "api", "index.js"),
+    join(cliPackageRoot, "..", "studio", "server.cjs"),
   ]);
   if (builtEntry) {
     return {
