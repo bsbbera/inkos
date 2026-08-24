@@ -125,7 +125,7 @@ const ModelOverrideValueSchema = z.union([z.string(), AgentLLMOverrideSchema]);
 
 export const ResearchSearchConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  provider: z.enum(["tavily", "custom"]).default("tavily"),
+  provider: z.enum(["tavily", "brave", "custom"]).default("tavily"),
   baseUrl: z.string().url().optional(),
   apiKey: z.string().optional(),
   apiKeyEnv: z.string().optional(),

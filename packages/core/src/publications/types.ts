@@ -68,6 +68,13 @@ export interface PublicationDefinition {
   readonly defaultDensity: string;
 
   readonly rules: PublicationRules;
+  /**
+   * Blocks a page may carry beside its body — the did-you-know, the number set
+   * large, the this-versus-that. Modelled as prose they cannot be laid out,
+   * counted, or sourced, so they are objects, and which archetype may carry
+   * which is law from the definition rather than a hope in a prompt.
+   */
+  readonly blocks?: PublicationBlocks;
   readonly prompts: PublicationPrompts;
 
   /** Whether the art stage exists at all for this type. */
@@ -77,6 +84,17 @@ export interface PublicationDefinition {
 
   /** Where issues of this type are stored, relative to the workspace. */
   readonly outDir: string;
+}
+
+export interface PublicationBlocks {
+  /** Every block kind this publication knows. */
+  readonly kinds: readonly string[];
+  /**
+   * Per-archetype allowance. An archetype not named here may carry any kind;
+   * an archetype mapped to an empty list may carry none — which is how a full
+   * bleed plate stays a plate.
+   */
+  readonly byArchetype?: Readonly<Record<string, readonly string[]>>;
 }
 
 export interface PublicationDefinitionSource {
@@ -166,6 +184,23 @@ export function validateDefinition(value: unknown): string[] {
   if (rules?.rectoOnlyType && Array.isArray(def.archetypes)
     && !def.archetypes.includes(rules.rectoOnlyType)) {
     problems.push(`rectoOnlyType names unknown archetype ${rules.rectoOnlyType}`);
+  }
+
+  const blocks = def.blocks;
+  if (blocks) {
+    if (!Array.isArray(blocks.kinds) || blocks.kinds.length === 0) {
+      problems.push("blocks.kinds must list at least one kind");
+    }
+    for (const [archetype, kinds] of Object.entries(blocks.byArchetype ?? {})) {
+      if (Array.isArray(def.archetypes) && !def.archetypes.includes(archetype)) {
+        problems.push(`blocks.byArchetype names unknown archetype ${archetype}`);
+      }
+      for (const kind of kinds ?? []) {
+        if (!blocks.kinds?.includes(kind)) {
+          problems.push(`blocks.byArchetype.${archetype} names unknown kind ${kind}`);
+        }
+      }
+    }
   }
 
   if (!def.outDir) problems.push("outDir is required");

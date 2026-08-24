@@ -18,6 +18,11 @@ import { join } from "node:path";
 import type { PublicationDefinition } from "../publications/types.js";
 import { renderTemplate } from "../publications/types.js";
 import * as styles from "../publications/styles.js";
+import {
+  findingsFor,
+  researchPublication,
+  type ResearchReport,
+} from "./publication-research.js";
 
 /* ------------------------------------------------------------------- types */
 
@@ -32,7 +37,7 @@ export interface PublicationPage {
   body: string | null;
   deck?: string;
   pullQuote?: string;
-  furniture?: Array<{ kind: string; text: string }>;
+  furniture?: Array<{ kind: string; text: string; source?: string }>;
   brief?: { prompt: string; orientation: string } | null;
   sources?: string[];
   uncertain?: string[];
@@ -392,6 +397,70 @@ export async function unapprove(ctx: RunnerContext, id: string): Promise<Publica
   return save(ctx, issue);
 }
 
+/**
+ * What one page is told about the world.
+ *
+ * The whole report used to be JSON.stringify'd into the prompt and cut at 6000
+ * characters, which spent the budget on field names and cut a pillar in half.
+ * A page gets its own pillar's claims, each with the source attached, as text
+ * a writer can actually use.
+ */
+function pageResearch(report: ResearchReport | null, pillar: string): string {
+  const own = findingsFor(report, pillar);
+  if (own) return own;
+  if (!report) return "";
+  // A pillar that found nothing still gets the rest, rather than a blank page
+  // context — thin is better than empty, and the writer can see it is thin.
+  return Object.values(report.pillars)
+    .flatMap((p) => p.findings.slice(0, 4))
+    .map((f) => `- (${f.kind}) ${f.claim}\n  source: ${f.sourceTitle} — ${f.sourceUrl}`)
+    .join("\n");
+}
+
+/** Which blocks this archetype may carry. Undefined mapping means all of them. */
+function allowedBlocks(def: PublicationDefinition, archetype: string): readonly string[] {
+  const blocks = def.blocks;
+  if (!blocks) return [];
+  const named = blocks.byArchetype?.[archetype];
+  return named ?? blocks.kinds;
+}
+
+function blocksLine(def: PublicationDefinition, archetype: string): string {
+  const allowed = allowedBlocks(def, archetype);
+  if (!def.blocks) return "";
+  if (!allowed.length) {
+    return "BLOCKS: this page carries none. Return an empty furniture list.";
+  }
+  return "BLOCKS this page may carry, beside the body — these are objects placed on the\n"
+    + "page, not sentences inside the prose, so each one must stand alone and be worth\n"
+    + `its own space: ${allowed.join(", ")}.`;
+}
+
+/**
+ * Keep only the blocks this archetype is allowed.
+ *
+ * The allowance is law from the definition, and a model that offers a sidebar
+ * on a full-bleed plate is offering something the page has no room for. Better
+ * dropped here than discovered in Affinity.
+ */
+function keepAllowedBlocks(
+  def: PublicationDefinition,
+  archetype: string,
+  raw: unknown,
+): PublicationPage["furniture"] {
+  if (!Array.isArray(raw)) return [];
+  const allowed = new Set(allowedBlocks(def, archetype));
+  const out: NonNullable<PublicationPage["furniture"]> = [];
+  for (const item of raw as Array<Record<string, unknown>>) {
+    const kind = String(item?.kind ?? "").trim();
+    const text = String(item?.text ?? "").trim();
+    if (!text || !allowed.has(kind)) continue;
+    const source = String(item?.source ?? "").trim();
+    out.push(source ? { kind, text, source } : { kind, text });
+  }
+  return out;
+}
+
 /* ------------------------------------------------------------------ stages */
 
 const notesBlock = (issue: PublicationIssue) =>
@@ -404,19 +473,31 @@ export async function runResearch(ctx: RunnerContext, id: string): Promise<Publi
   await save(ctx, issue);
   emit(ctx, "publication:stage", { id, stage: "research", state: "start" });
 
-  const out = await ctx.ask(renderTemplate(def.prompts.research, {
-    voice: def.prompts.voice,
-    pillars: def.prompts.pillars,
+  // This used to be one call asking the model what it remembered. It cited
+  // nothing, because there was nothing to cite, and a page could print a
+  // figure no one had ever checked. Now the model writes queries, the web
+  // answers them, and only claims carrying a URL from those answers survive.
+  const report = await researchPublication({
+    projectRoot: ctx.projectRoot,
+    cachePath: join(dirOf(ctx, id), "research-cache.json"),
     subject: issue.subject,
-    angleLine: issue.angle ? `ANGLE: ${issue.angle}` : "",
-    notes: notesBlock(issue),
-  }), "research");
+    angle: issue.angle ?? undefined,
+    pillars: def.pillars,
+    ask: (prompt, label) => ctx.ask(prompt, label),
+    onProgress: (message) => emit(ctx, "publication:stage", {
+      id, stage: "research", state: "progress", message,
+    }),
+  });
 
-  issue.research = out;
-  issue.title = (out.title as string) || issue.title || issue.subject;
-  issue.thesis = (out.thesis as string) || "";
+  issue.research = report as unknown as Record<string, unknown>;
+  issue.title = report.title || issue.title || issue.subject;
+  issue.thesis = report.thesis || "";
   issue.status = "researched";
-  emit(ctx, "publication:stage", { id, stage: "research", state: "done" });
+  emit(ctx, "publication:stage", {
+    id, stage: "research", state: "done",
+    sources: Object.values(report.pillars).reduce((n, p) => n + p.sources.length, 0),
+    findings: Object.values(report.pillars).reduce((n, p) => n + p.findings.length, 0),
+  });
   return save(ctx, issue);
 }
 
@@ -499,7 +580,7 @@ export async function writePage(
       + " Write the visual brief so it belongs in that register."
     : "";
 
-  const research = issue.research as Record<string, unknown> | null;
+  const research = issue.research as unknown as ResearchReport | null;
   const takenBlock = taken.length
     ? "\nALREADY USED ON OTHER PAGES - do not open the same way, do not retell these:\n"
       + `${taken.join("\n")}\n\n`
@@ -524,8 +605,9 @@ export async function writePage(
     pagePillar: page.pillar,
     pagePremise: page.premise,
     neighbours: neighbours || "none",
-    pageResearch: JSON.stringify(research?.[page.pillar] ?? research).slice(0, 6000),
+    pageResearch: pageResearch(research, page.pillar),
     takenBlock,
+    blocksLine: blocksLine(def, page.type),
     wordsLow: lo,
     wordsHigh: hi,
     plateNote: def.rules.rectoOnlyType && page.type === def.rules.rectoOnlyType
@@ -539,7 +621,7 @@ export async function writePage(
     deck: (out.deck as string) || "",
     body: (out.body as string) ?? "",
     pullQuote: (out.pull_quote as string) || "",
-    furniture: (out.furniture as PublicationPage["furniture"]) ?? [],
+    furniture: keepAllowedBlocks(def, page.type, out.furniture),
     brief: {
       prompt: (out.image_prompt as string) || "",
       orientation: (out.image_orientation as string) || "landscape",

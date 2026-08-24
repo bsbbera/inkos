@@ -15,6 +15,8 @@ export interface WebSearchOptions {
   readonly apiKey?: string;
   readonly apiKeyEnv?: string;
   readonly baseUrl?: string;
+  /** Which service answers. Absent means Tavily, which is what this was. */
+  readonly provider?: "tavily" | "brave" | "custom";
 }
 
 /**
@@ -27,6 +29,7 @@ export async function searchWeb(
   maxResults = 5,
   options: WebSearchOptions = {},
 ): Promise<ReadonlyArray<SearchResult>> {
+  if (options.provider === "brave") return searchBrave(query, maxResults, options);
   const apiKey = options.apiKey
     || (options.apiKeyEnv ? process.env[options.apiKeyEnv] : undefined)
     || process.env.TAVILY_API_KEY;
@@ -93,4 +96,45 @@ export async function fetchUrl(url: string, maxChars = 8000): Promise<string> {
   }
 
   return text.slice(0, maxChars);
+}
+
+/**
+ * Search the web via Brave's Search API.
+ *
+ * Second provider rather than only Tavily: a research stage that can only run
+ * on one vendor's key is a research stage most machines cannot run at all.
+ * Brave takes its key in a header and pages differently, which is the whole
+ * reason this is its own function instead of a base-URL swap.
+ */
+async function searchBrave(
+  query: string,
+  maxResults: number,
+  options: WebSearchOptions,
+): Promise<ReadonlyArray<SearchResult>> {
+  const apiKey = options.apiKey
+    || (options.apiKeyEnv ? process.env[options.apiKeyEnv] : undefined)
+    || process.env.BRAVE_API_KEY;
+  if (!apiKey) {
+    throw new Error(`${options.apiKeyEnv ?? "BRAVE_API_KEY"} not set. Configure Studio research search or set the env var to enable web search.`);
+  }
+
+  const base = options.baseUrl?.trim() || "https://api.search.brave.com/res/v1/web/search";
+  const url = `${base}?q=${encodeURIComponent(query)}&count=${Math.max(1, Math.min(20, maxResults))}`;
+  const res = await fetch(url, {
+    headers: { "Accept": "application/json", "X-Subscription-Token": apiKey },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) {
+    throw new Error(`Brave search failed: ${res.status} ${await res.text().catch(() => "")}`);
+  }
+
+  const data = await res.json() as {
+    web?: { results?: Array<{ title?: string; url?: string; description?: string }> };
+  };
+  return (data.web?.results ?? []).slice(0, maxResults).map((r) => ({
+    title: r.title ?? "",
+    url: r.url ?? "",
+    // Brave returns its snippets with <strong> around the matched terms.
+    snippet: (r.description ?? "").replace(/<[^>]*>/g, ""),
+  }));
 }
