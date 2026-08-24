@@ -17,7 +17,9 @@ export type EndpointGroup =
   | "china"
   | "aggregator"
   | "local"
-  | "codingPlan";
+  | "codingPlan"
+  /** Agent CLIs installed on this machine, served by Quire's shim. */
+  | "cli";
 
 export interface InkosModel {
   /** API 请求体里实际用的 model id（可能带斜线如 'deepseek/deepseek-v3'）。UI 也直接用 id 显示 */

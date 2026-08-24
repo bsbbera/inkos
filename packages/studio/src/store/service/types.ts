@@ -3,7 +3,8 @@ export type EndpointGroup =
   | "china"
   | "aggregator"
   | "local"
-  | "codingPlan";
+  | "codingPlan"
+  | "cli";
 
 export interface ServiceInfo {
   readonly service: string;

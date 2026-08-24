@@ -2,6 +2,9 @@ import type { EndpointGroup } from "../store/service/types";
 import { tr } from "../lib/app-language";
 
 export const GROUP_ORDER: ReadonlyArray<EndpointGroup> = [
+  // First: these need no key and no network, so they are the ones most likely
+  // to work on a fresh install.
+  "cli",
   "aggregator",
   "overseas",
   "china",
@@ -17,12 +20,17 @@ const GROUP_LABELS: Record<EndpointGroup, { zh: string; en: string }> = {
   aggregator: { zh: "聚合 API", en: "Aggregator APIs" },
   local: { zh: "本地 / 订阅", en: "Local / Subscription" },
   codingPlan: { zh: "CodingPlan", en: "CodingPlan" },
+  cli: { zh: "本机 CLI", en: "Installed CLIs" },
 };
 
 const GROUP_DESCRIPTIONS: Partial<Record<EndpointGroup, { zh: string; en: string }>> = {
   aggregator: {
     zh: "聚合国内外主流模型，适合用一个 API Key 接入多模型的场景。",
     en: "Aggregates mainstream models from multiple vendors — access many models with one API key.",
+  },
+  cli: {
+    zh: "使用本机已安装的 Agent CLI，无需 API Key。",
+    en: "Uses the agent CLIs already installed on this machine. No API key, nothing leaves your computer.",
   },
 };
 
@@ -32,6 +40,7 @@ const GROUP_SHORT_LABELS: Record<EndpointGroup, { zh: string; en: string }> = {
   aggregator: { zh: "聚合", en: "Aggregator" },
   local: { zh: "本地", en: "Local" },
   codingPlan: { zh: "CodingPlan", en: "CodingPlan" },
+  cli: { zh: "CLI", en: "CLI" },
 };
 
 export function getGroupLabel(group: EndpointGroup): string {
