@@ -2213,7 +2213,7 @@ export function createTranslationCreateTool(
 
 const PublicationCreateParams = Type.Object({
   type: Type.String({
-    description: "Publication type id, e.g. magazine or cookbook. Ask the user if unclear.",
+    description: "Publication type id, e.g. magazine. Ask the user if unclear.",
   }),
   subject: Type.String({
     description: "What the publication is about.",
@@ -2331,7 +2331,7 @@ export function createPublicationCreateTool(
   return {
     name: "publication_create",
     description:
-      "Create a publication — a magazine, a cookbook, or any other installed publication type — "
+      "Create a publication — a magazine, or any other installed publication type — "
       + "from a subject. Runs research, builds the flatplan, then writes every page, checking each "
       + "stage against that publication type's own structure law. Stops before art and PDF, which "
       + "need the user to approve the copy first.",

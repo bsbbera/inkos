@@ -5,7 +5,7 @@
  * PDF — with the magazine taken out of it. The stages, the approval gates, the
  * queue and resume semantics and the structure law are all still here; what
  * used to be hardcoded (six pillars, plates on rectos, three densities) now
- * comes from a PublicationDefinition, so a cookbook runs the same code with
+ * comes from a PublicationDefinition, so a second type runs the same code with
  * different law.
  *
  * Deliberately not a second engine beside InkOS: the model call arrives as an
