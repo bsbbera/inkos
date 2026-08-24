@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COVER_PROVIDER_PRESETS, type CoverProviderId } from "../llm/cover-providers.js";
 
 // C1 (v2.0.0 breaking): `maxTokens` 字段已被 providers bank 接管；zod 用 strip mode 静默丢弃老配置里的 `maxTokens`。
 const LLMServiceEntrySchema = z.object({
@@ -11,8 +12,15 @@ const LLMServiceEntrySchema = z.object({
   stream: z.boolean().optional(),
 });
 
+// Derived from the preset list rather than written out again. It was written
+// out again, and adding a fourth provider left this enum behind: picking it in
+// Studio wrote a config Studio then refused to load, so the workbench would not
+// start at all until the file was edited by hand. One list, one truth.
+const COVER_SERVICE_IDS = COVER_PROVIDER_PRESETS.map((preset) => preset.service) as
+  [CoverProviderId, ...CoverProviderId[]];
+
 const LLMCoverConfigSchema = z.object({
-  service: z.enum(["kkaiapi", "openai", "google"]),
+  service: z.enum(COVER_SERVICE_IDS),
   model: z.string().min(1),
   baseUrl: z.string().url().optional(),
 }).optional();
