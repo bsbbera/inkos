@@ -140,6 +140,7 @@ import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "n
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
+import { isServiceAvailable } from "./service-availability.js";
 import { buildStudioBookConfig } from "./book-create.js";
 import {
   deleteStudioTaskSnapshot,
@@ -3508,8 +3509,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         label: ep.label,
         group: ep.group,
         apiKeyOptional,
-        connected: Boolean(secrets.services[ep.id]?.apiKey)
-          || (apiKeyOptional && configuredBankServices.has(ep.id)),
+        connected: isServiceAvailable({
+          group: ep.group,
+          apiKeyOptional,
+          hasApiKey: Boolean(secrets.services[ep.id]?.apiKey),
+          isConfigured: configuredBankServices.has(ep.id),
+        }),
       };
     }).sort(compareServiceListItems);
 
@@ -3883,7 +3888,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           provider: resolveServiceProviderFamily(ep.id) ?? "openai",
           baseUrl: resolveServicePreset(ep.id)?.baseUrl ?? ep.baseUrl,
         });
-        return Boolean(secrets.services[ep.id]?.apiKey) || (optional && configured);
+        return isServiceAvailable({
+          group: ep.group,
+          apiKeyOptional: optional,
+          hasApiKey: Boolean(secrets.services[ep.id]?.apiKey),
+          isConfigured: configured,
+        });
       });
 
     const groups = endpoints.map((ep) => {
