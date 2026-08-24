@@ -679,6 +679,10 @@ describe("runAgentSession cache — bookId switch", () => {
     expect(agentInstances[0].state.tools.map((tool: any) => tool.name)).toEqual([
       "propose_action",
       "research_web",
+      // Quire's own: local image generation is a tool the model may reach for
+      // freely. Creating a publication is not — it goes through propose_action
+      // like every other production task.
+      "comfy_generate",
       "ingest_material",
       "retrieve_material",
       "import_chapters",
@@ -818,6 +822,10 @@ describe("runAgentSession cache — bookId switch", () => {
     expect(agentInstances[0].state.tools.map((tool: any) => tool.name)).toEqual([
       "propose_action",
       "research_web",
+      // Quire's own: local image generation is a tool the model may reach for
+      // freely. Creating a publication is not — it goes through propose_action
+      // like every other production task.
+      "comfy_generate",
       "ingest_material",
       "retrieve_material",
       "use_skill",

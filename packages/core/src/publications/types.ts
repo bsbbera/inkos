@@ -34,14 +34,28 @@ export interface PublicationRules {
 }
 
 export interface PublicationPrompts {
-  /** Voice and register. Prefixed to every other prompt. */
+  /**
+   * Voice and register. Prefixed to every other prompt.
+   *
+   * Kept as the fallback rather than the source: `voiceSkill` names a skill
+   * that carries the real thing, so taste can be edited where taste lives
+   * instead of inside a definition file. A missing skill degrades to this.
+   */
   readonly voice: string;
+  /** Skill id to take the voice from, e.g. mag-content. */
+  readonly voiceSkill?: string;
   /** The research axes this publication is built from. */
   readonly pillars: string;
   /** Stage prompts. Each must ask for JSON only. */
   readonly research: string;
   readonly plan: string;
   readonly page: string;
+  /**
+   * The design decision. Optional: a type that says nothing gets the generic
+   * one, so adding a publication type does not mean writing an art-direction
+   * brief before it can render anything.
+   */
+  readonly design?: string;
 }
 
 export interface PublicationDefinition {
@@ -75,6 +89,12 @@ export interface PublicationDefinition {
    * which is law from the definition rather than a hope in a prompt.
    */
   readonly blocks?: PublicationBlocks;
+  /**
+   * What to ask before a run starts. Declared here rather than hardcoded per
+   * type in the UI, for the same reason the page grammar is: a new definition
+   * should be able to ask its own questions without anyone editing a form.
+   */
+  readonly intake?: readonly IntakeField[];
   readonly prompts: PublicationPrompts;
 
   /** Whether the art stage exists at all for this type. */
@@ -84,6 +104,16 @@ export interface PublicationDefinition {
 
   /** Where issues of this type are stored, relative to the workspace. */
   readonly outDir: string;
+}
+
+export interface IntakeField {
+  /** subject | angle | extent | notes — what the runner does with the answer. */
+  readonly id: string;
+  readonly label: string;
+  /** Asked verbatim when the field is missing, so the wording lives with the type. */
+  readonly question: string;
+  /** Only a required field blocks. Everything else defaults and can be skipped. */
+  readonly required?: boolean;
 }
 
 export interface PublicationBlocks {
@@ -184,6 +214,12 @@ export function validateDefinition(value: unknown): string[] {
   if (rules?.rectoOnlyType && Array.isArray(def.archetypes)
     && !def.archetypes.includes(rules.rectoOnlyType)) {
     problems.push(`rectoOnlyType names unknown archetype ${rules.rectoOnlyType}`);
+  }
+
+  for (const field of def.intake ?? []) {
+    if (!field?.id || !field.question) {
+      problems.push("every intake field needs an id and a question");
+    }
   }
 
   const blocks = def.blocks;

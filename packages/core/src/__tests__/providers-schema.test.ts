@@ -125,9 +125,15 @@ describe("providers structural integrity", () => {
     expect(getEndpoint("newapi")?.baseUrl).toBe("");
   });
 
-  it("B4：总 provider 数 = 31（不含 CodingPlan 分组）", () => {
+  // 31 upstream + Quire's four agent CLIs (claude, codex, devin, antigravity).
+  it("B4：总 provider 数 = 35（不含 CodingPlan 分组）", () => {
     const nonCoding = getAllEndpoints().filter((p) => p.group !== "codingPlan");
-    expect(nonCoding.length).toBe(31);
+    expect(nonCoding.length).toBe(35);
+  });
+
+  it("每个 CLI provider 都在 endpoint bank 里", () => {
+    const ids = getAllEndpoints().filter((p) => p.group === "cli").map((p) => p.id);
+    expect(ids.sort()).toEqual(["antigravityCli", "claudeCli", "codexCli", "devinCli"]);
   });
 
   it("B6：CodingPlan 8 个 provider 全部收录", () => {
@@ -141,8 +147,8 @@ describe("providers structural integrity", () => {
     }
   });
 
-  it("B6：总 provider 数 = 39 (31 base + 8 CodingPlan)", () => {
-    expect(getAllEndpoints().length).toBe(39);
+  it("B6：总 provider 数 = 43 (35 base + 8 CodingPlan)", () => {
+    expect(getAllEndpoints().length).toBe(43);
   });
 
   it("B6：CodingPlan provider 都走 anthropic-messages", () => {

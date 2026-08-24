@@ -23,6 +23,7 @@ import { generateShortFictionCover, runShortFictionProduction } from "../pipelin
 import { runInteractiveFilmCreation, runScriptCreation, runStoryboardCreation } from "../pipeline/script-storyboard-runner.js";
 import { createIssue, run as runPublication, type RunnerContext } from "../pipeline/publication-runner.js";
 import { findPublicationDefinition, loadPublicationRegistry } from "../publications/registry.js";
+import type { PublicationDefinition } from "../publications/types.js";
 import { PublicationAgent } from "../agents/publication.js";
 import { createTranslationProjectFromFile } from "../translation/index.js";
 import { runResearchReport } from "../agents/researcher.js";
@@ -232,6 +233,7 @@ const ProposeActionParams = Type.Object({
     Type.Literal("storyboard_create"),
     Type.Literal("interactive_film_create"),
     Type.Literal("translation_create"),
+    Type.Literal("publication_create"),
     Type.Literal("draft_structure"),
     Type.Literal("connect_choice"),
     Type.Literal("remove_node"),
@@ -358,6 +360,14 @@ const ProposeActionParams = Type.Object({
     projectId: Type.Optional(Type.String({ description: "Optional output id under storyboards/." })),
     outDir: Type.Optional(Type.String({ description: "Optional project-relative output directory. Default storyboards/." })),
   }, { description: "Structured execution args for action=storyboard_create." })),
+  publicationCreate: Type.Optional(Type.Object({
+    type: Type.String({ description: "Installed publication type id, e.g. magazine." }),
+    subject: Type.String({ description: "Confirmed subject of the issue." }),
+    angle: Type.Optional(Type.String({ description: "Confirmed angle. Ask for one rather than inventing it: the angle is what stops forty pages being an encyclopedia entry." })),
+    extent: Type.Optional(Type.Number({ description: "Confirmed page count. Omit to use the type's own default." })),
+    notes: Type.Optional(Type.String({ description: "The user's own material, corrections, or sources, and the text of anything they attached." })),
+    stopAt: Type.Optional(Type.String({ description: "research | plan | write. Default write. Art and PDF are separately gated on approval of the copy." })),
+  }, { description: "Structured execution args for action=publication_create." })),
   interactiveFilmCreate: Type.Optional(Type.Object({
     title: Type.String({ description: "Confirmed interactive-film project title." }),
     sourceKind: Type.Optional(Type.String({ description: "Source type, e.g. novel excerpt, script, outline, original idea." })),
@@ -454,6 +464,7 @@ function proposedActionSessionKind(action: ProposeActionParamsType["action"]): "
   if (action === "storyboard_create") return "storyboard";
   if (action === "interactive_film_create") return "interactive-film";
   if (action === "translation_create") return "chat";
+  if (action === "publication_create") return "chat";
   if (action === "draft_structure" || action === "connect_choice" || action === "remove_node") return "interactive-film-authoring";
   if (action === "fanfic_init" || action === "continuation_import" || action === "spinoff_create" || action === "style_imitation") return "chat";
   return "short";
@@ -485,6 +496,8 @@ function proposedActionFallbackTitle(action: ProposeActionParamsType["action"], 
       return isZh ? "创建互动影游" : "Create interactive film";
     case "translation_create":
       return isZh ? "创建翻译项目" : "Create translation project";
+    case "publication_create":
+      return isZh ? "创建刊物" : "Create a publication";
     case "draft_structure":
       return isZh ? "生成故事结构" : "Draft story structure";
     case "connect_choice":
@@ -597,6 +610,10 @@ function proposedActionPayload(
   if (params.action === "style_imitation") {
     const imitationCreate = compactObject(params.imitationCreate);
     if (imitationCreate) payload.imitationCreate = imitationCreate;
+  }
+  if (params.action === "publication_create") {
+    const publicationCreate = compactObject(params.publicationCreate);
+    if (publicationCreate) payload.publicationCreate = publicationCreate as ActionPayload["publicationCreate"];
   }
   return Object.keys(payload).length > 0 ? payload : undefined;
 }
@@ -2227,6 +2244,12 @@ const PublicationCreateParams = Type.Object({
   notes: Type.Optional(Type.String({
     description: "The user's own material: sources, corrections, things only they know.",
   })),
+  attachments: Type.Optional(Type.Array(Type.String(), {
+    description:
+      "Project-relative paths to files the user supplied — notes, a PDF, images. Text is "
+      + "extracted and treated as the user's own material with provenance; images are kept "
+      + "as reference for the design stage.",
+  })),
   stopAt: Type.Optional(Type.Union([
     Type.Literal("research"),
     Type.Literal("plan"),
@@ -2239,6 +2262,64 @@ const PublicationCreateParams = Type.Object({
 });
 
 type PublicationCreateParamsType = Static<typeof PublicationCreateParams>;
+
+/**
+ * Ask before starting, but only about what the type says it must know.
+ *
+ * A run costs research, a flatplan and a page-write per page. Guessing an
+ * angle because none was given produces forty pages arguing nothing, and the
+ * user finds out at the end. Only required fields block; everything else has a
+ * default and can be skipped.
+ */
+function missingIntake(
+  definition: PublicationDefinition,
+  params: PublicationCreateParamsType,
+): string[] {
+  const given: Record<string, unknown> = {
+    subject: params.subject,
+    angle: params.angle,
+    extent: params.extent,
+    notes: params.notes || params.attachments?.length,
+  };
+  return (definition.intake ?? [])
+    .filter((field) => field.required && !String(given[field.id] ?? "").trim())
+    .map((field) => field.question);
+}
+
+/**
+ * Pull the text out of whatever the user attached.
+ *
+ * Reuses the material ingest that already handles PDFs and web pages rather
+ * than growing a second extractor. An image has no text to take, so it is kept
+ * as a path for the design stage to look at later.
+ */
+async function readAttachments(
+  projectRoot: string,
+  paths: ReadonlyArray<string>,
+): Promise<{ text: string; images: string[]; problems: string[] }> {
+  const { ingestMaterial } = await import("../materials/ingest.js");
+  const parts: string[] = [];
+  const images: string[] = [];
+  const problems: string[] = [];
+  for (const filePath of paths) {
+    if (/\.(png|jpe?g|webp|gif|tiff?)$/i.test(filePath)) {
+      images.push(filePath);
+      continue;
+    }
+    try {
+      const asset = await ingestMaterial(projectRoot, {
+        sourceKind: "file", filePath, purpose: "research",
+      });
+      const body = await readFile(join(projectRoot, asset.markdownPath), "utf-8")
+        .catch(() => asset.excerpt);
+      parts.push(`--- from ${asset.title} (you supplied this) ---
+${body}`);
+    } catch (error) {
+      problems.push(`${filePath}: ${(error as Error).message}`);
+    }
+  }
+  return { text: parts.join("\n\n"), images, problems };
+}
 
 // ---------------------------------------------------------------------------
 // Local image generation (comfy_generate)
@@ -2367,14 +2448,33 @@ export function createPublicationCreateTool(
         shimUrl: `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
       };
 
+      const unanswered = missingIntake(definition, params);
+      if (unanswered.length) {
+        // Not an error in the run: an error before it, so nothing is spent.
+        throw new Error(
+          `${definition.label} needs these answered before it starts:\n- `
+          + unanswered.join("\n- ")
+          + "\n\nAsk the user, then call this again with the answers.",
+        );
+      }
+
+      const attached = params.attachments?.length
+        ? await readAttachments(projectRoot, params.attachments)
+        : { text: "", images: [] as string[], problems: [] as string[] };
+
       const created = await createIssue(ctx, {
         subject: params.subject,
         angle: params.angle,
         extent: params.extent,
       });
-      if (params.notes) {
+      const notes = [params.notes, attached.text].filter(Boolean).join("\n\n");
+      if (notes) {
         const { setNotes } = await import("../pipeline/publication-runner.js");
-        await setNotes(ctx, created.id, params.notes);
+        await setNotes(ctx, created.id, notes);
+      }
+      if (attached.images.length) {
+        const { setReferenceImages } = await import("../pipeline/publication-runner.js");
+        await setReferenceImages(ctx, created.id, attached.images);
       }
 
       const issue = await runPublication(ctx, created.id, { stopAt: params.stopAt ?? "write" });

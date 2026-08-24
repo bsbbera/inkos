@@ -883,7 +883,12 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, researchTool, publicationTool, imageTool, materialTool, materialRetrievalTool, importChaptersTool];
+    // Behind the same gate as every other production task. It used to sit in
+    // the general chat list, so forty pages of research, planning and writing
+    // could start from an offhand sentence with nothing shown first — the one
+    // tool of its size that never asked.
+    if (isConfirmed("publication_create")) return [publicationTool, imageTool];
+    return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool, importChaptersTool];
   }
 
   if (params.sessionKind === "short") {
@@ -998,7 +1003,8 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         workerSkills: params.workerSkills,
       })];
     }
-    return [proposalTool, researchTool, publicationTool, imageTool, materialTool, materialRetrievalTool];
+    if (isConfirmed("publication_create")) return [publicationTool, imageTool];
+    return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool];
   }
 
   if (!params.bookId) {

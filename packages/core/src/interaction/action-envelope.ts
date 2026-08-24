@@ -32,6 +32,7 @@ export const RequestedIntentSchema = z.enum([
   "storyboard_create",
   "interactive_film_create",
   "translation_create",
+  "publication_create",
   "draft_structure",
   "connect_choice",
   "remove_node",
@@ -226,6 +227,23 @@ export const ImitationCreateActionPayloadSchema = z.object({
   { message: "imitationCreate requires referenceText or referencePath" },
 );
 
+/**
+ * A publication run, held for confirmation like every other production task.
+ *
+ * It used to start the moment the tool was called: forty pages of research,
+ * planning and writing, with nothing shown first. Every book-shaped tool gets
+ * a card and an editable summary before it spends anything; a magazine costs
+ * more than most of them and had none.
+ */
+export const PublicationCreateActionPayloadSchema = z.object({
+  type: z.string().min(1).optional(),
+  subject: z.string().min(1).optional(),
+  angle: z.string().min(1).optional(),
+  extent: z.number().int().min(1).optional(),
+  notes: z.string().min(1).optional(),
+  stopAt: z.enum(["research", "plan", "write"]).optional(),
+}).strict();
+
 export const ActionPayloadSchema = z.object({
   createBook: CreateBookActionPayloadSchema.optional(),
   writeNext: WriteNextActionPayloadSchema.optional(),
@@ -240,6 +258,7 @@ export const ActionPayloadSchema = z.object({
   continuationImport: ContinuationImportActionPayloadSchema.optional(),
   spinoffCreate: SpinoffCreateActionPayloadSchema.optional(),
   imitationCreate: ImitationCreateActionPayloadSchema.optional(),
+  publicationCreate: PublicationCreateActionPayloadSchema.optional(),
   draftStructure: z.object({
     projectId: z.string().min(1).optional(),
     instruction: z.string().default(""),

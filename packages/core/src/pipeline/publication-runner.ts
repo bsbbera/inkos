@@ -23,6 +23,13 @@ import {
   researchPublication,
   type ResearchReport,
 } from "./publication-research.js";
+import { resolveVoice } from "./publication-voice.js";
+import {
+  DEFAULT_DESIGN_PROMPT,
+  checkSpec,
+  contrast,
+  type DesignSpec,
+} from "./publication-design.js";
 
 /* ------------------------------------------------------------------- types */
 
@@ -69,6 +76,8 @@ export interface DesignWorld {
 export interface PublicationDesign {
   sections: DesignWorld[];
   fixed?: { folio?: string; trim?: string; grid?: string; divider?: string };
+  /** What the design stage decided: the one source both renderers read. */
+  spec?: DesignSpec | null;
 }
 
 export interface PublicationIssue {
@@ -84,6 +93,8 @@ export interface PublicationIssue {
   createdAt: string;
   updatedAt?: string;
   notes?: string;
+  /** Images the user attached at intake, for the design stage. */
+  referenceImages?: string[];
   research: Record<string, unknown> | null;
   sections: PublicationSection[];
   pages: PublicationPage[];
@@ -91,6 +102,8 @@ export interface PublicationIssue {
   designPrefs?: { register: string; technique: string; notes: string };
   warnings?: string[];
   approved?: { at: string; by: string } | null;
+  /** Separate from `approved`: the copy and the design are two decisions. */
+  designApproved?: { at: string; by: string } | null;
   build?: { pdf?: string | null; at?: string };
 }
 
@@ -215,6 +228,17 @@ export async function createIssue(
     sections: [],
     pages: [],
   });
+}
+
+/** Reference images the user attached, kept for the design stage to look at. */
+export async function setReferenceImages(
+  ctx: RunnerContext,
+  id: string,
+  paths: ReadonlyArray<string>,
+): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  issue.referenceImages = [...paths];
+  return save(ctx, issue);
 }
 
 export async function setNotes(
@@ -463,6 +487,28 @@ function keepAllowedBlocks(
 
 /* ------------------------------------------------------------------ stages */
 
+/**
+ * The voice for this run, taken from the skill the definition names.
+ *
+ * Resolved per stage rather than once at the top: a stage may be run on its
+ * own — a re-write of one page, a design decision days later — and each of
+ * those should see the skill as it is now, not as it was when the issue was
+ * created. Any complaint about the skill is surfaced as a warning on the
+ * issue, so a run that quietly changed voice can be explained afterwards.
+ */
+async function voiceFor(ctx: RunnerContext, issue: PublicationIssue): Promise<string> {
+  const { voice, diagnostic } = await resolveVoice({
+    projectRoot: ctx.projectRoot,
+    fallback: ctx.definition.prompts.voice,
+    skillId: ctx.definition.prompts.voiceSkill,
+  });
+  if (diagnostic) {
+    issue.warnings = [...new Set([...(issue.warnings ?? []), diagnostic])];
+    emit(ctx, "publication:stage", { id: issue.id, stage: "voice", state: "warn", message: diagnostic });
+  }
+  return voice;
+}
+
 const notesBlock = (issue: PublicationIssue) =>
   issue.notes ? `THE EDITOR'S OWN NOTES (these outrank your research):\n${issue.notes}` : "";
 
@@ -510,7 +556,7 @@ export async function runPlan(ctx: RunnerContext, id: string): Promise<Publicati
   emit(ctx, "publication:stage", { id, stage: "plan", state: "start" });
 
   const out = await ctx.ask(renderTemplate(def.prompts.plan, {
-    voice: def.prompts.voice,
+    voice: await voiceFor(ctx, issue),
     title: issue.title,
     subject: issue.subject,
     angleSuffix: issue.angle ? ` / ${issue.angle}` : "",
@@ -590,7 +636,7 @@ export async function writePage(
     : "";
 
   const out = await ctx.ask(renderTemplate(def.prompts.page, {
-    voice: def.prompts.voice,
+    voice: await voiceFor(ctx, issue),
     title: issue.title,
     thesis: issue.thesis,
     notes: notesBlock(issue),
@@ -711,6 +757,106 @@ export async function artPage(
   return page;
 }
 
+/* ------------------------------------------------------------------ design */
+
+/** A page as the art director sees it: what is actually on it, not what was planned. */
+function pageDigest(issue: PublicationIssue): string {
+  return issue.pages.map((p) => {
+    const blocks = (p.furniture ?? []).map((f) => f.kind);
+    return `p${p.n} [${p.type}] "${p.title}" — ${p.words ?? 0} words`
+      + (p.deck ? `, deck: "${String(p.deck).slice(0, 80)}"` : "")
+      + (blocks.length ? `, blocks: ${blocks.join(", ")}` : ", no blocks")
+      + (p.brief?.prompt ? `, image: ${p.brief.orientation}` : ", no image");
+  }).join("\n");
+}
+
+/**
+ * Decide the design, from the finished copy.
+ *
+ * Deliberately gated on the copy being approved rather than merely written:
+ * directing a design at a draft the editor is still cutting produces a spec
+ * for a publication that will not exist.
+ */
+export async function runDesign(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+  const def = ctx.definition;
+  if (!def.needsImages && !def.needsPdf) {
+    throw new Error(`${def.label} renders nothing, so it has no design to decide`);
+  }
+
+  const issue = await readIssue(ctx, id);
+  requireApproval(issue, "design");
+  const unwritten = issue.pages.filter((p) => p.body === null || p.body === undefined);
+  if (unwritten.length) {
+    throw new Error(`design has nothing to read: ${unwritten.length} pages are unwritten`);
+  }
+
+  issue.status = "designing";
+  await save(ctx, issue);
+  emit(ctx, "publication:stage", { id, stage: "design", state: "start" });
+
+  const template = def.prompts.design || DEFAULT_DESIGN_PROMPT;
+  const out = await ctx.ask(renderTemplate(template, {
+    voice: await voiceFor(ctx, issue),
+    title: issue.title || issue.subject,
+    subject: issue.subject,
+    thesis: issue.thesis,
+    extent: String(issue.extent),
+    notes: notesBlock(issue),
+    referenceNote: issue.referenceImages?.length
+      ? `The editor attached ${issue.referenceImages.length} reference image(s): `
+        + `${issue.referenceImages.join(", ")}. Direct towards them.`
+      : "",
+    pageDigest: pageDigest(issue),
+  }), "design");
+
+  const spec = out as unknown as DesignSpec;
+  const problems = checkSpec(spec, issue.pages.map((p) => p.n));
+  // Print is less forgiving than a backlit screen, which is why the style law
+  // already sets 7:1 for ink on paper. A palette that fails it fails here,
+  // before an Affinity document is built out of it.
+  if (spec?.palette?.ink && spec.palette.paper) {
+    const ratio = contrast(spec.palette.ink, spec.palette.paper);
+    if (ratio && ratio < 7) {
+      problems.push(`ink on paper is only ${ratio.toFixed(1)}:1 — body copy needs 7:1 in print`);
+    }
+  }
+  if (problems.length) {
+    emit(ctx, "publication:stage", { id, stage: "design", state: "error" });
+    throw new Error(`the design spec does not hold up:\n- ${problems.join("\n- ")}`);
+  }
+
+  issue.design = { ...(issue.design ?? { sections: [] }), spec };
+  // A new spec is a new decision, so any previous sign-off on the old one goes.
+  issue.designApproved = null;
+  issue.status = "designed";
+  emit(ctx, "publication:stage", { id, stage: "design", state: "done" });
+  return save(ctx, issue);
+}
+
+export async function approveDesign(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  if (!issue.design?.spec) throw new Error("there is no design to approve — run the design stage first");
+  issue.designApproved = { at: new Date().toISOString(), by: "editor" };
+  emit(ctx, "publication:issue", { id, designApproved: true });
+  return save(ctx, issue);
+}
+
+export async function unapproveDesign(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  issue.designApproved = null;
+  emit(ctx, "publication:issue", { id, designApproved: false });
+  return save(ctx, issue);
+}
+
+function requireDesignApproval(issue: PublicationIssue, what: string): void {
+  if (!issue.design?.spec) {
+    throw new Error(`${what} needs a design — run the design stage after approving the copy`);
+  }
+  if (!issue.designApproved) {
+    throw new Error(`${what} needs the design approved first: it is a separate decision from the copy`);
+  }
+}
+
 /* ------------------------------------------------------------------- build */
 
 /**
@@ -726,7 +872,8 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "build");
-  const designProblems = checkDesign(issue.design);
+  requireDesignApproval(issue, "build");
+  const designProblems = checkSpec(issue.design?.spec, issue.pages.map((p) => p.n));
   if (designProblems.length) {
     throw new Error(`the design does not pass its own law:\n- ${designProblems.join("\n- ")}`);
   }
