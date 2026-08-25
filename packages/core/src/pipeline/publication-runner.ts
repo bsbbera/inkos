@@ -28,6 +28,7 @@ import {
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
   contrast,
+  designReferences,
   type DesignSpec,
 } from "./publication-design.js";
 
@@ -802,10 +803,13 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     thesis: issue.thesis,
     extent: String(issue.extent),
     notes: notesBlock(issue),
-    referenceNote: issue.referenceImages?.length
-      ? `The editor attached ${issue.referenceImages.length} reference image(s): `
-        + `${issue.referenceImages.join(", ")}. Direct towards them.`
-      : "",
+    referenceNote: [
+      await designReferences(ctx.projectRoot),
+      issue.referenceImages?.length
+        ? `The editor also attached ${issue.referenceImages.length} reference image(s): `
+          + `${issue.referenceImages.join(", ")}.`
+        : "",
+    ].filter(Boolean).join("\n\n"),
     pageDigest: pageDigest(issue),
   }), "design");
 

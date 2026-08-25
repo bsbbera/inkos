@@ -160,3 +160,46 @@ Return ONLY JSON:
   "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": ""}}
 }
 `.trim();
+
+/**
+ * Design precedent the editor has collected.
+ *
+ * Every `.md` under `<project>/design-references/` is read and handed to the
+ * design stage as **precedent**, on exactly the terms the voice skill is handed
+ * to the writer: inspiration, not law. A reference set that happens to contain
+ * no sidebars is not an argument against sidebars, so nothing here is phrased
+ * as a rule and nothing is forbidden by it.
+ *
+ * Never throws. A missing folder is the normal case for a fresh project.
+ */
+export async function designReferences(
+  projectRoot: string,
+  maxChars = 9000,
+): Promise<string> {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const dir = `${projectRoot}/design-references`;
+  let names: string[];
+  try {
+    names = (await readdir(dir)).filter((n) => n.toLowerCase().endsWith(".md")).sort();
+  } catch { return ""; }
+  if (!names.length) return "";
+
+  const parts: string[] = [];
+  for (const name of names) {
+    try { parts.push(`--- ${name} ---\n${await readFile(`${dir}/${name}`, "utf-8")}`); }
+    catch { /* one unreadable reference does not cost the others */ }
+  }
+  const body = parts.join("\n\n").slice(0, maxChars).trim();
+  if (!body) return "";
+
+  return [
+    "DESIGN PRECEDENT THE EDITOR HAS COLLECTED.",
+    "Read it the way an art director reads a mood board: it shows what has",
+    "worked, and how this editor sees a page. It is not a template, not a rule",
+    "set, and nothing in it is forbidden by omission — a reference that carries",
+    "no sidebars is not an argument against sidebars. Take the thinking, then",
+    "decide this publication on its own terms.",
+    "",
+    body,
+  ].join("\n");
+}
