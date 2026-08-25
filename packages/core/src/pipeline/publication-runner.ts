@@ -1203,12 +1203,26 @@ export async function revisePage(
   }
 
   const before = page.body;
+  const revised = (out.furniture
+    ? keepAllowedBlocks(ctx.definition, page.type, out.furniture)
+    : undefined) ?? [];
+  if (out.furniture && !revised.length && (page.furniture ?? []).length) {
+    emit(ctx, "publication:stage", {
+      id, stage: "revise", state: "warn", page: page.n,
+      message: "the revise returned no usable furniture; the page keeps the blocks it had",
+    });
+  }
   Object.assign(page, {
     title: (out.title as string) || page.title,
     deck: (out.deck as string) ?? page.deck,
     body,
     pullQuote: (out.pull_quote as string) ?? page.pullQuote,
-    furniture: out.furniture ? keepAllowedBlocks(ctx.definition, page.type, out.furniture) : page.furniture,
+    // An empty array is not an instruction to delete. A revise that omits the
+    // furniture, or returns it in a shape keepAllowedBlocks rejects, wiped
+    // every box on the page — which happened on the first live run and took
+    // three good blocks off p2. Losing content is the one outcome a revise
+    // must not have, so the old blocks stand unless real ones replace them.
+    furniture: revised.length ? revised : page.furniture,
     brief: out.image_prompt
       ? { prompt: String(out.image_prompt), orientation: page.brief?.orientation ?? "landscape" }
       : page.brief,

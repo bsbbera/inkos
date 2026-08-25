@@ -129,6 +129,21 @@ describe("the audit fixes what it finds", () => {
     expect(asked.filter((t) => t === "revise-1")).toHaveLength(1);
   });
 
+  // Losing content is the one outcome a revise must not have. The first live
+  // run returned no usable furniture for p2 and took three good blocks off the
+  // page; an empty array is not an instruction to delete.
+  it("keeps the blocks the page had when the revise returns none", async () => {
+    await seed({
+      pages: [{
+        n: 1, title: "Latent", type: "feature", density: "heavy", section: 1,
+        pillar: "chemistry", premise: "p", body: BODY,
+        furniture: [{ kind: "stat", text: "0.01 megapixels" }],
+      }],
+    } as never);
+    await runAudit(ctxWith(faultThenClean()), "issue-a", { rounds: 1 });
+    expect((await read()).pages[0].furniture).toEqual([{ kind: "stat", text: "0.01 megapixels" }]);
+  });
+
   it("reports without rewriting when asked not to revise", async () => {
     await seed();
     const issue = await runAudit(ctxWith(faultThenClean()), "issue-a", { revise: false });
