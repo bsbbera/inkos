@@ -753,8 +753,17 @@ export {
   startQueue as startPublicationQueue, stopQueue as stopPublicationQueue,
   queueState as publicationQueueState, outstanding as outstandingPublicationPages,
   run as runPublication,
+  approveDesign as approvePublicationDesign, unapproveDesign as unapprovePublicationDesign,
+  runAudit as runPublicationAudit, runDeslop as runPublicationDeslop,
+  revisePage as revisePublicationPage, renderPage as renderPublicationPage,
+  placePage as placePublicationPage, runDesign as runPublicationDesign,
 } from "./pipeline/publication-runner.js";
+export { openIssueContext as openPublicationIssue, listIssueIds as listPublicationIssueIds } from "./pipeline/publication-context.js";
+export { createPublicationAsk } from "./pipeline/publication-session.js";
+export { PUBLICATION_DIMENSIONS } from "./pipeline/publication-review.js";
 export type {
   PublicationIssue, PublicationPage, PublicationSection, PublicationSummary,
   PublicationDesign, DesignWorld, RunnerContext as PublicationRunnerContext,
+  Stage as PublicationStage,
 } from "./pipeline/publication-runner.js";
+export type { PublicationFinding, PublicationAudit } from "./pipeline/publication-audit.js";

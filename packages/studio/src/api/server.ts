@@ -134,6 +134,7 @@ import {
   loadPublicationRegistry,
   listIssues,
 } from "@actalk/inkos-core";
+import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
 import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -4068,6 +4069,15 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       all.push(...await listIssues(ctx));
     }
     return c.json({ publications: all });
+  });
+
+  // Opening, approving, resuming, auditing, rendering and revising one issue.
+  // Its own module: these need a pipeline, and a gate with no surface is a
+  // deadlock — which is what every gate here was until now.
+  registerPublicationRoutes(app, {
+    root,
+    pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
+    broadcast,
   });
 
   app.get("/api/v1/prompt-packs", async (c) => {

@@ -843,7 +843,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   // page, look at a spread, build the whole thing. Before these the art, design
   // and build stages were reachable exactly once, in order, from the call that
   // created the publication.
-  const productionTools = createPublicationProductionTools(params.projectRoot);
+  const productionTools = createPublicationProductionTools(params.projectRoot, params.pipeline, lang);
   const materialTool = createIngestMaterialTool(params.projectRoot);
   const materialRetrievalTool = createRetrieveMaterialTool(params.projectRoot);
   const projectReadTool = createReadTool(params.projectRoot, { scope: "project" });

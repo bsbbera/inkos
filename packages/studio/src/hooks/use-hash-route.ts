@@ -21,6 +21,7 @@ export type HashRoute =
   | { page: "radar" }
   | { page: "doctor" }
   | { page: "mcp" }
+  | { page: "publication"; issueId: string }
   | { page: "play"; projectId: string }
   | { page: "film"; projectId: string }
   | { page: "flow"; projectId: string }
@@ -35,6 +36,9 @@ function parseHash(hash: string): HashRoute {
   if (path === "config" || path === "services") return { page: "services" };
   if (path === "settings") return { page: "project-settings" };
   if (path === "mcp") return { page: "mcp" };
+
+  const publicationMatch = path.match(/^publication\/([^/]+)$/);
+  if (publicationMatch) return { page: "publication", issueId: decodeURIComponent(publicationMatch[1]) };
   if (path === "import") return { page: "import" };
   if (path === "translation") return { page: "translation" };
   const importMatch = path.match(/^import\/(chapters|canon|fanfic|spinoff|imitation)$/);
@@ -78,6 +82,7 @@ function routeToHash(route: HashRoute): string {
     case "services": return "#/services";
     case "project-settings": return "#/settings";
     case "mcp": return "#/mcp";
+    case "publication": return `#/publication/${encodeURIComponent(route.issueId)}`;
     case "translation": return "#/translation";
     case "import": return route.tab ? `#/import/${route.tab}` : "#/import";
     case "service-detail": return `#/services/${encodeURIComponent(route.serviceId)}`;
@@ -92,7 +97,7 @@ function routeToHash(route: HashRoute): string {
 
 export { parseHash, routeToHash }; // for testing
 
-const HASH_PAGES = new Set(["dashboard", "chat", "book", "book-settings", "book-create", "services", "project-settings", "service-detail", "translation", "import", "play", "film", "flow", "film-author", "film-studio"]);
+const HASH_PAGES = new Set(["dashboard", "chat", "book", "book-settings", "book-create", "services", "project-settings", "service-detail", "translation", "import", "play", "film", "flow", "film-author", "film-studio", "publication"]);
 
 export function useHashRoute() {
   const [route, setRouteState] = useState<HashRoute>(() => parseHash(window.location.hash));

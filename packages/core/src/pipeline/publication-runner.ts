@@ -24,7 +24,13 @@ import {
   type ResearchReport,
 } from "./publication-research.js";
 import { resolveVoice } from "./publication-voice.js";
-import { auditPages, summarize, type PublicationAudit } from "./publication-audit.js";
+import { auditPages, summarize, type PublicationAudit, type PublicationFinding } from "./publication-audit.js";
+import {
+  buildAuditPrompt,
+  buildRevisePrompt,
+  isSlopFinding,
+  parseAuditFindings,
+} from "./publication-review.js";
 import {
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
@@ -593,6 +599,30 @@ export async function runPlan(ctx: RunnerContext, id: string): Promise<Publicati
   return save(ctx, issue);
 }
 
+/**
+ * The page as markdown beside the JSON.
+ *
+ * A JSON blob is not something anyone can edit by hand, and the user's
+ * existing issues are markdown. Shared by the writer and the revise pass so a
+ * revised page does not leave the pre-revision markdown on disk.
+ */
+async function writePageMarkdown(
+  ctx: RunnerContext,
+  id: string,
+  page: PublicationPage,
+): Promise<void> {
+  const pagesDir = join(dirOf(ctx, id), "pages");
+  await mkdir(pagesDir, { recursive: true });
+  await writeFile(
+    join(pagesDir, `${String(page.n).padStart(2, "0")}-${slug(page.title || "page")}.md`),
+    `# ${page.title}\n\n> ${page.deck ?? ""}\n\n${page.body ?? ""}\n\n`
+    + (page.pullQuote ? `**"${page.pullQuote}"**\n\n` : "")
+    + (page.furniture ?? []).map((f) => `- *${f.kind}* - ${f.text}`).join("\n")
+    + `\n\n---\n*visual brief:* ${page.brief?.prompt ?? ""}\n`,
+    "utf-8",
+  );
+}
+
 export async function writePage(
   ctx: RunnerContext,
   id: string,
@@ -681,18 +711,7 @@ export async function writePage(
     words: String(out.body ?? "").split(/\s+/).filter(Boolean).length,
   });
 
-  // Also written as markdown: a JSON blob is not something anyone can edit by
-  // hand, and the user's existing issues are markdown.
-  const pagesDir = join(dirOf(ctx, id), "pages");
-  await mkdir(pagesDir, { recursive: true });
-  await writeFile(
-    join(pagesDir, `${String(page.n).padStart(2, "0")}-${slug(page.title || "page")}.md`),
-    `# ${page.title}\n\n> ${page.deck ?? ""}\n\n${page.body ?? ""}\n\n`
-    + (page.pullQuote ? `**"${page.pullQuote}"**\n\n` : "")
-    + (page.furniture ?? []).map((f) => `- *${f.kind}* - ${f.text}`).join("\n")
-    + `\n\n---\n*visual brief:* ${page.brief?.prompt ?? ""}\n`,
-    "utf-8",
-  );
+  await writePageMarkdown(ctx, id, page);
 
   // Approval is of specific copy: rewriting a page means the sign-off no
   // longer describes what is set.
@@ -1106,21 +1125,198 @@ export type Stage = "research" | "plan" | "write" | "audit" | "art" | "build";
  * Never fails the run. The findings go on the issue and into the stage event,
  * and the editor decides — same contract the length governor has upstream.
  */
-export async function runAudit(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+export interface AuditOptions {
+  /**
+   * Whether the model reads the pages, or only the rules do. Off is for tests
+   * and for a fast re-check after a revise; a real audit is on.
+   */
+  readonly deep?: boolean;
+  /** Rewrite pages the audit faulted, then audit again. */
+  readonly revise?: boolean;
+  /** How many revise-then-re-audit rounds at most. */
+  readonly rounds?: number;
+  /**
+   * Restrict the revise pass to findings matching this. De-AI-ification is
+   * this with a slop filter; a full audit passes nothing and fixes everything.
+   */
+  readonly only?: (finding: PublicationFinding) => boolean;
+}
+
+/** The model's read of one page, on top of what the rules already found. */
+async function reviewPage(
+  ctx: RunnerContext,
+  issue: PublicationIssue,
+  page: PublicationPage,
+): Promise<PublicationFinding[]> {
+  const section = issue.sections.find((s) => s.n === page.section);
+  try {
+    const out = await ctx.ask(buildAuditPrompt(issue, page, ctx.definition, section), `audit-${page.n}`);
+    return parseAuditFindings(out, page.n);
+  } catch (error) {
+    // One page the model could not read must not throw away the audit of the
+    // other thirty-nine. The gap is reported as a finding so it is visible
+    // rather than looking like a clean page.
+    return [{
+      page: page.n,
+      severity: "info",
+      category: "audit/unavailable",
+      description: `p${page.n}: the model could not audit this page — ${
+        error instanceof Error ? error.message : String(error)}`,
+      suggestion: "Re-run the audit for this page.",
+    }];
+  }
+}
+
+/**
+ * Rewrite one page against its findings.
+ *
+ * Returns whether anything changed. A revise that produces no body is a failed
+ * call, not an empty page, so the old copy stays.
+ */
+export async function revisePage(
+  ctx: RunnerContext,
+  id: string,
+  n: number,
+  findings: ReadonlyArray<PublicationFinding>,
+): Promise<boolean> {
+  if (findings.length === 0) return false;
   const issue = await readIssue(ctx, id);
+  const page = issue.pages.find((p) => p.n === Number(n));
+  if (!page) throw new Error(`no page ${n} in ${id}`);
+
+  emit(ctx, "publication:stage", {
+    id, stage: "revise", state: "start", page: page.n, findings: findings.length,
+  });
+
+  const out = await ctx.ask(
+    buildRevisePrompt(issue, page, ctx.definition, findings),
+    `revise-${page.n}`,
+  );
+
+  const body = typeof out.body === "string" ? out.body : "";
+  if (!body.trim()) {
+    emit(ctx, "publication:stage", {
+      id, stage: "revise", state: "warn", page: page.n,
+      message: "the revise pass returned no body; the page is unchanged",
+    });
+    return false;
+  }
+
+  const before = page.body;
+  Object.assign(page, {
+    title: (out.title as string) || page.title,
+    deck: (out.deck as string) ?? page.deck,
+    body,
+    pullQuote: (out.pull_quote as string) ?? page.pullQuote,
+    furniture: out.furniture ? keepAllowedBlocks(ctx.definition, page.type, out.furniture) : page.furniture,
+    brief: out.image_prompt
+      ? { prompt: String(out.image_prompt), orientation: page.brief?.orientation ?? "landscape" }
+      : page.brief,
+    words: body.split(/\s+/).filter(Boolean).length,
+  });
+
+  await writePageMarkdown(ctx, id, page);
+
+  // Same rule the writer follows: approval is of specific copy, and this is no
+  // longer that copy.
+  if (issue.approved) {
+    issue.approved = null;
+    emit(ctx, "publication:issue", { id, approved: false });
+  }
+  await save(ctx, issue);
+
+  emit(ctx, "publication:stage", {
+    id, stage: "revise", state: "done", page: page.n, words: page.words,
+    rejected: Array.isArray(out.rejected) ? out.rejected.length : 0,
+  });
+  return body !== before;
+}
+
+/**
+ * Read every written page and record what is wrong with the prose.
+ *
+ * Runs after write and before art, which is the only place it is worth
+ * anything: the copy is finished, and nothing has been drawn or laid out yet,
+ * so a page that has to change has not yet cost an image or a spread.
+ *
+ * Two halves. The rules count words, paragraph variance, hedge density and
+ * cross-page repetition; the model reads the page against thirty-one editorial
+ * dimensions. Then, unless told otherwise, the findings are rewritten out and
+ * the pages audited again — because an audit that finds eighteen problems and
+ * fixes none of them is a report, and nobody was reading the reports.
+ *
+ * Never fails the run. What survives the rounds goes on the issue and the
+ * editor decides — same contract the length governor has upstream.
+ */
+export async function runAudit(
+  ctx: RunnerContext,
+  id: string,
+  options: AuditOptions = {},
+): Promise<PublicationIssue> {
+  const { deep = true, revise = true, rounds = 2, only } = options;
   emit(ctx, "publication:stage", { id, stage: "audit", state: "start" });
 
-  const findings = auditPages(issue.pages, ctx.definition);
-  issue.audit = { at: new Date().toISOString(), findings };
+  const look = async (): Promise<PublicationFinding[]> => {
+    const issue = await readIssue(ctx, id);
+    const found: PublicationFinding[] = [...auditPages(issue.pages, ctx.definition)];
+    if (deep) {
+      for (const page of issue.pages.filter((p) => p.body && p.body.trim())) {
+        found.push(...await reviewPage(ctx, issue, page));
+      }
+    }
+    return found;
+  };
+
+  let findings = await look();
+  let round = 0;
+
+  while (revise && round < rounds) {
+    // Info-level findings are an editor's business. Rewriting a page over one
+    // costs a model call and risks the copy for something nobody called wrong.
+    const fixable = findings.filter((f) =>
+      f.severity === "warning" && f.page > 0 && (!only || only(f)));
+    if (fixable.length === 0) break;
+
+    const byPage = new Map<number, PublicationFinding[]>();
+    for (const f of fixable) byPage.set(f.page, [...(byPage.get(f.page) ?? []), f]);
+
+    let changed = false;
+    for (const [n, pageFindings] of byPage) {
+      changed = await revisePage(ctx, id, n, pageFindings) || changed;
+    }
+    round += 1;
+    if (!changed) break;
+
+    findings = await look();
+  }
+
+  const issue = await readIssue(ctx, id);
+  issue.audit = { at: new Date().toISOString(), findings, rounds: round };
+  issue.status = "audited";
   await save(ctx, issue);
 
   emit(ctx, "publication:stage", {
     id, stage: "audit",
     state: findings.some((f) => f.severity === "warning") ? "warn" : "done",
-    message: summarize(findings),
+    message: summarize(findings) + (round ? ` after ${round} revise round${round > 1 ? "s" : ""}` : ""),
     findings: findings.length,
+    rounds: round,
   });
   return issue;
+}
+
+/**
+ * De-AI-ification: the audit, revising only what makes prose sound machine-made.
+ *
+ * The same loop with a filter, not a second implementation — one place decides
+ * what a finding is and how a page gets rewritten.
+ */
+export async function runDeslop(
+  ctx: RunnerContext,
+  id: string,
+  rounds = 2,
+): Promise<PublicationIssue> {
+  return runAudit(ctx, id, { deep: true, revise: true, rounds, only: isSlopFinding });
 }
 
 /**
@@ -1140,8 +1336,16 @@ export async function run(
 ): Promise<PublicationIssue> {
   const order: Stage[] = ["research", "plan", "write", "audit", "art", "build"];
   const start = order.indexOf(from);
-  const end = order.indexOf(stopAt);
+  let end = order.indexOf(stopAt);
   if (start < 0 || end < 0) throw new Error(`unknown stage: ${from} or ${stopAt}`);
+
+  // The audit is not a stage a caller gets to stop short of. `stopAt` defaulted
+  // to "write", which meant the checks were reachable on paper and skipped in
+  // practice by every run that took the default — which is every run. A run
+  // that wrote pages audits them.
+  if (order.indexOf("write") >= start && end === order.indexOf("write")) {
+    end = order.indexOf("audit");
+  }
 
   for (const stage of order.slice(start, end + 1)) {
     if (stage === "research") await runResearch(ctx, id);

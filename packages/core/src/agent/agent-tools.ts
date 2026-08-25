@@ -2336,8 +2336,17 @@ const IssuePageParams = Type.Object({
 const IssueOnlyParams = Type.Object({
   id: Type.String({ description: "The publication issue id." }),
 });
+const AuditParams = Type.Object({
+  id: Type.String({ description: "The publication issue id." }),
+  revise: Type.Optional(Type.Boolean({
+    description:
+      "Rewrite the pages the audit faults and audit them again. Default true. Set false only when the "
+      + "user asked what is wrong rather than for it to be fixed.",
+  })),
+});
 type IssuePageParamsType = Static<typeof IssuePageParams>;
 type IssueOnlyParamsType = Static<typeof IssueOnlyParams>;
+type AuditParamsType = Static<typeof AuditParams>;
 
 /**
  * The production capabilities, as tools.
@@ -2357,10 +2366,42 @@ type IssueOnlyParamsType = Static<typeof IssueOnlyParams>;
  * the design to be approved. That is deliberate: it is the check the MCP
  * server skipped when it called affinity.build() directly.
  */
-export function createPublicationProductionTools(projectRoot: string): AgentTool<any>[] {
+export function createPublicationProductionTools(
+  projectRoot: string,
+  /**
+   * Needed only by the checks. The art, layout, render and build tools are
+   * deterministic and never call the model, so they still open a context with
+   * no `ask` at all — passing one would make it look as though they might.
+   */
+  pipeline?: PipelineRunner,
+  lang?: string,
+): AgentTool<any>[] {
   const open = async (id: string, onEvent?: (e: unknown) => void) => {
     const { openIssueContext } = await import("../pipeline/publication-context.js");
     return openIssueContext(projectRoot, id, { onEvent: onEvent as never });
+  };
+
+  /** A context whose stages can read and rewrite, for the audit and the deslop. */
+  const openWithModel = async (id: string) => {
+    if (!pipeline) {
+      throw new Error("this session cannot run the checks — no pipeline is configured for it");
+    }
+    const { openIssueContext } = await import("../pipeline/publication-context.js");
+    const { createPublicationAsk } = await import("../pipeline/publication-session.js");
+    return openIssueContext(projectRoot, id, {
+      ask: createPublicationAsk({ pipeline, projectRoot, issueId: id, language: lang }),
+    });
+  };
+
+  const auditReport = (issue: { audit?: { findings: ReadonlyArray<{ severity: string; category: string; description: string; suggestion: string }>; rounds?: number } | null }) => {
+    const findings = issue.audit?.findings ?? [];
+    const rounds = issue.audit?.rounds ?? 0;
+    const head = findings.length === 0
+      ? "The audit found nothing left to fix."
+      : `${findings.length} findings remain (${findings.filter((f) => f.severity === "warning").length} warnings)`
+        + `${rounds ? ` after ${rounds} revise round${rounds > 1 ? "s" : ""}` : ""}.`;
+    return [head, ...findings.slice(0, 40).map((f) => `- [${f.category}] ${f.description} → ${f.suggestion}`)]
+      .join("\n");
   };
 
   return [
@@ -2413,6 +2454,43 @@ export function createPublicationProductionTools(projectRoot: string): AgentTool
         return textResult(out.image
           ? `Spread ${params.page} rendered: ${out.image}`
           : `Spread ${params.page} could not be rendered: ${out.error ?? "unknown reason"}`);
+      },
+    },
+    {
+      name: "publication_audit",
+      description:
+        "Run the full quality pass over an existing issue: the rule checks (word band, paragraph "
+        + "uniformity, hedge density, formulaic transitions, list-shaped prose, cross-page repetition) "
+        + "and a model read of every written page against 31 editorial dimensions — sourcing, "
+        + "overclaiming, deck/body agreement, explanatory gaps, cliche, filler and the rest. By default "
+        + "it does not merely report: pages the audit faults are rewritten and audited again, up to "
+        + "two rounds. Rewriting the copy clears its approval.",
+      label: "Audit Publication",
+      parameters: AuditParams,
+      async execute(_id: string, params: AuditParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await openWithModel(params.id);
+        const { runAudit } = await import("../pipeline/publication-runner.js");
+        onUpdate?.(textResult("Auditing every written page…"));
+        const issue = await runAudit(ctx, params.id, { revise: params.revise !== false });
+        return textResult(auditReport(issue));
+      },
+    },
+    {
+      name: "publication_deslop",
+      description:
+        "De-AI-ification pass over an existing issue. The same audit loop, but only findings about the "
+        + "prose sounding machine-made are rewritten: uniform paragraphs, hedge density, formulaic "
+        + "transitions, list-shaped prose, cross-page repetition, generic voice, stock imagery, "
+        + "marching sentence rhythm and filler. Everything else is reported and left alone. Rewriting "
+        + "the copy clears its approval.",
+      label: "De-AI Publication",
+      parameters: AuditParams,
+      async execute(_id: string, params: AuditParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await openWithModel(params.id);
+        const { runDeslop } = await import("../pipeline/publication-runner.js");
+        onUpdate?.(textResult("Rewriting what reads as machine-made…"));
+        const issue = await runDeslop(ctx, params.id);
+        return textResult(auditReport(issue));
       },
     },
     {

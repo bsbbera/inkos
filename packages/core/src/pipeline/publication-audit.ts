@@ -34,6 +34,8 @@ export interface PublicationFinding {
 export interface PublicationAudit {
   readonly at: string;
   readonly findings: ReadonlyArray<PublicationFinding>;
+  /** How many revise-then-re-audit rounds ran. 0 means findings were only reported. */
+  readonly rounds?: number;
 }
 
 /** English unless the copy is visibly not: the checks are language-specific. */

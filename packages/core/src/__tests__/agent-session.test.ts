@@ -702,6 +702,8 @@ describe("runAgentSession cache — bookId switch", () => {
       "publication_art",
       "publication_layout",
       "publication_render",
+      "publication_audit",
+      "publication_deslop",
       "publication_build",
       "use_skill",
     ]);

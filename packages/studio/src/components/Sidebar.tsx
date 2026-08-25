@@ -90,6 +90,7 @@ interface Nav {
   toRadar: () => void;
   toDoctor: () => void;
   toMcp: () => void;
+  toPublication: (issueId: string) => void;
   toFilmStudio: (id: string) => void;
 }
 
@@ -106,6 +107,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
   const { data: publicationTypes } = useApi<{
     types: ReadonlyArray<{ id: string; label: string; labelZh: string | null; description: string | null }>;
   }>("/publications/types");
+  // What has actually been made. Until the detail page existed there was
+  // nowhere for these to lead, so they were not listed at all — which meant an
+  // issue was reachable only from the chat that happened to create it.
+  const { data: publications } = useApi<{
+    publications: ReadonlyArray<{ id: string; title: string; subject: string; status: string; pages: number; written: number }>;
+  }>("/publications");
   const { data: daemon, refetch: refetchDaemon } = useApi<{ running: boolean }>("/daemon");
   const sessions = useChatStore((s) => s.sessions);
   const sessionIdsByBook = useChatStore((s) => s.sessionIdsByBook);
@@ -124,6 +131,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
   const [expandedBooks, setExpandedBooks] = useState<Set<string>>(new Set());
   const [projectChatExpanded, setProjectChatExpanded] = useState(true);
   const [myBooksExpanded, setMyBooksExpanded] = useState(true);
+  const [publicationsExpanded, setPublicationsExpanded] = useState(true);
   const [filmsExpanded, setFilmsExpanded] = useState(true);
 
   const books = data?.books ?? [];
@@ -358,6 +366,38 @@ export function Sidebar({ nav, activePage, sse, t }: {
             <CreateItem icon={<Gamepad2 size={16} />} label={t("nav.createFree")} onClick={() => launchProjectMode("play", "open")} />
           </div>
         </div>
+
+        {/* Publications made in this workspace. */}
+        {(publications?.publications ?? []).length > 0 && (
+          <div>
+            <SectionHeader
+              label={tr("我的刊物", "My Publications")}
+              expanded={publicationsExpanded}
+              onToggle={() => setPublicationsExpanded((v) => !v)}
+            />
+            <Collapse open={publicationsExpanded}>
+              <div className="space-y-0.5 pt-1">
+                {(publications?.publications ?? []).map((pub) => (
+                  <button
+                    key={pub.id}
+                    onClick={() => nav.toPublication(pub.id)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+                      activePage === `publication:${pub.id}`
+                        ? "bg-primary/10 text-primary"
+                        : "hover:bg-muted/60 text-foreground/80"
+                    }`}
+                  >
+                    <Newspaper size={16} className="shrink-0" />
+                    <span className="flex-1 truncate">{pub.title || pub.subject}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">
+                      {pub.written}/{pub.pages}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Collapse>
+          </div>
+        )}
 
         {/* My Bookshelf Section */}
         <div>
