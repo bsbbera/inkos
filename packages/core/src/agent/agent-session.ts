@@ -47,6 +47,7 @@ import {
   createImitationBookTool,
   createResearchWebTool,
   createPublicationCreateTool,
+  createPublicationProductionTools,
   createComfyGenerateTool,
   createIngestMaterialTool,
   createRetrieveMaterialTool,
@@ -838,6 +839,11 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   const imageTool = createComfyGenerateTool(
     process.env.QUIRE_SHIM_URL || `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
   );
+  // Acting on an issue that already exists: render one page's art, lay out one
+  // page, look at a spread, build the whole thing. Before these the art, design
+  // and build stages were reachable exactly once, in order, from the call that
+  // created the publication.
+  const productionTools = createPublicationProductionTools(params.projectRoot);
   const materialTool = createIngestMaterialTool(params.projectRoot);
   const materialRetrievalTool = createRetrieveMaterialTool(params.projectRoot);
   const projectReadTool = createReadTool(params.projectRoot, { scope: "project" });
@@ -882,7 +888,8 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
     // could start from an offhand sentence with nothing shown first — the one
     // tool of its size that never asked.
     if (isConfirmed("publication_create")) return [publicationTool, imageTool];
-    return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool, importChaptersTool];
+    return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool,
+      importChaptersTool, ...productionTools];
   }
 
   // A publication stage. Narrow on purpose: these are the capabilities a stage
@@ -896,6 +903,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
       imageTool,
       projectReadTool,
       materialRetrievalTool,
+      ...productionTools,
     ];
   }
 

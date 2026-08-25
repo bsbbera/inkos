@@ -695,6 +695,14 @@ describe("runAgentSession cache — bookId switch", () => {
       "ingest_material",
       "retrieve_material",
       "import_chapters",
+      // Acting on an issue that already exists. Creating one still goes through
+      // propose_action; redoing one page of a publication already made does
+      // not, because the run it belonged to is over and nothing else can reach
+      // the art, layout and build stages once it is.
+      "publication_art",
+      "publication_layout",
+      "publication_render",
+      "publication_build",
       "use_skill",
     ]);
   });

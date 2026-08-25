@@ -904,6 +904,83 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
   return save(ctx, issue);
 }
 
+/* --------------------------------------------------------- scoped rebuilds */
+
+/**
+ * Lay out one page in Affinity, without rebuilding the issue around it.
+ *
+ * "Change the design on page 16" used to mean re-running build(), which
+ * recreates the document from nothing: forty pages of layout, every image
+ * re-staged, and a fresh PDF, to move one heading. Affinity has had a
+ * per-page path all along — the shim simply never exposed it.
+ *
+ * Gated exactly as build() is, and for the same reason: this writes into the
+ * document the user is going to publish.
+ */
+export async function placePage(
+  ctx: RunnerContext,
+  id: string,
+  n: number,
+): Promise<{ readonly page: number; readonly findings: ReadonlyArray<string> }> {
+  const def = ctx.definition;
+  if (!def.needsPdf) throw new Error(`${def.label} does not produce a PDF`);
+  if (!ctx.shimUrl) throw new Error("layout needs Quire's shim, which is not reachable");
+
+  const issue = await readIssue(ctx, id);
+  requireApproval(issue, "layout");
+  requireDesignApproval(issue, "layout");
+  if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
+
+  emit(ctx, "publication:stage", { id, stage: "design", state: "start", page: Number(n) });
+  const res = await fetch(`${ctx.shimUrl}/affinity/page`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ issue, issueDir: dirOf(ctx, id), page: Number(n) }),
+  });
+  const body = await res.json().catch(() => ({})) as {
+    ok?: boolean; error?: string; findings?: string[];
+  };
+  if (!res.ok || body.ok === false) {
+    const why = body.error ?? `HTTP ${res.status}`;
+    emit(ctx, "publication:stage", { id, stage: "design", state: "error", page: Number(n), error: why });
+    throw new Error(`layout p${n}: ${why}`);
+  }
+  emit(ctx, "publication:stage", { id, stage: "design", state: "done", page: Number(n) });
+  return { page: Number(n), findings: body.findings ?? [] };
+}
+
+/**
+ * A picture of one spread as Affinity has it.
+ *
+ * Every other signal from the layout is text — an inspector reporting whether
+ * the instructions were followed. A page can satisfy every rule it checks and
+ * still be unreadable, and nothing in the pipeline could see that. This is the
+ * only call that hands back something a model can actually look at.
+ *
+ * Not gated: rendering reads the document, it does not change it, and a model
+ * that cannot see what it made will keep making the same page.
+ */
+export async function renderPage(
+  ctx: RunnerContext,
+  id: string,
+  n: number,
+): Promise<{ readonly image: string | null; readonly error?: string }> {
+  if (!ctx.shimUrl) throw new Error("rendering needs Quire's shim, which is not reachable");
+  const issue = await readIssue(ctx, id);
+  if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
+
+  const res = await fetch(`${ctx.shimUrl}/affinity/render`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ issue, issueDir: dirOf(ctx, id), page: Number(n) }),
+  });
+  const body = await res.json().catch(() => ({})) as {
+    ok?: boolean; image?: string; error?: string;
+  };
+  if (!res.ok || body.ok === false) return { image: null, error: body.error ?? `HTTP ${res.status}` };
+  return { image: body.image ?? null };
+}
+
 /* ------------------------------------------------------------------- queue */
 
 export interface QueueState {

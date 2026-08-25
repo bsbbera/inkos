@@ -2327,6 +2327,113 @@ ${body}`);
 // Local image generation (comfy_generate)
 // ---------------------------------------------------------------------------
 
+/* ------------------------------------------------ publication production */
+
+const IssuePageParams = Type.Object({
+  id: Type.String({ description: "The publication issue id, as listed by publication tools." }),
+  page: Type.Number({ description: "Page number, 1-based, exactly as the issue numbers its pages." }),
+});
+const IssueOnlyParams = Type.Object({
+  id: Type.String({ description: "The publication issue id." }),
+});
+type IssuePageParamsType = Static<typeof IssuePageParams>;
+type IssueOnlyParamsType = Static<typeof IssueOnlyParams>;
+
+/**
+ * The production capabilities, as tools.
+ *
+ * They used to be fixed positions in a script: artPage ran at the art stage,
+ * build ran at the build stage, and a run that stopped before either could
+ * never reach them again. Nothing could be redone, nothing could be looked at,
+ * and a note about one page meant rebuilding forty.
+ *
+ * Each of these takes the issue it is acting on and, where the work is
+ * page-shaped, the one page. The host reads the address it was given and
+ * touches only that — a model asking to fix page 16 cannot be granted more
+ * than page 16 by phrasing the request differently.
+ *
+ * The gates are the runner's own. Every one of these refuses on an issue whose
+ * copy is not approved, and the two that write into the document also require
+ * the design to be approved. That is deliberate: it is the check the MCP
+ * server skipped when it called affinity.build() directly.
+ */
+export function createPublicationProductionTools(projectRoot: string): AgentTool<any>[] {
+  const open = async (id: string, onEvent?: (e: unknown) => void) => {
+    const { openIssueContext } = await import("../pipeline/publication-context.js");
+    return openIssueContext(projectRoot, id, { onEvent: onEvent as never });
+  };
+
+  return [
+    {
+      name: "publication_art",
+      description:
+        "Render the artwork for ONE page of an existing publication issue, from the visual brief that "
+        + "page already carries, and attach it to the page. Use this to redo a single page's image "
+        + "without touching any other page. Needs the issue's copy approved.",
+      label: "Render Page Art",
+      parameters: IssuePageParams,
+      async execute(_id: string, params: IssuePageParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await open(params.id);
+        const { artPage } = await import("../pipeline/publication-runner.js");
+        onUpdate?.(textResult(`Rendering art for page ${params.page}…`));
+        const page = await artPage(ctx, params.id, params.page);
+        return textResult(`Page ${page.n} art: ${page.image ?? "not written"}`);
+      },
+    },
+    {
+      name: "publication_layout",
+      description:
+        "Lay out ONE page of an existing issue in Affinity Publisher, leaving every other page as it "
+        + "is. This is the tool for acting on a note about a specific page or section — it does not "
+        + "rebuild the issue. Needs both the copy and the design approved.",
+      label: "Lay Out Page",
+      parameters: IssuePageParams,
+      async execute(_id: string, params: IssuePageParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await open(params.id);
+        const { placePage } = await import("../pipeline/publication-runner.js");
+        onUpdate?.(textResult(`Laying out page ${params.page}…`));
+        const out = await placePage(ctx, params.id, params.page);
+        return textResult(out.findings.length
+          ? `Page ${out.page} laid out. Findings:\n- ${out.findings.join("\n- ")}`
+          : `Page ${out.page} laid out with no findings.`);
+      },
+    },
+    {
+      name: "publication_render",
+      description:
+        "Export ONE spread of an existing issue as an image and return where it was written, so the "
+        + "page can actually be looked at rather than inferred from the layout report. Read-only: it "
+        + "does not change the document, and needs no approval.",
+      label: "Render Spread",
+      parameters: IssuePageParams,
+      async execute(_id: string, params: IssuePageParamsType) {
+        const { ctx } = await open(params.id);
+        const { renderPage } = await import("../pipeline/publication-runner.js");
+        const out = await renderPage(ctx, params.id, params.page);
+        return textResult(out.image
+          ? `Spread ${params.page} rendered: ${out.image}`
+          : `Spread ${params.page} could not be rendered: ${out.error ?? "unknown reason"}`);
+      },
+    },
+    {
+      name: "publication_build",
+      description:
+        "Build the WHOLE issue and export its PDF. This recreates the document from scratch, so use it "
+        + "when the request is about the publication as a whole; for one page use publication_layout. "
+        + "Needs the copy approved, the design approved, and the design to pass its own spec.",
+      label: "Build Publication",
+      parameters: IssueOnlyParams,
+      async execute(_id: string, params: IssueOnlyParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await open(params.id);
+        const { build } = await import("../pipeline/publication-runner.js");
+        onUpdate?.(textResult("Building the whole issue…"));
+        const issue = await build(ctx, params.id);
+        return textResult(`${issue.title || issue.subject} built: ${issue.build?.pdf ?? "no PDF written"}`);
+      },
+    },
+  ];
+}
+
 const ComfyGenerateParams = Type.Object({
   prompt: Type.String({
     description: "What to draw. Describe subject, composition, light and medium; the workflow adds its own negative prompt.",
