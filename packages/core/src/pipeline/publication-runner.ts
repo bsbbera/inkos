@@ -24,6 +24,7 @@ import {
   type ResearchReport,
 } from "./publication-research.js";
 import { resolveVoice } from "./publication-voice.js";
+import { auditPages, summarize, type PublicationAudit } from "./publication-audit.js";
 import {
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
@@ -106,6 +107,8 @@ export interface PublicationIssue {
   /** Separate from `approved`: the copy and the design are two decisions. */
   designApproved?: { at: string; by: string } | null;
   build?: { pdf?: string | null; at?: string };
+  /** What the audit stage found. Advisory: it never blocks the pipeline. */
+  audit?: PublicationAudit | null;
 }
 
 /** Parsed JSON from the model. The caller owns the provider and the transport. */
@@ -1014,7 +1017,34 @@ export async function startQueue(
 
 /* --------------------------------------------------------------------- run */
 
-export type Stage = "research" | "plan" | "write" | "art" | "build";
+export type Stage = "research" | "plan" | "write" | "audit" | "art" | "build";
+
+/**
+ * Read every written page and record what is wrong with the prose.
+ *
+ * Runs after write and before art, which is the only place it is worth
+ * anything: the copy is finished, and nothing has been drawn or laid out yet,
+ * so a page that has to change has not yet cost an image or a spread.
+ *
+ * Never fails the run. The findings go on the issue and into the stage event,
+ * and the editor decides — same contract the length governor has upstream.
+ */
+export async function runAudit(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  emit(ctx, "publication:stage", { id, stage: "audit", state: "start" });
+
+  const findings = auditPages(issue.pages, ctx.definition);
+  issue.audit = { at: new Date().toISOString(), findings };
+  await save(ctx, issue);
+
+  emit(ctx, "publication:stage", {
+    id, stage: "audit",
+    state: findings.some((f) => f.severity === "warning") ? "warn" : "done",
+    message: summarize(findings),
+    findings: findings.length,
+  });
+  return issue;
+}
 
 /**
  * The whole pipeline, stopping where told.
@@ -1031,7 +1061,7 @@ export async function run(
     redo?: boolean;
   } = {},
 ): Promise<PublicationIssue> {
-  const order: Stage[] = ["research", "plan", "write", "art", "build"];
+  const order: Stage[] = ["research", "plan", "write", "audit", "art", "build"];
   const start = order.indexOf(from);
   const end = order.indexOf(stopAt);
   if (start < 0 || end < 0) throw new Error(`unknown stage: ${from} or ${stopAt}`);
@@ -1043,6 +1073,7 @@ export async function run(
       const issue = await readIssue(ctx, id);
       for (const n of outstanding(issue, "write", redo)) await writePage(ctx, id, n);
     }
+    if (stage === "audit") await runAudit(ctx, id);
     if (stage === "art" && ctx.definition.needsImages) {
       const issue = await readIssue(ctx, id);
       for (const n of outstanding(issue, "art", redo)) await artPage(ctx, id, n);

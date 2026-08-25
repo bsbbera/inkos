@@ -36,6 +36,7 @@ import {
   FileInput,
   TrendingUp,
   Stethoscope,
+  Plug,
   Zap,
   FolderOpen,
   ChevronRight,
@@ -88,6 +89,7 @@ interface Nav {
   toImport: (tab?: "chapters" | "canon" | "fanfic" | "spinoff" | "imitation") => void;
   toRadar: () => void;
   toDoctor: () => void;
+  toMcp: () => void;
   toFilmStudio: (id: string) => void;
 }
 
@@ -667,6 +669,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
               icon={<Stethoscope size={16} />}
               active={activePage === "doctor"}
               onClick={nav.toDoctor}
+            />
+            <SidebarItem
+              label="MCP"
+              icon={<Plug size={16} />}
+              active={activePage === "mcp"}
+              onClick={nav.toMcp}
             />
           </div>
         </div>

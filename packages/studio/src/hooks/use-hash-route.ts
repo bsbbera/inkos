@@ -20,6 +20,7 @@ export type HashRoute =
   | { page: "import"; tab?: "chapters" | "canon" | "fanfic" | "spinoff" | "imitation" }
   | { page: "radar" }
   | { page: "doctor" }
+  | { page: "mcp" }
   | { page: "play"; projectId: string }
   | { page: "film"; projectId: string }
   | { page: "flow"; projectId: string }
@@ -33,6 +34,7 @@ function parseHash(hash: string): HashRoute {
   if (path === "chat") return { page: "chat" };
   if (path === "config" || path === "services") return { page: "services" };
   if (path === "settings") return { page: "project-settings" };
+  if (path === "mcp") return { page: "mcp" };
   if (path === "import") return { page: "import" };
   if (path === "translation") return { page: "translation" };
   const importMatch = path.match(/^import\/(chapters|canon|fanfic|spinoff|imitation)$/);
@@ -75,6 +77,7 @@ function routeToHash(route: HashRoute): string {
     case "book-create": return "#/book/new";
     case "services": return "#/services";
     case "project-settings": return "#/settings";
+    case "mcp": return "#/mcp";
     case "translation": return "#/translation";
     case "import": return route.tab ? `#/import/${route.tab}` : "#/import";
     case "service-detail": return `#/services/${encodeURIComponent(route.serviceId)}`;

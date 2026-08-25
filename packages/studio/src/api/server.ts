@@ -6299,6 +6299,54 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   });
 
+  /* --- MCP servers -------------------------------------------------------
+   * Discovery, process supervision and the JSON-RPC transport all live in
+   * Quire's shim. Studio proxies rather than calling it from the browser: the
+   * shim binds loopback with no CORS, and the workbench is also served over
+   * loopback but on a different port, so a direct fetch is cross-origin.
+   * Proxying also means the page works unchanged if the shim moves.
+   */
+  const shimUrl = () =>
+    process.env.QUIRE_SHIM_URL || `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`;
+
+  /** The shim is optional: without it the page says so instead of erroring. */
+  async function shim(path: string, init?: RequestInit): Promise<Response> {
+    try {
+      const res = await fetch(`${shimUrl()}${path}`, init);
+      const body = await res.text();
+      return new Response(body, {
+        status: res.status,
+        headers: { "content-type": "application/json" },
+      });
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ ok: false, error: `shim unreachable: ${String((e as Error).message)}` }),
+        { status: 503, headers: { "content-type": "application/json" } },
+      );
+    }
+  }
+
+  app.get("/api/v1/mcp/servers", () => shim("/mcp/servers"));
+
+  app.get("/api/v1/mcp/tools", (c) => {
+    const server = c.req.query("server");
+    return shim(`/mcp/tools?server=${encodeURIComponent(server ?? "")}`);
+  });
+
+  app.post("/api/v1/mcp/toggle", async (c) =>
+    shim("/mcp/toggle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await c.req.json()),
+    }));
+
+  app.post("/api/v1/mcp/call", async (c) =>
+    shim("/mcp/call", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await c.req.json()),
+    }));
+
   // --- Doctor (environment health check) ---
 
   app.get("/api/v1/doctor", async (c) => {
