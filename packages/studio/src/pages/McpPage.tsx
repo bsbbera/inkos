@@ -24,6 +24,8 @@ interface McpServer {
   readonly cwd?: string;
   readonly source?: string;
   readonly enabled?: boolean;
+  /** Ships with Quire rather than being discovered from another app's config. */
+  readonly bundled?: boolean;
 }
 
 interface McpTool {
@@ -36,6 +38,7 @@ interface Nav { toDashboard: () => void }
 /** Where a server was found. The label matters more than the id on screen. */
 const SOURCE_LABELS: Record<string, string> = {
   builtin: "Quire",
+  quire: "Quire",
   "claude-extension": "Claude Desktop",
   "claude-desktop": "Claude Desktop",
   "claude-code": "Claude Code",
@@ -148,8 +151,8 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
         <div className={`border ${c.cardStatic} rounded-lg p-8 text-center ${c.muted}`}>
           <p className="text-sm">No MCP servers found.</p>
           <p className="mt-2 text-xs">
-            Servers configured in Claude Desktop, Claude Code, Devin or Codex are
-            picked up automatically.
+            Quire's own server ships with the app. Servers configured in Claude
+            Desktop, Claude Code, Devin or Codex are picked up automatically.
           </p>
         </div>
       ) : (
@@ -174,6 +177,15 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
                       <span className={`text-xs px-2 py-0.5 rounded ${c.code} shrink-0`}>
                         {SOURCE_LABELS[s.source ?? ""] ?? s.source ?? "unknown"}
                       </span>
+                      {/* A bundled server that fails to start is Quire's own
+                          fault and worth seeing; a discovered one that is
+                          missing is the other app's business. Telling them
+                          apart at a glance is the difference. */}
+                      {s.bundled ? (
+                        <span className={`text-xs px-2 py-0.5 rounded border ${c.tableDivide} ${c.muted} shrink-0`}>
+                          bundled
+                        </span>
+                      ) : null}
                     </button>
 
                     <button
