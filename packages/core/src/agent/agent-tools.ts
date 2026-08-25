@@ -366,7 +366,7 @@ const ProposeActionParams = Type.Object({
     angle: Type.Optional(Type.String({ description: "Confirmed angle. Ask for one rather than inventing it: the angle is what stops forty pages being an encyclopedia entry." })),
     extent: Type.Optional(Type.Number({ description: "Confirmed page count. Omit to use the type's own default." })),
     notes: Type.Optional(Type.String({ description: "The user's own material, corrections, or sources, and the text of anything they attached." })),
-    stopAt: Type.Optional(Type.String({ description: "research | plan | write. Default write. Art and PDF are separately gated on approval of the copy." })),
+    stopAt: Type.Optional(Type.String({ description: "research | plan | write | audit. Default audit, the end of the copy. Art and PDF are separately gated on approval of the copy." })),
   }, { description: "Structured execution args for action=publication_create." })),
   interactiveFilmCreate: Type.Optional(Type.Object({
     title: Type.String({ description: "Confirmed interactive-film project title." }),
@@ -2254,10 +2254,12 @@ const PublicationCreateParams = Type.Object({
     Type.Literal("research"),
     Type.Literal("plan"),
     Type.Literal("write"),
+    Type.Literal("audit"),
   ], {
     description:
-      "Where to stop. Defaults to write. Art and PDF are deliberately not reachable here: "
-      + "both need the copy approved by the user first.",
+      "Where to stop. Defaults to audit, which is the end of the copy: it is rule-based, "
+      + "calls no model and costs nothing, so there is no reason to finish a run without it. "
+      + "Art and PDF are deliberately not reachable here: both need the copy approved first.",
   })),
 });
 
@@ -2477,7 +2479,7 @@ export function createPublicationCreateTool(
         await setReferenceImages(ctx, created.id, attached.images);
       }
 
-      const issue = await runPublication(ctx, created.id, { stopAt: params.stopAt ?? "write" });
+      const issue = await runPublication(ctx, created.id, { stopAt: params.stopAt ?? "audit" });
       const written = issue.pages.filter((p) => p.body !== null && p.body !== undefined).length;
 
       return textResult([
@@ -2486,6 +2488,21 @@ export function createPublicationCreateTool(
         issue.warnings?.length
           ? `Structure notes:\n- ${issue.warnings.join("\n- ")}`
           : "Structure: no problems found.",
+        // The audit is worth nothing if it only lands in publication.json.
+        // Warnings are the ones an editor has to decide about, so they are
+        // named here; the rest are counted and left for the page.
+        (() => {
+          const findings = issue.audit?.findings ?? [];
+          if (!issue.audit) return "";
+          if (findings.length === 0) return "Copy audit: nothing to flag.";
+          const warnings = findings.filter((f) => f.severity === "warning");
+          const rest = findings.length - warnings.length;
+          return [
+            `Copy audit: ${findings.length} findings on ${new Set(findings.map((f) => f.page)).size} pages.`,
+            ...warnings.map((f) => `- ${f.description}`),
+            rest ? `- and ${rest} lesser notes.` : "",
+          ].filter(Boolean).join("\n");
+        })(),
         definition.needsImages || definition.needsPdf
           ? "Approve the copy before art or PDF: both are gated on it."
           : "",

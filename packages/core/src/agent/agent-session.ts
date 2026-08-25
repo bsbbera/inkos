@@ -811,12 +811,6 @@ const NO_TOOLS_NOTICE =
   + "If the request needs a tool, say plainly that it cannot be done with the current model "
   + "and suggest switching to a model that supports tools.";
 
-const CLI_MODEL_PREFIXES = ["claude/", "codex/", "devin/", "antigravity/"];
-function isCliBackedModel(model: { readonly id?: string } | undefined): boolean {
-  const id = model?.id ?? "";
-  return CLI_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix));
-}
-
 function createAgentToolsForMode(params: CreateAgentToolsForModeParams) {
   const tools = createModeTools(params);
   return params.intentSkillTool ? [...tools, params.intentSkillTool] : tools;
@@ -1202,12 +1196,13 @@ async function runAgentSessionUnlocked(
           onActivate: (activation) => turnSkills.set(activation.skill.id, activation),
         })
       : undefined;
-    // External MCP servers, for models that cannot reach them on their own. A
-    // CLI model already has its own MCP client, so it would get these twice —
-    // the shim hands it the same servers directly at launch.
-    const externalMcpTools = isCliBackedModel(model)
-      ? []
-      : await createExternalMcpTools();
+    // External MCP servers. Every model gets them, because the host is what
+    // executes them: a CLI-backed model used to be skipped here on the grounds
+    // that it had its own MCP client and the shim handed it the same servers
+    // at launch. It did — and those calls ran inside the CLI's own loop, where
+    // no confirmation gate could reach them. The shim now hands the CLI
+    // nothing, so this table is the only way any model reaches a tool.
+    const externalMcpTools = await createExternalMcpTools();
 
     // Some models cannot call tools at all. Handing them a tool table anyway
     // produces the worst outcome available: asked to research something they
