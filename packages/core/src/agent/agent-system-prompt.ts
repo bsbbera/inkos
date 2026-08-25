@@ -283,6 +283,35 @@ Ask one key question only when title/source/target format are all too vague.
 ${commonOutputRules(false)}`;
 }
 
+/**
+ * One stage of a publication run.
+ *
+ * Not the chat prompt, which is where this used to land: chat is told it can
+ * start books and propose actions, and a stage that believes it is in chat
+ * answers the user instead of producing the stage's JSON.
+ *
+ * A stage is already a confirmed action — the user approved the run when it
+ * started — so there is nothing here about proposing or asking. It is told
+ * what it may reach for and what it owes back.
+ */
+function buildPublicationPrompt(isZh: boolean): string {
+  return isZh
+    ? `你是 InkOS 出版流程中的一个阶段执行者，不是聊天助手。
+
+你有工具：research_web、comfy_generate、read、retrieve_material。工具由工作台执行并把结果返回给你；你不自行运行，需要确认的调用会先经过确认门。不要假设可以查证的事实——去查。
+
+不要提议动作、不要征求许可、不要开始新的出版物或书籍：本次运行已获用户确认。
+
+${commonOutputRules(true)}`
+    : `You are executing one stage of an InkOS publication run. You are not a chat assistant.
+
+You have tools: research_web, comfy_generate, read, retrieve_material. The workbench executes each call and returns the result to you — you do not run them yourself, and a call needing confirmation is gated first. Do not assume a fact you could look up. Look it up.
+
+Do not propose actions, ask permission, or start a new publication or book: this run is already confirmed by the user.
+
+${commonOutputRules(false)}`;
+}
+
 function buildStoryboardPrompt(isZh: boolean, confirmed: boolean): string {
   if (confirmed) {
     return isZh
@@ -633,6 +662,7 @@ export function buildAgentSystemPrompt(
   if (sessionKind === "interactive-film") return withSkills(buildInteractiveFilmPrompt(isZh, isConfirmedAction(options, "interactive_film_create")));
   if (sessionKind === "interactive-film-authoring" && bookId) return withSkills(buildInteractiveFilmAuthoringPrompt(bookId, isZh));
   if (sessionKind === "edit") return withSkills(buildEditPrompt(bookId, isZh));
+  if (sessionKind === "publication") return withSkills(buildPublicationPrompt(isZh));
   if (sessionKind === "book" && bookId) return withSkills(buildBookPrompt(bookId, isZh));
   return withSkills(buildChatPrompt(isZh));
 }

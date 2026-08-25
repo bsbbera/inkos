@@ -19,6 +19,15 @@ const { agentInstances, streamCalls, heldStreamCompletions, heldStreamWaiters } 
   heldStreamWaiters: [] as Array<() => void>,
 }));
 
+// External MCP tools come from whatever servers the shim is offering, so
+// without this the tool-table assertions below depend on whether Quire happens
+// to be running on this machine — passing with the app closed and failing with
+// it open. These tests are about which tools a session *mode* exposes; MCP
+// discovery has its own tests.
+vi.mock("../agent/mcp-tools.js", () => ({
+  createExternalMcpTools: async () => [],
+}));
+
 vi.mock("@mariozechner/pi-agent-core", async () => {
   const actual = await vi.importActual<any>("@mariozechner/pi-agent-core");
   class SpyAgent extends actual.Agent {

@@ -40,7 +40,15 @@ export interface WorkerResultTool<TParameters extends TSchema> {
 
 const EMPTY_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
-function workerModel(client: LLMClient, modelId: string, maxTokens?: number): Model<Api> {
+/**
+ * A pi Model built from the client the pipeline already configured.
+ *
+ * Exported because the publication runner needs the same model the rest of the
+ * pipeline uses when it hands work to runAgentSession. Resolving the id through
+ * getModel() instead would go back to the provider registry and can land on a
+ * different endpoint than the one the run was configured with.
+ */
+export function workerModel(client: LLMClient, modelId: string, maxTokens?: number): Model<Api> {
   const base = client._piModel;
   if (base) {
     return base.id === modelId ? base : { ...base, id: modelId, name: modelId };

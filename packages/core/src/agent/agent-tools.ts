@@ -24,7 +24,7 @@ import { runInteractiveFilmCreation, runScriptCreation, runStoryboardCreation } 
 import { createIssue, run as runPublication, type RunnerContext } from "../pipeline/publication-runner.js";
 import { findPublicationDefinition, loadPublicationRegistry } from "../publications/registry.js";
 import type { PublicationDefinition } from "../publications/types.js";
-import { PublicationAgent } from "../agents/publication.js";
+import { createPublicationAsk } from "../pipeline/publication-session.js";
 import { createTranslationProjectFromFile } from "../translation/index.js";
 import { runResearchReport } from "../agents/researcher.js";
 import { ingestMaterial } from "../materials/ingest.js";
@@ -2410,6 +2410,7 @@ export function createComfyGenerateTool(shimUrl: string): AgentTool<typeof Comfy
 export function createPublicationCreateTool(
   pipeline: PipelineRunner,
   projectRoot: string,
+  lang: "en" | "zh" = "en",
 ): AgentTool<typeof PublicationCreateParams> {
   return {
     name: "publication_create",
@@ -2433,11 +2434,24 @@ export function createPublicationCreateTool(
         throw new Error(`unknown publication type "${params.type}". Installed: ${known}`);
       }
 
-      const agent = new PublicationAgent(pipeline.createAgentContext("publication"));
+      // Every stage runs as a real agent session with a tool table, rather
+      // than as a single toolless completion. See pipeline/publication-session.
+      //
+      // The issue does not exist yet — createIssue needs this context to make
+      // it — so the id is filled in below and read at call time. Stage sessions
+      // are keyed by it, and no stage runs before creation, so it is always set
+      // by the time anything asks.
+      let issueId = "";
+      const ask = createPublicationAsk({
+        pipeline,
+        projectRoot,
+        issueId: () => issueId,
+        language: lang,
+      });
       const ctx: RunnerContext = {
         projectRoot,
         definition,
-        ask: (prompt, tag) => agent.askJson(prompt, tag),
+        ask,
         onEvent: (event) => {
           // Surfaced as tool progress so a forty-page run is visible while it
           // happens rather than only in its final result.
@@ -2469,6 +2483,7 @@ export function createPublicationCreateTool(
         angle: params.angle,
         extent: params.extent,
       });
+      issueId = created.id;
       const notes = [params.notes, attached.text].filter(Boolean).join("\n\n");
       if (notes) {
         const { setNotes } = await import("../pipeline/publication-runner.js");

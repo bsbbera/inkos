@@ -832,7 +832,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   const researchTool = createResearchWebTool(params.projectRoot);
   // Available in every mode: a publication is started from a subject, which is
   // a thing the user says in ordinary chat, not a mode they switch into first.
-  const publicationTool = createPublicationCreateTool(params.pipeline, params.projectRoot);
+  const publicationTool = createPublicationCreateTool(params.pipeline, params.projectRoot, lang);
   // CLI-backed models already reach ComfyUI through Quire's MCP server; API
   // models have no other route to a local renderer.
   const imageTool = createComfyGenerateTool(
@@ -883,6 +883,20 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
     // tool of its size that never asked.
     if (isConfirmed("publication_create")) return [publicationTool, imageTool];
     return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool, importChaptersTool];
+  }
+
+  // A publication stage. Narrow on purpose: these are the capabilities a stage
+  // legitimately needs, and nothing that would let one run start another.
+  // publication_create is absent so a stage cannot recurse into a second issue,
+  // and propose_action is absent because a stage is already a confirmed action —
+  // the user approved it when the run started.
+  if (params.sessionKind === "publication") {
+    return [
+      researchTool,
+      imageTool,
+      projectReadTool,
+      materialRetrievalTool,
+    ];
   }
 
   if (params.sessionKind === "short") {
