@@ -19,9 +19,17 @@ describe("publication stages run as agent sessions", () => {
   beforeEach(() => runAgentSession.mockReset());
 
   it("names a session per issue and stage, so two pages never share a transcript", () => {
-    expect(publicationSessionId("issue-1", "page-7")).toBe("publication:issue-1:page-7");
+    expect(publicationSessionId("issue-1", "page-7")).toBe("publication--issue-1--page-7");
     expect(publicationSessionId("issue-1", "plan"))
       .not.toBe(publicationSessionId("issue-2", "plan"));
+  });
+
+  // A session id becomes a filename under .inkos/sessions. A colon there is
+  // the alternate-data-stream separator on Windows, and every publication
+  // stage failed to persist with ENOENT until this was folded down.
+  it("stays a legal filename, whatever the issue is called", () => {
+    expect(publicationSessionId("a:b/c d", "page 1")).toBe("publication--a-b-c-d--page-1");
+    expect(publicationSessionId("ok", "plan")).not.toMatch(/[^A-Za-z0-9._-]/);
   });
 
   // The whole point of the change: a stage must reach the tool-carrying path,
@@ -34,7 +42,7 @@ describe("publication stages run as agent sessions", () => {
     const [config, prompt] = runAgentSession.mock.calls[0];
     expect(config.sessionKind).toBe("publication");
     expect(config.bookId).toBeNull();
-    expect(config.sessionId).toBe("publication:issue-1:page-7");
+    expect(config.sessionId).toBe("publication--issue-1--page-7");
     expect(config.projectRoot).toBe("/root");
     expect(prompt).toBe("write page 7");
   });
@@ -61,7 +69,7 @@ describe("publication stages run as agent sessions", () => {
     const ask = createPublicationAsk({ ...base, issueId: () => id });
     id = "made-later";
     await ask("plan it", "plan");
-    expect(runAgentSession.mock.calls[0][0].sessionId).toBe("publication:made-later:plan");
+    expect(runAgentSession.mock.calls[0][0].sessionId).toBe("publication--made-later--plan");
   });
 
   it("refuses to run a stage before the issue exists", async () => {

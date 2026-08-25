@@ -52,9 +52,16 @@ export interface PublicationSessionOptions {
  *
  * Tags are already unique per stage and per page (`plan`, `page-7`, `design`),
  * which is what makes one-session-per-stage expressible at all.
+ *
+ * Separated by `--` rather than `:`, because a session id becomes a filename:
+ * transcripts are written to `.inkos/sessions/<id>.jsonl`. On Windows a colon
+ * in a path is the alternate-data-stream separator, so every publication stage
+ * failed to persist with ENOENT — which surfaced as the audit being unable to
+ * read a single page. Anything outside the safe set is folded down for the
+ * same reason: an issue id comes from a user-supplied subject.
  */
 export const publicationSessionId = (issueId: string, tag: string) =>
-  `publication:${issueId}:${tag}`;
+  `publication--${issueId}--${tag}`.replace(/[^A-Za-z0-9._-]+/g, "-");
 
 /**
  * Which stage this is, and what it owes back.
