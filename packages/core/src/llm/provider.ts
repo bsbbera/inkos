@@ -652,9 +652,24 @@ function wrapLLMError(error: unknown, context?: { readonly baseUrl?: string; rea
     || msg.includes("ETIMEDOUT")
     || msg.includes("EPIPE")
   ) {
+    // A loopback baseUrl is the desktop app's own model shim, not a remote API.
+    // Blaming the URL, the network and a firewall sends people to check three
+    // things that are all fine; the real cause is that the shim process is
+    // gone, and closing the window is what usually takes it down mid-run.
+    const baseUrl = context?.baseUrl ?? "";
+    if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:|\/|$)/u.test(baseUrl)) {
+      return new Error(
+        `本地模型服务（${baseUrl}）没有响应，通常是 Quire 的 shim 进程已经退出，`
+        + `关闭窗口会终止正在运行的任务。请重新打开 Quire 并查看日志目录中的 shim.log。\n`
+        + `The local model service at ${baseUrl} is not answering. That normally `
+        + `means Quire's own shim process is no longer running — closing the `
+        + `window terminates any run in progress. Reopen Quire and check `
+        + `shim.log in the app log directory.`,
+      );
+    }
     return new Error(
       `无法连接到 API 服务。可能原因：\n` +
-      `  1. baseUrl 地址不正确（当前：${context?.baseUrl ?? "未知"}）\n` +
+      `  1. baseUrl 地址不正确（当前：${baseUrl || "未知"}）\n` +
       `  2. 网络不通或被防火墙拦截\n` +
       `  3. API 服务暂时不可用\n` +
       `  建议：检查 INKOS_LLM_BASE_URL 是否包含完整路径（如 /v1）`,

@@ -220,6 +220,23 @@ describe("chatCompletion via pi-ai", () => {
     expect(error.message).not.toMatch(/kkaiapi/i);
   });
 
+  it("names the local shim, not the network, when the loopback model service is gone", async () => {
+    mockStreamSimple.mockReturnValue(makeErrorStream("fetch failed: ECONNREFUSED"));
+
+    const client = makeClient(0.7, {
+      _piModel: { ...MOCK_PI_MODEL, baseUrl: "http://127.0.0.1:8788/devin/v1" },
+    });
+    const error = await captureError(
+      chatCompletion(client, "test-model", [{ role: "user", content: "ping" }]),
+    );
+
+    expect(error.message).toContain("http://127.0.0.1:8788/devin/v1");
+    expect(error.message).toContain("shim.log");
+    // The generic advice sent people to check a URL, a firewall and an env var
+    // that were all correct.
+    expect(error.message).not.toContain("INKOS_LLM_BASE_URL");
+  });
+
   it("retries transient socket termination errors before failing the chapter pipeline", async () => {
     mockStreamSimple
       .mockReturnValueOnce(makeErrorStream("terminated: UND_ERR_SOCKET other side closed"))
