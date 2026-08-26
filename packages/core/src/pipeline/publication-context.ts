@@ -16,6 +16,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findPublicationDefinition, loadPublicationRegistry } from "../publications/registry.js";
+import type { PublicationDefinition } from "../publications/types.js";
 import type { PublicationIssue, RunnerContext, AskFn, PublicationEvent } from "./publication-runner.js";
 
 export interface OpenIssueOptions {
@@ -43,13 +44,13 @@ const refuseToAsk = (why: string): AskFn => async (_prompt, tag) => {
 export async function findIssue(
   projectRoot: string,
   issueId: string,
-): Promise<{ issue: PublicationIssue; dir: string } | undefined> {
+): Promise<{ issue: PublicationIssue; dir: string; definition: PublicationDefinition } | undefined> {
   const registry = await loadPublicationRegistry(projectRoot);
   for (const { definition } of registry.definitions) {
     const dir = join(projectRoot, definition.outDir, "issues", issueId);
     try {
       const raw = await readFile(join(dir, "publication.json"), "utf-8");
-      return { issue: JSON.parse(raw) as PublicationIssue, dir };
+      return { issue: JSON.parse(raw) as PublicationIssue, dir, definition };
     } catch {
       // Not this type's; try the next.
     }
@@ -91,7 +92,12 @@ export async function openIssueContext(
     );
   }
 
-  const definition = await findPublicationDefinition(projectRoot, found.issue.type);
+  // An issue made before the file carried a `type` at all still has one: the
+  // definition whose output directory it was found in. Refusing those means an
+  // issue in the workspace has a detail page that only ever returns a 500.
+  const definition = found.issue.type
+    ? await findPublicationDefinition(projectRoot, found.issue.type)
+    : found.definition;
   if (!definition) {
     throw new Error(
       `issue "${issueId}" was made as type "${found.issue.type}", which is no longer installed. `

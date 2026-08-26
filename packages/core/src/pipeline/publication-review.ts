@@ -104,11 +104,28 @@ const brief = (page: PublicationPage) =>
     page.body ?? "",
   ].filter(Boolean).join("\n");
 
-const neighbourText = (issue: PublicationIssue, page: PublicationPage) =>
-  issue.pages
+/**
+ * The rest of the issue, as far as this page needs to know it.
+ *
+ * Two hundred characters of every page is fine at twelve pages and useless at
+ * forty — the model reads a wall of opening fragments and dimension 27
+ * (cross-page contradiction) degrades into guessing. `recalled` is the index's
+ * answer to which pages bear on this one; without it the old behaviour stands,
+ * so a caller with no memory still gets a working audit.
+ */
+const neighbourText = (
+  issue: PublicationIssue,
+  page: PublicationPage,
+  recalled?: ReadonlyArray<{ n: number; title: string; opening: string }>,
+) => {
+  if (recalled?.length) {
+    return recalled.map((p) => `p${p.n} "${p.title}": ${p.opening}…`).join("\n");
+  }
+  return issue.pages
     .filter((p) => p.n !== page.n && p.body)
     .map((p) => `p${p.n} "${p.title}": ${String(p.body).slice(0, 200).replace(/\s+/g, " ")}…`)
     .join("\n") || "none written yet";
+};
 
 /**
  * One page, thirty-one dimensions, JSON back.
@@ -123,6 +140,7 @@ export function buildAuditPrompt(
   page: PublicationPage,
   definition: PublicationDefinition,
   section: PublicationSection | undefined,
+  recalled?: ReadonlyArray<{ n: number; title: string; opening: string }>,
 ): string {
   const band = definition.densities[page.density];
   return [
@@ -135,7 +153,7 @@ export function buildAuditPrompt(
     JSON.stringify(issue.research ?? {}).slice(0, 6000),
     "",
     "OTHER PAGES IN THIS ISSUE:",
-    neighbourText(issue, page),
+    neighbourText(issue, page, recalled),
     "",
     "THE PAGE UNDER AUDIT:",
     brief(page),

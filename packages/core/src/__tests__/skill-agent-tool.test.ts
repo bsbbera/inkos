@@ -5,6 +5,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createSkillRegistry } from "../skills/index.js";
 import { createUseSkillTool } from "../agent/skill-tool.js";
 
+/**
+ * Symlinks need elevated privileges on Windows, and these two tests are about
+ * what the registry does with one, not about whether the OS will make it. A
+ * skip is honest; two permanent EPERM failures just teach everyone to read a
+ * red run as green.
+ */
+async function symlinkOrSkip(target: string, path: string): Promise<boolean> {
+  try {
+    await symlink(target, path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EPERM") return false;
+    throw error;
+  }
+}
+
 describe("use_skill agent tool", () => {
   let root: string;
 
@@ -141,7 +157,7 @@ describe("use_skill agent tool", () => {
     await mkdir(baseDir, { recursive: true });
     await mkdir(outsideDir, { recursive: true });
     await writeFile(join(outsideDir, "secret.md"), "outside secret", "utf-8");
-    await symlink(outsideDir, join(baseDir, "references"));
+    if (!await symlinkOrSkip(outsideDir, join(baseDir, "references"))) return;
     const registry = createSkillRegistry({
       skills: [{
         id: "writer-distillation",
@@ -165,7 +181,7 @@ describe("use_skill agent tool", () => {
     const linkedDir = join(root, "linked-skill");
     await mkdir(join(realDir, "references"), { recursive: true });
     await writeFile(join(realDir, "references", "secret.md"), "outside secret", "utf-8");
-    await symlink(realDir, linkedDir);
+    if (!await symlinkOrSkip(realDir, linkedDir)) return;
     const registry = createSkillRegistry({
       skills: [{
         id: "linked-skill",

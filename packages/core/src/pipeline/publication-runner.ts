@@ -32,6 +32,15 @@ import {
   parseAuditFindings,
 } from "./publication-review.js";
 import {
+  PublicationMemory,
+  RECALL_THRESHOLD,
+  isPageWritten,
+  openingOf,
+  type RecalledFinding,
+  type RecalledPage,
+} from "./publication-memory.js";
+import { validateIssue } from "./publication-schema.js";
+import {
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
   contrast,
@@ -155,13 +164,31 @@ const emit = (ctx: RunnerContext, type: string, data: Record<string, unknown> = 
 export async function readIssue(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
   const path = fileOf(ctx, id);
   if (!existsSync(path)) throw new Error(`no such publication: ${id}`);
-  return JSON.parse(await readFile(path, "utf-8")) as PublicationIssue;
+  return validateIssue(JSON.parse(await readFile(path, "utf-8")), id);
 }
 
+/**
+ * Write the issue, or leave the last good one alone.
+ *
+ * Two things stand between a bad run and a destroyed issue. The schema check
+ * happens before anything is written, so a stage that mangled the object fails
+ * loudly with the file still intact. The write goes to a sibling and is renamed
+ * over the target, which is atomic on both NTFS and POSIX, so a crash or a full
+ * disk cannot leave half a JSON file where the issue used to be.
+ */
 async function save(ctx: RunnerContext, issue: PublicationIssue): Promise<PublicationIssue> {
   issue.updatedAt = new Date().toISOString();
+  validateIssue(issue, issue.id);
+
   await mkdir(dirOf(ctx, issue.id), { recursive: true });
-  await writeFile(fileOf(ctx, issue.id), JSON.stringify(issue, null, 2), "utf-8");
+  const target = fileOf(ctx, issue.id);
+  const temp = `${target}.${process.pid}.tmp`;
+  await writeFile(temp, JSON.stringify(issue, null, 2), "utf-8");
+  await rename(temp, target);
+
+  // Nothing indexes here: `recall` re-records before every query, so the index
+  // is right even when the issue was changed by something that never called
+  // save at all — a tool, or a hand edit.
   emit(ctx, "publication:issue", { id: issue.id, status: issue.status });
   return issue;
 }
@@ -197,7 +224,7 @@ export async function listIssues(ctx: RunnerContext): Promise<PublicationSummary
         status: issue.status,
         extent: issue.extent,
         pages: issue.pages?.length ?? 0,
-        written: issue.pages?.filter((p) => p.body !== null && p.body !== undefined).length ?? 0,
+        written: issue.pages?.filter(isPageWritten).length ?? 0,
         art: issue.pages?.filter((p) => p.image).length ?? 0,
         pdf: issue.build?.pdf ?? null,
       });
@@ -439,16 +466,53 @@ export async function unapprove(ctx: RunnerContext, id: string): Promise<Publica
  * A page gets its own pillar's claims, each with the source attached, as text
  * a writer can actually use.
  */
-function pageResearch(report: ResearchReport | null, pillar: string): string {
+function pageResearch(
+  report: ResearchReport | null,
+  pillar: string,
+  fallback: ReadonlyArray<RecalledFinding> = [],
+): string {
   const own = findingsFor(report, pillar);
   if (own) return own;
   if (!report) return "";
   // A pillar that found nothing still gets the rest, rather than a blank page
   // context — thin is better than empty, and the writer can see it is thin.
-  return Object.values(report.pillars)
-    .flatMap((p) => p.findings.slice(0, 4))
+  //
+  // Which of the rest used to be "the first four of every pillar", which is an
+  // arbitrary slice that ignores what the page is about. The index answers the
+  // question that was actually being asked: of everything researched for this
+  // issue, what bears on this page?
+  const chosen: ReadonlyArray<RecalledFinding> = fallback.length
+    ? fallback
+    : Object.values(report.pillars).flatMap((p) => p.findings.slice(0, 4));
+  return chosen
     .map((f) => `- (${f.kind}) ${f.claim}\n  source: ${f.sourceTitle} — ${f.sourceUrl}`)
     .join("\n");
+}
+
+/**
+ * What the issue remembers that bears on one page.
+ *
+ * Opened and closed per call: the index is a few kilobytes, a page write is a
+ * model round trip, and a connection held across an await is a lock held across
+ * an await. Any failure here degrades to no recall, never to a failed page.
+ */
+function recall(
+  ctx: RunnerContext,
+  issue: PublicationIssue,
+  query: string,
+  exclude: number,
+): { pages: RecalledPage[]; findings: RecalledFinding[] } {
+  try {
+    const memory = new PublicationMemory(dirOf(ctx, issue.id));
+    try {
+      memory.record(issue);
+      return { pages: memory.pages(query, exclude), findings: memory.findings(query) };
+    } finally {
+      memory.close();
+    }
+  } catch {
+    return { pages: [], findings: [] };
+  }
 }
 
 /** Which blocks this archetype may carry. Undefined mapping means all of them. */
@@ -456,7 +520,9 @@ function allowedBlocks(def: PublicationDefinition, archetype: string): readonly 
   const blocks = def.blocks;
   if (!blocks) return [];
   const named = blocks.byArchetype?.[archetype];
-  return named ?? blocks.kinds;
+  // A definition may declare `blocks` and no kinds at all; that is "none",
+  // not a crash three frames down in the prompt builder.
+  return named ?? blocks.kinds ?? [];
 }
 
 function blocksLine(def: PublicationDefinition, archetype: string): string {
@@ -645,9 +711,18 @@ export async function writePage(
 
   // Pages are written independently, so without this every one of them opens
   // on the single best anecdote in the research and the issue reads as a loop.
-  const taken = issue.pages
-    .filter((p) => p.n !== page.n && p.body)
-    .map((p) => `p${p.n}: "${String(p.body).slice(0, 140).replace(/\s+/g, " ")}…"`);
+  //
+  // Small issues list every page: eleven openings are readable, and recall
+  // cannot beat the complete set. Past that the list stops being context and
+  // starts being a wall, so the index picks the pages this one could actually
+  // collide with — which are exactly the pages that score against its premise.
+  const query = `${page.title} ${page.premise} ${page.pillar} ${section?.question ?? ""}`;
+  const recalled = recall(ctx, issue, query, page.n);
+  const written = issue.pages.filter((p) => p.n !== page.n && isPageWritten(p) && p.body);
+  const near: RecalledPage[] = written.length > RECALL_THRESHOLD
+    ? recalled.pages
+    : written.map((p) => ({ n: p.n, title: p.title, opening: openingOf(p) }));
+  const taken = near.map((p) => `p${p.n}: "${p.opening}…"`);
 
   const world = worldFor(issue, page.n);
   // The visual brief has to be writable in the register the section is already
@@ -685,7 +760,7 @@ export async function writePage(
     pagePillar: page.pillar,
     pagePremise: page.premise,
     neighbours: neighbours || "none",
-    pageResearch: pageResearch(research, page.pillar),
+    pageResearch: pageResearch(research, page.pillar, recalled.findings),
     takenBlock,
     blocksLine: blocksLine(def, page.type),
     wordsLow: lo,
@@ -1149,8 +1224,18 @@ async function reviewPage(
   page: PublicationPage,
 ): Promise<PublicationFinding[]> {
   const section = issue.sections.find((s) => s.n === page.section);
+  // Above the threshold the whole issue stops fitting usefully in one prompt,
+  // so the auditor gets the pages this one could contradict rather than all of
+  // them at two hundred characters each.
+  const others = issue.pages.filter((p) => p.n !== page.n && p.body).length;
+  const recalled = others > RECALL_THRESHOLD
+    ? recall(ctx, issue, `${page.title} ${page.premise} ${page.pillar}`, page.n).pages
+    : undefined;
   try {
-    const out = await ctx.ask(buildAuditPrompt(issue, page, ctx.definition, section), `audit-${page.n}`);
+    const out = await ctx.ask(
+      buildAuditPrompt(issue, page, ctx.definition, section, recalled),
+      `audit-${page.n}`,
+    );
     return parseAuditFindings(out, page.n);
   } catch (error) {
     // One page the model could not read must not throw away the audit of the

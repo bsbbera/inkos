@@ -761,6 +761,11 @@ export {
 export { openIssueContext as openPublicationIssue, listIssueIds as listPublicationIssueIds } from "./pipeline/publication-context.js";
 export { createPublicationAsk } from "./pipeline/publication-session.js";
 export { PUBLICATION_DIMENSIONS } from "./pipeline/publication-review.js";
+export {
+  PublicationMemory, isPageWritten as isPublicationPageWritten,
+  RECALL_THRESHOLD as PUBLICATION_RECALL_THRESHOLD,
+} from "./pipeline/publication-memory.js";
+export { PublicationIssueSchema, validateIssue as validatePublicationIssue } from "./pipeline/publication-schema.js";
 export type {
   PublicationIssue, PublicationPage, PublicationSection, PublicationSummary,
   PublicationDesign, DesignWorld, RunnerContext as PublicationRunnerContext,

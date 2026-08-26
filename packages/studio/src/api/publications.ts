@@ -18,6 +18,7 @@ import {
   approvePublication,
   approvePublicationDesign,
   createPublicationAsk,
+  isPublicationPageWritten,
   openPublicationIssue,
   renderPublicationPage,
   revisePublicationPage,
@@ -50,7 +51,7 @@ const STAGES: ReadonlyArray<PublicationStage> = ["research", "plan", "write", "a
  * anything is done outside the run that set it, and tools now do exactly that.
  */
 export function stageStates(issue: PublicationIssue): Array<{ stage: PublicationStage; state: string; detail: string }> {
-  const written = issue.pages.filter((p) => p.body && p.body.trim()).length;
+  const written = issue.pages.filter(isPublicationPageWritten).length;
   const withArt = issue.pages.filter((p) => p.image).length;
   const done = (yes: boolean) => (yes ? "done" : "pending");
   return [
@@ -92,7 +93,7 @@ export function stageStates(issue: PublicationIssue): Array<{ stage: Publication
  * blocked gate names its own remedy.
  */
 export function gateState(issue: PublicationIssue) {
-  const written = issue.pages.filter((p) => p.body && p.body.trim()).length;
+  const written = issue.pages.filter(isPublicationPageWritten).length;
   const designProblems = issue.design ? checkPublicationDesign(issue.design) : ["no design has been run"];
 
   const copyBlockers: string[] = [];
