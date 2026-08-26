@@ -50,6 +50,7 @@ interface Issue {
   readonly notes?: string;
   readonly pages: readonly Page[];
   readonly audit?: { at: string; findings: readonly Finding[]; rounds?: number } | null;
+  readonly lastError?: { at: string; stage?: string; message: string } | null;
   readonly build?: { pdf?: string | null };
 }
 
@@ -252,6 +253,15 @@ export function PublicationDetail({
             A run that stopped part-way picks up here.
           </span>
         </div>
+
+        {/* Why the last run stopped. Without this the page showed a half-written
+            issue that was not running and said nothing about either fact. */}
+        {issue.lastError && !data.running ? (
+          <p className="text-sm text-amber-500">
+            The last run stopped
+            {issue.lastError.stage ? ` during ${issue.lastError.stage}` : ""}: {issue.lastError.message}
+          </p>
+        ) : null}
       </section>
 
       {/* --------------------------------------------------------- findings */}

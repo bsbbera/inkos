@@ -747,6 +747,7 @@ export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
 export {
   listIssues, readIssue, createIssue, setNotes as setPublicationNotes, removeIssue,
+  setLastError as setPublicationLastError,
   checkPlan as checkPublicationPlan, checkDesign as checkPublicationDesign,
   approve as approvePublication, unapprove as unapprovePublication,
   runResearch, runPlan, writePage, artPage, build as buildPublication,

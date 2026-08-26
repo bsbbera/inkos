@@ -126,6 +126,16 @@ export interface PublicationIssue {
   build?: { pdf?: string | null; at?: string };
   /** What the audit stage found. Advisory: it never blocks the pipeline. */
   audit?: PublicationAudit | null;
+  /**
+   * Why the last run stopped, when it stopped badly.
+   *
+   * A failed run used to announce itself over SSE and nowhere else, so an
+   * issue that died at page two read as "writing, 1/16, not running" with no
+   * reason attached — the explanation existed for as long as someone happened
+   * to have the page open. Recorded here so the run can be understood after
+   * the fact. Cleared when a run gets going again.
+   */
+  lastError?: { at: string; stage?: string; message: string } | null;
 }
 
 /** Parsed JSON from the model. The caller owns the provider and the transport. */
@@ -299,6 +309,28 @@ export async function setNotes(
   const issue = await readIssue(ctx, id);
   issue.notes = String(notes ?? "");
   return save(ctx, issue);
+}
+
+/**
+ * Record why a run stopped, or clear the record when one starts.
+ *
+ * Kept separate from the run itself: the run has already failed by the time
+ * this is called, so it must not be able to fail in a way that loses the
+ * reason. A write that cannot happen is swallowed rather than replacing the
+ * original error with a filesystem one.
+ */
+export async function setLastError(
+  ctx: RunnerContext,
+  id: string,
+  error: { stage?: string; message: string } | null,
+): Promise<void> {
+  try {
+    const issue = await readIssue(ctx, id);
+    issue.lastError = error
+      ? { at: new Date().toISOString(), ...(error.stage ? { stage: error.stage } : {}), message: error.message }
+      : null;
+    await save(ctx, issue);
+  } catch { /* the run's own error is the one worth keeping */ }
 }
 
 export async function removeIssue(ctx: RunnerContext, id: string): Promise<boolean> {

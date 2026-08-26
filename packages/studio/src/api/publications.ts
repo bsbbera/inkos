@@ -33,6 +33,7 @@ import {
   type PublicationFinding,
   type PublicationIssue,
   type PublicationStage,
+  setPublicationLastError,
 } from "@actalk/quire-core";
 
 export interface PublicationRouteDeps {
@@ -189,11 +190,19 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
 
     // Not awaited: a forty-page resume outlives any sane request timeout, and
     // progress already arrives over SSE.
-    void runPublication(ctx, id, { from, stopAt })
+    // The failure is recorded on the issue as well as broadcast. It used to be
+    // broadcast only, so a run that died at page two left the issue reading
+    // "writing, 1/16, not running" with no reason attached — the explanation
+    // lived only in an SSE frame, and only for whoever had the page open at
+    // that second.
+    void setPublicationLastError(ctx, id, null)
+      .then(() => runPublication(ctx, id, { from, stopAt }))
       .then(() => broadcast("publication:run", { id, state: "done" }))
-      .catch((error: unknown) => broadcast("publication:run", {
-        id, state: "error", message: error instanceof Error ? error.message : String(error),
-      }))
+      .catch(async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await setPublicationLastError(ctx, id, { stage: from, message });
+        broadcast("publication:run", { id, state: "error", message });
+      })
       .finally(() => running.delete(id));
 
     return c.json({ started: true, from, stopAt });
