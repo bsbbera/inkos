@@ -26,6 +26,11 @@ interface McpServer {
   readonly enabled?: boolean;
   /** Ships with Quire rather than being discovered from another app's config. */
   readonly bundled?: boolean;
+  /**
+   * Copied out of another app's config on first run and into Quire's own.
+   * `source` still says where it came from; this says Quire owns it now.
+   */
+  readonly imported?: boolean;
 }
 
 interface McpTool {
@@ -152,7 +157,9 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
           <p className="text-sm">No MCP servers found.</p>
           <p className="mt-2 text-xs">
             Quire's own server ships with the app. Servers configured in Claude
-            Desktop, Claude Code, Devin or Codex are picked up automatically.
+            Desktop, Claude Code, Devin or Codex are copied into Quire's own
+            config the first time it runs, credentials included, and are yours
+            to edit from then on.
           </p>
         </div>
       ) : (
@@ -178,12 +185,13 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
                         {SOURCE_LABELS[s.source ?? ""] ?? s.source ?? "unknown"}
                       </span>
                       {/* A bundled server that fails to start is Quire's own
-                          fault and worth seeing; a discovered one that is
-                          missing is the other app's business. Telling them
-                          apart at a glance is the difference. */}
-                      {s.bundled ? (
+                          fault and worth seeing. An imported one was copied
+                          out of another app's config once and is Quire's to
+                          edit now — the source tag above it is history, not a
+                          live dependency. */}
+                      {s.bundled || s.imported ? (
                         <span className={`text-xs px-2 py-0.5 rounded border ${c.tableDivide} ${c.muted} shrink-0`}>
-                          bundled
+                          {s.bundled ? "bundled" : "imported"}
                         </span>
                       ) : null}
                     </button>

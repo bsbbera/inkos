@@ -9,6 +9,8 @@ export type ScriptTargetFormat =
   | "general_script";
 
 export interface ScriptCreationInput {
+  /** The rule stack for this run. See utils/rule-stack.ts. */
+  readonly rules?: string;
   readonly title: string;
   readonly sourceKind?: string;
   readonly targetFormat?: ScriptTargetFormat;
@@ -20,6 +22,8 @@ export interface ScriptCreationInput {
 }
 
 export interface StoryboardCreationInput {
+  /** The rule stack for this run. See utils/rule-stack.ts. */
+  readonly rules?: string;
   readonly title: string;
   readonly sourceKind?: string;
   readonly sourceText?: string;
@@ -38,6 +42,8 @@ export interface StoryboardCreationInput {
 }
 
 export interface InteractiveFilmCreationInput {
+  /** The rule stack for this run. See utils/rule-stack.ts. */
+  readonly rules?: string;
   readonly title: string;
   readonly sourceKind?: string;
   readonly sourceText?: string;
@@ -99,7 +105,7 @@ export class ScriptCreationAgent extends LongFormProductionAgent {
   async writeScript(input: ScriptCreationInput): Promise<string> {
     const language = input.language ?? "zh";
     const messages = [
-      { role: "system", content: buildScriptCreationSystemPrompt(language) },
+      { role: "system", content: buildScriptCreationSystemPrompt(language, input.rules) },
       { role: "user", content: buildScriptCreationUserPrompt(input, language) },
     ] as const;
     const response = await completeLongForm({
@@ -128,7 +134,7 @@ export class StoryboardCreationAgent extends LongFormProductionAgent {
   async writeStoryboard(input: StoryboardCreationInput): Promise<string> {
     const language = input.language ?? "zh";
     const messages = [
-      { role: "system", content: buildStoryboardCreationSystemPrompt(language) },
+      { role: "system", content: buildStoryboardCreationSystemPrompt(language, input.rules) },
       { role: "user", content: buildStoryboardCreationUserPrompt(input, language) },
     ] as const;
     const response = await completeLongForm({
@@ -157,7 +163,7 @@ export class InteractiveFilmCreationAgent extends LongFormProductionAgent {
   async writeInteractiveFilm(input: InteractiveFilmCreationInput): Promise<string> {
     const language = input.language ?? "zh";
     const messages = [
-      { role: "system", content: buildInteractiveFilmCreationSystemPrompt(language) },
+      { role: "system", content: buildInteractiveFilmCreationSystemPrompt(language, input.rules) },
       { role: "user", content: buildInteractiveFilmCreationUserPrompt(input, language) },
     ] as const;
     const response = await completeLongForm({
@@ -427,7 +433,10 @@ export function normalizeScriptEpisodeEndLabels(script: string): string {
   }).join("\n");
 }
 
-function buildScriptCreationSystemPrompt(language: "zh" | "en" = "zh"): string {
+function buildScriptCreationSystemPrompt(language: "zh" | "en" = "zh", rules = ""): string {
+  const tail = rules.trim() ? `
+
+${rules.trim()}` : "";
   if (language === "en") {
     return [
       "You are a script-creation tool, not a novel-continuation engine.",
@@ -435,7 +444,7 @@ function buildScriptCreationSystemPrompt(language: "zh" | "en" = "zh"): string {
       "Never ask a question, offer options for the user to choose, or defer writing. Resolve unspecified creative details with a coherent working choice; they remain editable later.",
       "The deliverable must include the exact Markdown headings `## Characters` and `## Script`, followed by a complete performable script rather than a proposal or outline.",
       "Output Markdown. No process notes, no model self-narration, no \"Here is\" preamble.",
-    ].join("\n");
+    ].join("\n") + tail;
   }
   return [
     "你是剧本创作工具，不是小说续写器。",
@@ -443,7 +452,7 @@ function buildScriptCreationSystemPrompt(language: "zh" | "en" = "zh"): string {
     "不得提问、给用户列待选方案或推迟落笔。未指定的创意细节采用连贯的工作版本，后续仍可编辑。",
     "交付稿必须包含准确的 Markdown 标题 `## 人物` 和 `## 剧本正文`，并在其后给出完整可排演剧本，不能只交方案或大纲。",
     "输出 Markdown。不要写流程说明、模型自述或“以下是”。",
-  ].join("\n");
+  ].join("\n") + tail;
 }
 
 function buildScriptCreationUserPrompt(input: ScriptCreationInput, language: "zh" | "en" = "zh"): string {
@@ -484,17 +493,20 @@ function buildScriptCreationUserPrompt(input: ScriptCreationInput, language: "zh
   ].join("\n");
 }
 
-function buildStoryboardCreationSystemPrompt(language: "zh" | "en" = "zh"): string {
+function buildStoryboardCreationSystemPrompt(language: "zh" | "en" = "zh", rules = ""): string {
+  const tail = rules.trim() ? `
+
+${rules.trim()}` : "";
   if (language === "en") {
     return [
       "You are a storyboard-creation tool. Execute the confirmed visual spec and source material; unconfirmed choices remain adjustable.",
       "Output Markdown. No model self-narration or process explanation.",
-    ].join("\n");
+    ].join("\n") + tail;
   }
   return [
     "你是分镜创作工具。执行用户确认的视觉规格和源素材；未确认的选择保持可调整。",
     "输出 Markdown。不要写模型自述或流程解释。",
-  ].join("\n");
+  ].join("\n") + tail;
 }
 
 function buildStoryboardCreationUserPrompt(input: StoryboardCreationInput, language: "zh" | "en" = "zh"): string {
@@ -550,19 +562,22 @@ function buildStoryboardCreationUserPrompt(input: StoryboardCreationInput, langu
   ].join("\n");
 }
 
-function buildInteractiveFilmCreationSystemPrompt(language: "zh" | "en" = "zh"): string {
+function buildInteractiveFilmCreationSystemPrompt(language: "zh" | "en" = "zh", rules = ""): string {
+  const tail = rules.trim() ? `
+
+${rules.trim()}` : "";
   if (language === "en") {
     return [
       "You are an interactive-film creation tool. Execute the confirmed spec and source material; unconfirmed choices remain adjustable.",
       "Output must be Markdown with the specified sections. No model self-narration, process notes, or \"Here is\" preamble.",
       "Every storyboard image prompt must be its own standalone `Prompt: ...` line so downstream asset management can pick it up; include only the visual constraints the user has confirmed.",
-    ].join("\n");
+    ].join("\n") + tail;
   }
   return [
     "你是互动影游创作工具。执行用户确认的规格和源素材；未确认的选择保持可调整。",
     "输出必须是 Markdown，包含指定小节。不要写模型自述、流程说明或“以下是”。",
     "分镜图提示词必须写成单独的 `Prompt: ...` 行，便于后续资产管理；只写用户确认过的视觉限制。",
-  ].join("\n");
+  ].join("\n") + tail;
 }
 
 function buildInteractiveFilmCreationUserPrompt(input: InteractiveFilmCreationInput, language: "zh" | "en" = "zh"): string {

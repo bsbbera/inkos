@@ -93,6 +93,8 @@ export interface ShortFictionDraftInput {
   readonly chapterCount: number;
   readonly charsPerChapter: number;
   readonly language?: ShortFictionLanguage;
+  /** The run's rule stack. See utils/rule-stack.ts. */
+  readonly rules?: string;
 }
 
 export interface ShortFictionDraftReviewInput extends ShortFictionDraftInput {
@@ -168,7 +170,7 @@ export class ShortFictionWriterAgent extends BaseAgent {
   async writeDraft(input: ShortFictionDraftInput): Promise<ShortFictionBatchDraft> {
     const response = await retryShortFictionCall(() =>
       this.chat([
-        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language) },
+        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language, input.rules) },
         { role: "user", content: buildShortFictionWriterUserPrompt(input, input.language) },
       ], {
         temperature: 0.58,
@@ -184,7 +186,7 @@ export class ShortFictionWriterAgent extends BaseAgent {
 
     const response = await retryShortFictionCall(() =>
       this.chat([
-        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language) },
+        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language, input.rules) },
         { role: "user", content: buildShortFictionDraftContinuationUserPrompt({
           direction: input.direction,
           outlineMarkdown: input.outlineMarkdown,
@@ -232,7 +234,7 @@ export class ShortFictionDraftReviserAgent extends BaseAgent {
   async reviseDraft(input: ShortFictionDraftRevisionInput): Promise<ShortFictionBatchDraft> {
     const response = await retryShortFictionCall(() =>
       this.chat([
-        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language) },
+        { role: "system", content: buildShortFictionWriterSystemPrompt(input.language, input.rules) },
         { role: "user", content: buildShortFictionWriterUserPrompt(input, input.language) },
         { role: "assistant", content: input.draft.rawContent.trim() || renderShortFictionDraftMarkdown(input.draft, input.language) },
         { role: "user", content: buildShortFictionDraftRevisionFollowup(input, input.language) },

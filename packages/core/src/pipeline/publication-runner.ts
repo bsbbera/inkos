@@ -39,6 +39,7 @@ import {
   type RecalledFinding,
   type RecalledPage,
 } from "./publication-memory.js";
+import { buildRuleStack } from "../utils/rule-stack.js";
 import { validateIssue } from "./publication-schema.js";
 import {
   DEFAULT_DESIGN_PROMPT,
@@ -153,6 +154,17 @@ const slug = (s: string) =>
   String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
 
 const rootFor = (ctx: RunnerContext) => join(ctx.projectRoot, ctx.definition.outDir, "issues");
+
+/**
+ * Where a series keeps the rules its issues share.
+ *
+ * A book has book_rules.md and story_bible.md and carries them across every
+ * chapter. A magazine series had nowhere to put the equivalent, so house
+ * prohibitions and register were re-derived from scratch each issue and drifted.
+ * series_rules.md and house_style.md live here and are read by buildRuleStack.
+ */
+const seriesDirOf = (ctx: RunnerContext, issue: PublicationIssue) =>
+  join(ctx.projectRoot, ctx.definition.outDir, "series", slug(issue.series || "default"));
 const dirOf = (ctx: RunnerContext, id: string) => join(rootFor(ctx), id);
 const fileOf = (ctx: RunnerContext, id: string) => join(dirOf(ctx, id), "publication.json");
 
@@ -437,6 +449,66 @@ export function requireApproval(issue: PublicationIssue, what: string): void {
   if (!issue.approved) {
     throw new Error(`${what} needs the copy approved first — every page written, then approved`);
   }
+}
+
+/**
+ * The renderer has to be up before a stage starts spending on it.
+ *
+ * ComfyUI installed-but-not-running surfaced as `art p1: fetch failed`, after
+ * the research, the planning, the writing and the audit had already run. It is
+ * the one failure the app can fix by itself, and it was being reported as if
+ * page one were at fault. Ask the shim; start it if it is only asleep; say
+ * plainly what is wrong if it is not.
+ */
+async function requireRenderer(ctx: RunnerContext): Promise<void> {
+  const shim = ctx.shimUrl;
+  if (!shim) throw new Error("image rendering needs Quire's shim, which is not reachable");
+  const ask = async (): Promise<{ up?: boolean; installed?: boolean; reason?: string }> =>
+    await fetch(`${shim}/comfy/status`, { signal: AbortSignal.timeout(5000) })
+      .then((r) => r.json() as Promise<{ up?: boolean; installed?: boolean; reason?: string }>)
+      .catch(() => ({}));
+
+  const first = await ask();
+  if (first.up) return;
+  if (first.installed === false) {
+    throw new Error(
+      "ComfyUI is not installed, so there is nothing to render with. Install it from "
+      + "Quire's setup panel and run the art stage again — the written pages and the "
+      + "audit are already on disk and will not be redone.",
+    );
+  }
+  // Installed and idle is the ordinary state after a reboot, and starting it is
+  // the entire fix. It is Quire's own process to start, so start it.
+  await fetch(`${shim}/comfy/start`, { method: "POST", signal: AbortSignal.timeout(200_000) })
+    .catch(() => undefined);
+  const second = await ask();
+  if (second.up) return;
+  throw new Error(
+    `ComfyUI is installed but would not start${second.reason ? `: ${second.reason}` : ""}. `
+    + "Nothing was rendered and nothing is lost — the pages and the audit are on disk. "
+    + "Start ComfyUI, then run the art stage again.",
+  );
+}
+
+/**
+ * Same idea for Affinity, which cannot be started on the user's behalf.
+ *
+ * Its scripting sandbox also has to be able to read the Desktop, or every
+ * image placement fails silently once the build is already underway. Better to
+ * refuse before staging assets than to produce a document with holes in it.
+ */
+async function requireDesigner(ctx: RunnerContext, what: string): Promise<string> {
+  const shim = ctx.shimUrl;
+  if (!shim) throw new Error(`${what} needs Quire's shim, which is not reachable`);
+  type Status = { up?: boolean; canRead?: boolean; reason?: string };
+  const s: Status = await fetch(`${shim}/affinity/status`, { signal: AbortSignal.timeout(40_000) })
+    .then((r) => r.json() as Promise<Status>)
+    .catch((e: unknown): Status => ({ up: false, reason: String(e) }));
+  if (s.up && s.canRead !== false) return shim;
+  throw new Error(
+    `${what} needs Affinity Publisher${s.reason ? `: ${s.reason}` : ", and it is not answering"}. `
+    + "Everything written so far is on disk; start Affinity and run this stage again.",
+  );
 }
 
 export async function approve(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
@@ -744,7 +816,20 @@ export async function writePage(
       + "year, an object, a number, a consequence, a dissenting voice.\n"
     : "";
 
-  const out = await ctx.ask(renderTemplate(def.prompts.page, {
+  // The same rules the book and short pipelines write against. A magazine used
+  // to get none of them: the voice skill supplied tone and nothing supplied
+  // craft, so a de-AI rule added for stories changed nothing here. Prepended
+  // rather than added to every type's page template, so a new publication type
+  // inherits the rules without having to remember to ask for them.
+  const rules = await buildRuleStack({
+    kind: "publication",
+    language: "en",
+    rulesDir: seriesDirOf(ctx, issue),
+  });
+
+  const out = await ctx.ask(`${rules}
+
+` + renderTemplate(def.prompts.page, {
     voice: await voiceFor(ctx, issue),
     title: issue.title,
     thesis: issue.thesis,
@@ -817,10 +902,10 @@ export async function artPage(
 ): Promise<PublicationPage> {
   const def = ctx.definition;
   if (!def.needsImages) throw new Error(`${def.label} does not use generated images`);
-  if (!ctx.shimUrl) throw new Error("image rendering needs Quire's shim, which is not reachable");
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "art");
+  await requireRenderer(ctx);
   const page = issue.pages.find((p) => p.n === Number(n));
   if (!page) throw new Error(`no page ${n} in ${id}`);
   if (!page.brief?.prompt) throw new Error(`page ${n} has no visual brief — write it first`);
@@ -969,10 +1054,10 @@ function requireDesignApproval(issue: PublicationIssue, what: string): void {
 export async function build(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
   const def = ctx.definition;
   if (!def.needsPdf) throw new Error(`${def.label} does not produce a PDF`);
-  if (!ctx.shimUrl) throw new Error("building needs Quire's shim, which is not reachable");
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "build");
+  await requireDesigner(ctx, "building the document");
   requireDesignApproval(issue, "build");
   const designProblems = checkSpec(issue.design?.spec, issue.pages.map((p) => p.n));
   if (designProblems.length) {
@@ -1018,10 +1103,10 @@ export async function placePage(
 ): Promise<{ readonly page: number; readonly findings: ReadonlyArray<string> }> {
   const def = ctx.definition;
   if (!def.needsPdf) throw new Error(`${def.label} does not produce a PDF`);
-  if (!ctx.shimUrl) throw new Error("layout needs Quire's shim, which is not reachable");
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "layout");
+  await requireDesigner(ctx, "laying out a page");
   requireDesignApproval(issue, "layout");
   if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
 
@@ -1059,7 +1144,7 @@ export async function renderPage(
   id: string,
   n: number,
 ): Promise<{ readonly image: string | null; readonly error?: string }> {
-  if (!ctx.shimUrl) throw new Error("rendering needs Quire's shim, which is not reachable");
+  await requireDesigner(ctx, "rendering a spread");
   const issue = await readIssue(ctx, id);
   if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
 

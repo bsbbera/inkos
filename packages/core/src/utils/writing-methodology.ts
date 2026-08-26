@@ -1,26 +1,55 @@
 /**
+ * The writing rules, in two layers.
+ *
+ * The anti-AI layer is about prose, not about stories: emotion carried by
+ * action instead of named, transitions that do not read as connective tissue,
+ * facts that stay consistent, no borrowed vocabulary. That is as true of a
+ * two-page magazine explainer as of a novel chapter, and it used to be
+ * unreachable from anything but the book pipeline because it was welded to the
+ * story-craft sections below it.
+ *
+ * The story layer — character psychology, supporting cast, immersion,
+ * escalation, the pre-write checklist — is about narrative and belongs only to
+ * things that tell a story.
+ *
+ * buildRuleStack() in ./rule-stack.ts decides which layers a given kind of
+ * work gets. Nothing else should be composing these by hand.
+ *
+ * The full section is injected once during initBook/generateStyleGuide and
+ * read by the writer on every chapter as part of the style_guide context.
+ */
+
+/** Prose quality. Applies to every kind of writing Quire produces. */
+export function buildProseCraftSection(language: "zh" | "en"): string {
+  return language === "en" ? EN_PROSE : ZH_PROSE;
+}
+
+/** Narrative craft. Applies to stories, not to reference or explanatory writing. */
+export function buildStoryCraftSection(language: "zh" | "en"): string {
+  return language === "en" ? EN_STORY : ZH_STORY;
+}
+
+/**
  * Full writing methodology for style_guide.md injection.
  * This is the complete reference material (with examples) that the
  * compact "craft card" in the system prompt summarizes.
- *
- * Injected once during initBook/generateStyleGuide, then read by
- * writer on every chapter as part of the style_guide context.
  */
 export function buildWritingMethodologySection(language: "zh" | "en"): string {
-  if (language === "en") {
-    return buildEnglishMethodology();
-  }
-  return buildChineseMethodology();
-}
+  const header = language === "en"
+    ? `---
 
-function buildChineseMethodology(): string {
-  return `---
+# Writing Methodology Reference (Full Version)
+
+Complete reference material for writing quality. Internalize these principles.`
+    : `---
 
 # 写作方法论参考（完整版）
 
-以下方法论是写作质量的完整参考。写作时应内化这些原则。
+以下方法论是写作质量的完整参考。写作时应内化这些原则。`;
+  return [header, buildProseCraftSection(language), buildStoryCraftSection(language)].join("\n\n");
+}
 
-## 一、去AI味：正反例对照
+const ZH_PROSE = `## 一、去AI味：正反例对照
 
 ### 情绪描写
 | 反例（AI味） | 正例（人味） | 要点 |
@@ -42,7 +71,18 @@ function buildChineseMethodology(): string {
 | 他走了过去，拿了杯子，喝了一口水。 | 他走过去，端起杯子，灌了一口。 |
 | 她笑了笑，转身离开了房间。 | 她嘴角一扬，转身出门。 |
 
-## 二、六步走人物心理分析
+### 事实一致性
+- 已经写下的名字、数字、时间、地点、因果，后面不许悄悄改。改了就是错，不是风格。
+- 不确定的事实不要写成确定。写不准就查，查不到就换一个能写准的说法。
+- 专有名词、单位、称谓在全文保持同一种写法。
+
+### 语言约束
+- 不要用「不是 X，而是 Y」当万能句式。
+- 不要用报告体词汇（核心动机、战略优势、深度赋能）写正文。
+- 排比三连（又…又…又…）每段最多一次。
+- 破折号不要当成默认停顿符号反复用。`;
+
+const ZH_STORY = `## 二、六步走人物心理分析
 
 每个重要角色在关键场景中的行为，必须经过以下六步推导：
 
@@ -93,16 +133,8 @@ function buildChineseMethodology(): string {
 6. 章尾是否留了钩子？
 7. 有没有流水账？如有，加前因后果或强情绪
 8. 本章是否推进了主线目标？`;
-}
 
-function buildEnglishMethodology(): string {
-  return `---
-
-# Writing Methodology Reference (Full Version)
-
-Complete reference material for writing quality. Internalize these principles.
-
-## 1. Anti-AI Pattern Guide
+const EN_PROSE = `## 1. Anti-AI Pattern Guide
 
 ### Emotion
 | Bad (AI-like) | Good (Human) | Key |
@@ -117,7 +149,19 @@ Complete reference material for writing quality. Internalize these principles.
 | However, things were not so simple. | No such luck. | Character thought replaces "however" |
 | Therefore, he decided to take action. | He stood up and kicked the chair aside. | Cut causal connectors, show action |
 
-## 2. Six-Step Character Psychology
+### Factual Consistency
+- A name, number, date, place or causal link, once written, does not quietly change later. A change is an error, not a style choice.
+- Do not state an uncertain fact as a certain one. If it cannot be pinned down, look it up; if it cannot be looked up, write the claim you can actually support.
+- Proper nouns, units and forms of address stay spelled and styled the same way throughout.
+
+### Language Constraints
+- "It wasn't X; it was Y" is not an all-purpose sentence shape. Use it once, or not at all.
+- Keep report vocabulary out of the prose: core motivation, strategic advantage, key takeaway, leverage, robust.
+- Ration the AI tells: delve, tapestry, testament, intricate, pivotal, navigate, underscore, multifaceted.
+- The rule of three (three adjectives, three clauses, three examples) at most once per section.
+- Em dashes are not the default pause. Prefer a full stop or a comma.`;
+
+const EN_STORY = `## 2. Six-Step Character Psychology
 
 For every important character action:
 1. **Situation**: What's the character facing? What cards do they hold?
@@ -161,4 +205,3 @@ Fix boring daily scenes by adding fuel:
 6. Does the chapter end with a hook?
 7. Any flowchart passages? If so, add causality or strong emotion.
 8. Does this chapter advance the main plotline?`;
-}

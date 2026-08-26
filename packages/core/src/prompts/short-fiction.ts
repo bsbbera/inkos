@@ -212,7 +212,16 @@ export function buildShortFictionOutlineRevisionFollowup(
   ].join("\n");
 }
 
-export function buildShortFictionWriterSystemPrompt(language: ShortFictionLanguage = "zh"): string {
+/**
+ * @param rules The rule stack for this run — see utils/rule-stack.ts. Appended
+ *   rather than merged: the rules are the same for every kind of writing Quire
+ *   does, and the lines above them are what is particular to a short.
+ */
+export function buildShortFictionWriterSystemPrompt(
+  language: ShortFictionLanguage = "zh",
+  rules = "",
+): string {
+  const tail = rules.trim() ? `\n\n${rules.trim()}` : "";
   if (language === "en") {
     return [
       "You are an English short-fiction BatchWriter. You write the complete short story in one API pass, following the story plan.",
@@ -222,7 +231,7 @@ export function buildShortFictionWriterSystemPrompt(language: ShortFictionLangua
       "The story title and chapter titles must read like platform content, not literary summaries. Keep the prose paced for mobile reading — short paragraphs, but never telegram-style fragments.",
       "The word count is a calibration, not an averaging exercise. Big scenes may run long and transitions short; a clearly short chapter usually means you wrote a synopsis and must add real scenes.",
       "Output must strictly use the specified blocks. No author notes, no word-count remarks, no review comments, no format explanations.",
-    ].join("\n");
+    ].join("\n") + tail;
   }
   return [
     "你是中文短篇 BatchWriter。你要根据故事方案一次 API 写完整短篇正文。",
@@ -231,7 +240,7 @@ export function buildShortFictionWriterSystemPrompt(language: ShortFictionLangua
     "标题和章节标题要像平台内容，不要文艺化总结。正文保持移动端节奏，段落短但不要写成电报体。",
     "字数是校准，不是平均数学题。大场面可略长，过渡章可略短；明显偏短通常说明写成了梗概，必须补有效场面。",
     "输出必须严格使用指定 block，不要写作者说明、字数说明、审稿意见或格式解释。",
-  ].join("\n");
+  ].join("\n") + tail;
 }
 
 export function buildShortFictionWriterUserPrompt(

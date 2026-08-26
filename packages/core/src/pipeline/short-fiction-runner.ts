@@ -42,6 +42,7 @@ import {
   type ProductionObservation,
 } from "../production/harness.js";
 import { buildLengthSpec, countChapterLength } from "../utils/length-metrics.js";
+import { buildRuleStack } from "../utils/rule-stack.js";
 import { safeChildPath } from "../utils/path-safety.js";
 import { toPosixPath as projectPath } from "../utils/posix-path.js";
 import { commitAtomicFileSet, type AtomicFileWrite } from "../utils/atomic-file-set.js";
@@ -274,6 +275,14 @@ async function produceShort(
   let salesPackage: ShortFictionSalesPackage;
   try {
     options.onProgress?.("Writing full short fiction draft...");
+    // The same rules the long-book pipeline writes to style_guide.md. A short
+    // used to get only the craft list hand-maintained in prompts/short-fiction,
+    // which meant a de-AI rule added for books changed nothing here.
+    const rules = await buildRuleStack({
+      kind: "short",
+      language: language === "en" ? "en" : "zh",
+      rulesDir: join(root, baseDir),
+    });
     const writer = new ShortFictionWriterAgent(options.runtimes.writer);
     let draftV1 = await writer.writeDraft({
       direction: options.direction,
@@ -281,6 +290,7 @@ async function produceShort(
       chapterCount,
       charsPerChapter,
       language,
+      rules,
     });
     let missingFromDraft = findEmptyShortFictionChapters(draftV1);
     if (missingFromDraft.length > 0) {
@@ -293,6 +303,7 @@ async function produceShort(
           chapterCount,
           charsPerChapter,
           language,
+          rules,
           draft: draftV1,
         });
         missingFromDraft = findEmptyShortFictionChapters(draftV1);

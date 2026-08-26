@@ -25,6 +25,7 @@ import {
 } from "../agents/script-storyboard.js";
 import { safeChildPath } from "../utils/path-safety.js";
 import { toPosixPath } from "../utils/posix-path.js";
+import { buildRuleStack } from "../utils/rule-stack.js";
 
 export interface ScriptCreationRunOptions {
   readonly projectRoot: string;
@@ -155,7 +156,13 @@ export async function runScriptCreation(
   const projectId = safeSegment(options.projectId ?? slugify(options.title));
   const baseDir = resolveProjectBaseDir(options.outDir ?? "dramas", projectId);
   const sourceText = await resolveSourceText(options.projectRoot, options.sourceText, options.sourcePath);
+  const rules = await buildRuleStack({
+    kind: "script",
+    language: options.language === "en" ? "en" : "zh",
+    rulesDir: join(options.projectRoot, baseDir),
+  });
   const input: ScriptCreationInput = {
+    rules,
     title: options.title,
     sourceKind: options.sourceKind,
     targetFormat: options.targetFormat,
@@ -224,7 +231,13 @@ export async function runInteractiveFilmCreation(
   const projectId = safeSegment(options.projectId ?? slugify(options.title));
   const baseDir = resolveProjectBaseDir(options.outDir ?? "interactive-films", projectId);
   const sourceText = await resolveSourceText(options.projectRoot, options.sourceText, options.sourcePath);
+  const rules = await buildRuleStack({
+    kind: "storyboard",
+    language: options.language === "en" ? "en" : "zh",
+    rulesDir: join(options.projectRoot, baseDir),
+  });
   const input: InteractiveFilmCreationInput = {
+    rules,
     title: options.title,
     sourceKind: options.sourceKind,
     sourceText,
@@ -341,7 +354,13 @@ export async function runStoryboardCreation(
   const projectId = safeSegment(options.projectId ?? slugify(options.title));
   const baseDir = resolveProjectBaseDir(options.outDir ?? "storyboards", projectId);
   const sourceText = await resolveSourceText(options.projectRoot, options.sourceText, options.sourcePath);
+  const rules = await buildRuleStack({
+    kind: "storyboard",
+    language: options.language === "en" ? "en" : "zh",
+    rulesDir: join(options.projectRoot, baseDir),
+  });
   const input: StoryboardCreationInput = {
+    rules,
     title: options.title,
     sourceKind: options.sourceKind,
     sourceText,
