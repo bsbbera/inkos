@@ -48,6 +48,7 @@ import {
   createResearchWebTool,
   createPublicationCreateTool,
   createPublicationProductionTools,
+  createStoryAuditTools,
   createComfyGenerateTool,
   createIngestMaterialTool,
   createRetrieveMaterialTool,
@@ -848,6 +849,11 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   const materialRetrievalTool = createRetrieveMaterialTool(params.projectRoot);
   const projectReadTool = createReadTool(params.projectRoot, { scope: "project" });
   const importChaptersTool = createImportChaptersTool(params.pipeline, params.bookId, params.projectRoot);
+  // The checks a finished artifact can be put back through. Always available
+  // in the kinds that produce one: an audit is what you ask for *after* a run,
+  // so gating it behind a confirmed intent would put it out of reach at
+  // exactly the moment it is wanted.
+  const storyCheckTools = createStoryAuditTools(params.pipeline, params.projectRoot);
   const isConfirmed = (
     intent: NonNullable<AgentSessionConfig["requestedIntent"]>,
   ): boolean => {
@@ -889,7 +895,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
     // tool of its size that never asked.
     if (isConfirmed("publication_create")) return [publicationTool, imageTool];
     return [proposalTool, researchTool, imageTool, materialTool, materialRetrievalTool,
-      importChaptersTool, ...productionTools];
+      importChaptersTool, ...storyCheckTools, ...productionTools];
   }
 
   // A publication stage. Narrow on purpose: these are the capabilities a stage
@@ -919,7 +925,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
     if (isConfirmed("generate_cover")) {
       return [createGenerateCoverTool(params.projectRoot, { actionPayload: params.actionPayload })];
     }
-    return [proposalTool, materialTool, materialRetrievalTool];
+    return [proposalTool, materialTool, materialRetrievalTool, ...storyCheckTools];
   }
 
   if (params.sessionKind === "script") {
@@ -931,7 +937,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool];
+    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool, ...storyCheckTools];
   }
 
   if (params.sessionKind === "storyboard") {
@@ -943,7 +949,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool];
+    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool, ...storyCheckTools];
   }
 
   if (params.sessionKind === "interactive-film") {
@@ -955,7 +961,7 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
         activeSkills: params.activeSkills,
       })];
     }
-    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool];
+    return [proposalTool, projectReadTool, materialTool, materialRetrievalTool, ...storyCheckTools];
   }
 
   if (params.sessionKind === "interactive-film-authoring") {

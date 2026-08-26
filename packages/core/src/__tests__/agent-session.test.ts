@@ -695,6 +695,11 @@ describe("runAgentSession cache — bookId switch", () => {
       "ingest_material",
       "retrieve_material",
       "import_chapters",
+      // The checks a finished artifact can be put back through: available
+      // in every kind that produces one, because an audit is what you ask
+      // for after a run, not before it.
+      "story_audit",
+      "story_deslop",
       // Acting on an issue that already exists. Creating one still goes through
       // propose_action; redoing one page of a publication already made does
       // not, because the run it belonged to is over and nothing else can reach
@@ -939,6 +944,8 @@ describe("runAgentSession cache — bookId switch", () => {
         "read",
         "ingest_material",
         "retrieve_material",
+        "story_audit",
+        "story_deslop",
         "use_skill",
       ]);
       evictAgentCache(sessionId);
@@ -957,6 +964,8 @@ describe("runAgentSession cache — bookId switch", () => {
       "propose_action",
       "ingest_material",
       "retrieve_material",
+      "story_audit",
+      "story_deslop",
       "use_skill",
     ]);
 

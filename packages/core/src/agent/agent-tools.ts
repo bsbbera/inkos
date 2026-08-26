@@ -3075,6 +3075,101 @@ const GenerateCoverParams = Type.Object({
 
 type GenerateCoverParamsType = Static<typeof GenerateCoverParams>;
 
+/* ----------------------------------------------------- story audit / deslop */
+
+const StoryAuditParams = Type.Object({
+  path: Type.String({
+    description:
+      "Project-relative path of the finished markdown artifact to check — the story, script or "
+      + "storyboard file a production run wrote, e.g. \"shorts/tern-island/final/story.md\" or "
+      + "\"dramas/closing-time/script.md\".",
+  }),
+  revise: Type.Optional(Type.Boolean({
+    description:
+      "Rewrite what the audit faults and check the result, up to two rounds. Default true. "
+      + "Set false to report findings without touching the file.",
+  })),
+});
+
+type StoryAuditParamsType = Static<typeof StoryAuditParams>;
+
+/**
+ * Check a finished story the way a magazine issue is checked.
+ *
+ * The short-fiction runner reviews its own draft once, mid-run, and after that
+ * the file is final: there was no way to ask for the checks again, and scripts
+ * and storyboards never had them at all. These two are the story-side
+ * equivalents of publication_audit and publication_deslop, and they work on a
+ * path rather than a project so they also reach work written before they
+ * existed.
+ */
+export function createStoryAuditTools(
+  pipeline: PipelineRunner | undefined,
+  projectRoot: string,
+): AgentTool<typeof StoryAuditParams>[] {
+  const run = async (
+    params: StoryAuditParamsType,
+    slopOnly: boolean,
+    signal?: AbortSignal,
+    onUpdate?: AgentToolUpdateCallback,
+  ) => {
+    if (!pipeline) {
+      throw new Error("this session cannot run the checks — no pipeline is configured for it");
+    }
+    const { createStoryAsk, runStoryAudit, storyAuditReport } = await import("../pipeline/story-audit.js");
+    const audit = await runStoryAudit({
+      projectRoot,
+      path: params.path,
+      ask: createStoryAsk(pipeline, signal),
+      revise: params.revise,
+      slopOnly,
+      signal,
+      onProgress: (message) => onUpdate?.(textResult(message)),
+    });
+    return textResult([
+      storyAuditReport(audit),
+      audit.rounds
+        ? `\nRewritten in place. The text as it stood before the first round is beside it, as *.pre-audit.md.`
+        : "",
+    ].filter(Boolean).join("\n"));
+  };
+
+  return [
+    {
+      name: "story_audit",
+      description:
+        "Run the full quality pass over a finished story, script or storyboard file: the rule checks "
+        + "(paragraph uniformity, hedge density, formulaic transitions, list-shaped prose, phrases "
+        + "repeated across sections) and a model read of every section against 30 narrative and prose "
+        + "dimensions — promise kept, scene versus summary, causality, motivation, dialogue, pacing, "
+        + "setup and payoff, voice, cliche, filler and the rest. By default it does not merely report: "
+        + "sections the audit faults are rewritten and audited again, up to two rounds, and the text as "
+        + "it stood is kept beside the file.",
+      label: "Audit Story",
+      parameters: StoryAuditParams,
+      async execute(_id: string, params: StoryAuditParamsType, signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        onUpdate?.(textResult("Auditing every section…"));
+        return run(params, false, signal, onUpdate);
+      },
+    },
+    {
+      name: "story_deslop",
+      description:
+        "De-AI-ification pass over a finished story, script or storyboard file. The same audit loop, but "
+        + "only findings about the prose sounding machine-made are rewritten: generic voice, abstraction "
+        + "where the concrete was available, stock imagery, marching sentence rhythm, decorative simile, "
+        + "filler, over-explanation, report vocabulary and the AI tell words. Everything else is reported "
+        + "and left alone.",
+      label: "De-AI Story",
+      parameters: StoryAuditParams,
+      async execute(_id: string, params: StoryAuditParamsType, signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        onUpdate?.(textResult("Rewriting what reads as machine-made…"));
+        return run(params, true, signal, onUpdate);
+      },
+    },
+  ];
+}
+
 export function createGenerateCoverTool(
   projectRoot: string,
   options: { readonly actionPayload?: ActionPayload } = {},
