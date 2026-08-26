@@ -378,23 +378,16 @@ async function produceShort(
     throw error;
   }
 
-  const coverArtifacts: { readonly coverImagePath?: string; readonly coverError?: string } = options.cover === false
-    ? { coverError: "disabled" }
-    : await generateCoverArtifact({
-        root,
-        baseDir,
-        salesPackage,
-        language,
-        coverBaseUrl: options.coverBaseUrl,
-        coverEndpoint: options.coverEndpoint,
-        coverModel: options.coverModel,
-        coverSize: options.coverSize,
-        coverApiKeyEnv: options.coverApiKeyEnv,
-        signal: options.signal,
-      }).catch((error: unknown) => {
-        options.signal?.throwIfAborted();
-        return { coverError: String(error) };
-      });
+  // Art is a separate, user-approved step and never runs here. Cover rendering
+  // used to fire at this point — before the audit observations below were even
+  // computed — so an image was produced for a draft nobody had reviewed, and on
+  // a machine with no image provider configured the whole run reported a cover
+  // error for work that had otherwise succeeded. The run now stops at the cover
+  // *prompt*; generate_cover renders it after the user has seen the audit and
+  // approved.
+  const coverArtifacts: { readonly coverImagePath?: string; readonly coverError?: string } = {
+    coverError: "awaiting-approval",
+  };
 
   const completionWarnings = [
     outlineRevisionWarning ? `outline revision skipped: ${outlineRevisionWarning}` : "",
@@ -410,7 +403,9 @@ async function produceShort(
       evidence: warning,
       repairable: true,
     })),
-    ...(coverArtifacts.coverError && coverArtifacts.coverError !== "disabled"
+    ...(coverArtifacts.coverError
+      && coverArtifacts.coverError !== "disabled"
+      && coverArtifacts.coverError !== "awaiting-approval"
       ? [{
           metric: "cover-generation",
           expected: "cover image generated",

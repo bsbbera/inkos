@@ -272,7 +272,10 @@ describe("short fiction resume + failure marker (C2)", () => {
       chapterCount: CH, charsPerChapter: 1000, cover: false, runtimes: runtimes(root),
     });
 
-    expect(result.coverError).toBe("disabled");
+    // The run never renders art now — it stops at the cover prompt and waits
+    // for the user to approve generate_cover, so this is the completed state
+    // regardless of what `cover` was set to.
+    expect(result.coverError).toBe("awaiting-approval");
     expect(packageSpy).toHaveBeenCalled();
     await expect(access(join(root, "shorts", "elevator", "final", "sales-package.md"))).resolves.toBeUndefined();
   });

@@ -2153,11 +2153,17 @@ export function createShortFictionRunTool(
           `Cover prompt: ${result.coverPromptPath}`,
           result.coverImagePath
             ? `Cover image: ${result.coverImagePath}`
-            : [
-                "Cover image: not generated.",
-                `Cover image reason: ${summarizeCoverGenerationError(result.coverError)}`,
-                "The short fiction draft, synopsis, selling points, and cover prompt were still written successfully.",
-              ].join("\n"),
+            : result.coverError === "awaiting-approval"
+              ? [
+                  "Cover image: not generated yet — art is a separate step.",
+                  "Review the audit above. To render the cover, ask for it and confirm the",
+                  "generate_cover action; nothing is drawn until you approve it.",
+                ].join("\n")
+              : [
+                  "Cover image: not generated.",
+                  `Cover image reason: ${summarizeCoverGenerationError(result.coverError)}`,
+                  "The short fiction draft, synopsis, selling points, and cover prompt were still written successfully.",
+                ].join("\n"),
         ].join("\n"),
         { kind: "short_fiction_created", ...result, skillIds: activatedSkillIds(activatedSkills) },
       );

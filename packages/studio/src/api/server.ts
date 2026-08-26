@@ -3655,6 +3655,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       && (process.env.INKOS_COVER_API_KEY || keyFor("kkaiapi")),
     );
     const configured = Boolean(cover?.service && ready(cover.service)) || envConfigured;
+    // The local renderer has no key, so `ready` said yes for it unconditionally
+    // and the panel showed "connected" while ComfyUI was installed but not
+    // running. Ask the shim, which knows.
+    const comfyUp = await fetch(`${shimUrl()}/comfy/status`, {
+      signal: AbortSignal.timeout(3000),
+    })
+      .then((r) => (r.ok ? r.json() as Promise<{ up?: boolean }> : null))
+      .then((s) => s?.up === true)
+      .catch(() => false);
+    const connectedFor = (service: string): boolean =>
+      service === "comfy" ? comfyUp : ready(service);
     return c.json({
       service: cover?.service ?? null,
       model: cover?.model ?? null,
@@ -3667,7 +3678,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         defaultModel: provider.defaultModel,
         models: provider.models,
         needsKey: provider.needsKey !== false,
-        connected: ready(provider.service),
+        connected: connectedFor(provider.service),
       })),
     });
   });
