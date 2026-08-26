@@ -574,14 +574,33 @@ function artifactRows(details: GeneratedArtifactDetails): Array<readonly [string
  * interactive film — so short fiction, covers and every publication wrote
  * files the chat named and offered no way to open.
  */
+/**
+ * The file a story's checks run against.
+ *
+ * The audit reads one markdown artifact, so the button needs to name one. The
+ * prose is what either pass is about — a spec or a manifest is not what
+ * "de-AI this" means.
+ */
+function auditTarget(details: GeneratedArtifactDetails): string | null {
+  if (details.kind === "short_fiction_created") return details.finalMarkdownPath ?? null;
+  if (details.kind === "script_created") return details.scriptPath ?? null;
+  if (details.kind === "storyboard_created") return details.storyboardPath ?? null;
+  return null;
+}
+
 function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecution; onOpenFilmStudio?: (projectId: string) => void }) {
   const openProjectArtifact = useChatStore((s) => s.openProjectArtifact);
+  const sendMessage = useChatStore((s) => s.sendMessage);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
   if (exec.status !== "completed") return null;
   const details = getGeneratedArtifactDetails(exec);
   if (!details) return null;
   const rows = artifactRows(details);
   const canOpenStudio = details.kind === "interactive_film_created" && Boolean(details.projectId) && Boolean(onOpenFilmStudio);
-  if (rows.length === 0 && !canOpenStudio) return null;
+  // Both passes exist as tools and could only be reached by typing their name.
+  // A finished story is exactly where someone wants them, so they go here.
+  const target = activeSessionId ? auditTarget(details) : null;
+  if (rows.length === 0 && !canOpenStudio && !target) return null;
   const [zh, en] = ARTIFACT_HEADINGS[details.kind];
   return (
     <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
@@ -598,6 +617,24 @@ function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecut
           </button>
         )}
       </div>
+      {target && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void sendMessage(activeSessionId!, `Run story_audit on ${target}.`)}
+            className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1 text-[12px] font-semibold text-primary transition hover:bg-primary/10"
+          >
+            {tr("审校并修订", "Audit & revise")}
+          </button>
+          <button
+            type="button"
+            onClick={() => void sendMessage(activeSessionId!, `Run story_deslop on ${target}.`)}
+            className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1 text-[12px] font-semibold text-primary transition hover:bg-primary/10"
+          >
+            {tr("去 AI 味", "De-AI pass")}
+          </button>
+        </div>
+      )}
       {rows.length > 0 && (
         <div className="mt-2 space-y-1.5">
           {rows.map(([label, path]) => (
