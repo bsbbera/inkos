@@ -319,6 +319,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   const setSelectedModel = useChatStore((s) => s.setSelectedModel);
   const loadSessionList = useChatStore((s) => s.loadSessionList);
   const createSession = useChatStore((s) => s.createSession);
+  const createDraftSession = useChatStore((s) => s.createDraftSession);
   const markProposalResolved = useChatStore((s) => s.markProposalResolved);
   const loadSessionDetail = useChatStore((s) => s.loadSessionDetail);
   const activateSession = useChatStore((s) => s.activateSession);
@@ -581,7 +582,10 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         }
       }
 
-      const newSessionId = await createSession(null, mode === "book-create" ? "book-create" : "chat");
+      // Draft, not createSession: opening this panel must not persist an
+      // empty session file to disk. sendMessage's first call is what
+      // upgrades a draft to a real, saved session.
+      const newSessionId = createDraftSession(null, mode === "book-create" ? "book-create" : "chat");
       if (!cancelled) {
         if (mode === "project-chat") {
           setProjectChatSessionId(newSessionId);
@@ -594,7 +598,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     return () => {
       cancelled = true;
     };
-  }, [activeBookId, activateSession, createSession, loadSessionDetail, loadSessionList, mode]);
+  }, [activeBookId, activateSession, createSession, createDraftSession, loadSessionDetail, loadSessionList, mode]);
 
   const addAttachedFiles = (files: FileList | File[]) => {
     const incoming = Array.from(files);
