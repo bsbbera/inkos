@@ -84,6 +84,7 @@ import {
   resolveProductionSkillActivations,
   type ProductionSkillCapability,
 } from "../skills/index.js";
+import { applyVoiceClaims } from "../publications/voice-claims.js";
 import { assertSafeBookId } from "../utils/book-id.js";
 import { PlayStore } from "../play/play-store.js";
 import { isLlmStubEnabled, stubAgentStream } from "./llm-stub.js";
@@ -1122,7 +1123,11 @@ async function runAgentSessionUnlocked(
   const actionPayload = config.actionPayload;
   const actionPayloadKey = actionPayloadCacheKey(actionPayload);
   const configuredSkills = await loadAvailableAgentSkills({ projectRoot });
-  const skillRegistry = createSkillRegistry({ skills: configuredSkills.skills });
+  // A skill a publication claims as its voice is described as reference, not
+  // as a procedure, so a magazine request lands in publication_create instead
+  // of being hand-written past the pipeline. See publications/voice-claims.
+  const availableSkills = await applyVoiceClaims(projectRoot, configuredSkills.skills);
+  const skillRegistry = createSkillRegistry({ skills: availableSkills });
   const skillResolution = skillRegistry.resolveSkills({
     requestedSkills: config.requestedSkills,
     disabledSkills: config.disabledSkills,
