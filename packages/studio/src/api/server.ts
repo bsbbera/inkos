@@ -88,6 +88,7 @@ import {
   createPlayStartTool,
   createScriptCreationTool,
   createShortFictionRunTool,
+  createPublicationCreateTool,
   createStoryboardCreationTool,
   createTranslationCreateTool,
   createFanficBookTool,
@@ -1253,6 +1254,7 @@ async function executeConfirmedProductionAction(args: {
     | ReturnType<typeof createPlayStartTool>
     | ReturnType<typeof createDraftStructureTool>
     | ReturnType<typeof createConnectChoiceTool>
+    | ReturnType<typeof createPublicationCreateTool>
     | ReturnType<typeof createRemoveNodeTool>;
   let params: Record<string, unknown>;
   let agent: string | undefined;
@@ -1339,6 +1341,28 @@ async function executeConfirmedProductionAction(args: {
       ...(payload?.episodeDuration ? { episodeDuration: payload.episodeDuration } : {}),
       ...(payload?.projectId ? { projectId: payload.projectId } : {}),
       ...(payload?.outDir ? { outDir: payload.outDir } : {}),
+    };
+  } else if (args.requestedIntent === "publication_create") {
+    // Every other production intent had a branch here and this one did not, so
+    // confirming a magazine card threw UNSUPPORTED_CONFIRMED_ACTION: the tool
+    // existed, the payload validated, and the one step between them was
+    // missing. Nothing reached the pipeline, so no issue was ever registered
+    // and the audit screen had nothing to open.
+    const payload = actionPayload?.publicationCreate;
+    const subject = requirePayloadText(
+      payload?.subject,
+      pick(lang, "确认创建刊物缺少主题，请重新生成确认卡。", "The publication confirmation is missing a subject. Regenerate the confirmation card."),
+    );
+    tool = createPublicationCreateTool(args.pipeline, args.root, lang);
+    params = {
+      type: payload?.type ?? "magazine",
+      subject,
+      ...(payload?.angle ? { angle: payload.angle } : {}),
+      ...(payload?.extent ? { extent: payload.extent } : {}),
+      ...(payload?.notes ? { notes: payload.notes } : {}),
+      // The tool's own default. Named rather than left off, so a confirmation
+      // that says "through audit" runs through audit.
+      stopAt: payload?.stopAt ?? "audit",
     };
   } else if (args.requestedIntent === "storyboard_create") {
     const payload = actionPayload?.storyboardCreate;

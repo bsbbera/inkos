@@ -10,6 +10,7 @@ export {
   createShortFictionRunTool,
   createScriptCreationTool,
   createStoryboardCreationTool,
+  createPublicationCreateTool,
   createInteractiveFilmCreationTool,
   createTranslationCreateTool,
   createFanficBookTool,
