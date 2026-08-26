@@ -10,7 +10,7 @@ async function ctxFor(): Promise<RunnerContext> {
   const projectRoot = await mkdtemp(join(tmpdir(), "pub-err-"));
   const definition = await findPublicationDefinition(projectRoot, "magazine");
   if (!definition) throw new Error("magazine definition missing");
-  return { projectRoot, definition, ask: async () => "", shimUrl: "http://127.0.0.1:1" };
+  return { projectRoot, definition, ask: async () => ({}), shimUrl: "http://127.0.0.1:1" };
 }
 
 const stored = async (ctx: RunnerContext, id: string) => JSON.parse(
