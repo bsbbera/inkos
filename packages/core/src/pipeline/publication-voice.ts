@@ -9,7 +9,7 @@
  * A skill is the right home. It is read as **inspiration** — how to represent
  * a subject beautifully, how a spread earns attention — and prefixed to the
  * definition's own voice rather than replacing it, because the writer is still
- * InkOS's engine and the definition still owns its own law.
+ * Quire's engine and the definition still owns its own law.
  */
 import { createSkillRegistry } from "../skills/registry.js";
 import { loadAvailableAgentSkills } from "../skills/builtin-loader.js";

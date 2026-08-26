@@ -3,7 +3,7 @@ import { execSync } from "node:child_process";
 import { log, logError } from "../utils.js";
 
 export const updateCommand = new Command("update")
-  .description("Update InkOS to the latest version")
+  .description("Update Quire to the latest version")
   .action(async () => {
     try {
       const { createRequire } = await import("node:module");
@@ -13,7 +13,7 @@ export const updateCommand = new Command("update")
       log(`Current version: ${currentVersion}`);
       log("Checking npm registry...");
 
-      const remoteVersion = execSync("npm view @actalk/inkos version", {
+      const remoteVersion = execSync("npm view @actalk/quire version", {
         encoding: "utf-8",
       }).trim();
 
@@ -35,11 +35,11 @@ export const updateCommand = new Command("update")
       }
 
       log(`Updating: ${currentVersion} → ${remoteVersion}`);
-      execSync("npm install -g @actalk/inkos@latest", { stdio: "inherit" });
+      execSync("npm install -g @actalk/quire@latest", { stdio: "inherit" });
       log(`Updated to ${remoteVersion}.`);
     } catch (e) {
       logError(`Update failed: ${e}`);
-      log("You can also update manually: npm install -g @actalk/inkos@latest");
+      log("You can also update manually: npm install -g @actalk/quire@latest");
       process.exit(1);
     }
   });

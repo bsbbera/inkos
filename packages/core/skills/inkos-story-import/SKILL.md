@@ -4,10 +4,10 @@ description: 导入已有小说、逆向重建设定与续写工程，并区分�
 ---
 # Story import and reconstruction
 
-Use this skill when the user wants an existing manuscript to become an editable, continuable InkOS project.
+Use this skill when the user wants an existing manuscript to become an editable, continuable Quire project.
 
 - Determine the user's intent before acting:
-  - `import_chapters`: the text becomes real chapters in the active book and InkOS reconstructs state.
+  - `import_chapters`: the text becomes real chapters in the active book and Quire reconstructs state.
   - `ingest_material`: the text remains reference material only.
   - `manage_book_reference`: an archived source should guide future chapters for user-stated purposes.
 - Preserve chapter order with natural chapter-number ordering. Confirm the continuation point when the active book already has chapters.

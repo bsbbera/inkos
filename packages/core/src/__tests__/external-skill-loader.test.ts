@@ -150,7 +150,7 @@ describe("external skill loader", () => {
     expect(result.skills[0]).not.toHaveProperty("contextNeeds");
   });
 
-  it("loads an AgentSkills/OpenClaw manifest without InkOS-only fields", async () => {
+  it("loads an AgentSkills/OpenClaw manifest without Quire-only fields", async () => {
     const skillDir = join(root, "writer-distillation");
     await mkdir(skillDir, { recursive: true });
     await writeFile(
@@ -298,7 +298,7 @@ describe("external skill loader", () => {
     }));
   });
 
-  it("does not discover the removed InkOS-specific skill directory", async () => {
+  it("does not discover the removed Quire-specific skill directory", async () => {
     const skillDir = join(root, ".inkos", "skills", "legacy-skill");
     await mkdir(skillDir, { recursive: true });
     await writeFile(

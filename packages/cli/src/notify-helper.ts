@@ -1,4 +1,4 @@
-import { dispatchNotification, type ProjectConfig } from "@actalk/inkos-core";
+import { dispatchNotification, type ProjectConfig } from "@actalk/quire-core";
 import { loadConfig, logError } from "./utils.js";
 
 export interface CliNotifyMessage {

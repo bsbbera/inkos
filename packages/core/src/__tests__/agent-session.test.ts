@@ -400,14 +400,14 @@ describe("runAgentSession cache — bookId switch", () => {
     );
 
     expect(result.responseText).toBe("");
-    expect(result.errorMessage).toContain("InkOS context window guard");
+    expect(result.errorMessage).toContain("Quire context window guard");
     expect(streamCalls).toHaveLength(0);
     const events = await readTranscriptEvents(projectRoot, "s-context-window");
     expect(events.some(
       (event: any) =>
         event.type === "request_failed" &&
         typeof event.error === "string" &&
-        event.error.includes("InkOS context window guard"),
+        event.error.includes("Quire context window guard"),
     )).toBe(true);
   });
 
@@ -558,15 +558,15 @@ describe("runAgentSession cache — bookId switch", () => {
 
     const headers = streamCalls.at(-1)?.options?.headers;
     expect(headers).toMatchObject({
-      "X-InkOS-Trace-Version": "1",
-      "X-InkOS-Scaffold": "pi-inkos",
-      "X-InkOS-Conversation-ID": opaqueConversationId("trace-session"),
-      "X-InkOS-Agent-Role": "main",
-      "X-InkOS-Pi-Turn-Index": "1",
-      "X-InkOS-Client-Attempt": "1",
+      "X-Quire-Trace-Version": "1",
+      "X-Quire-Scaffold": "pi-inkos",
+      "X-Quire-Conversation-ID": opaqueConversationId("trace-session"),
+      "X-Quire-Agent-Role": "main",
+      "X-Quire-Pi-Turn-Index": "1",
+      "X-Quire-Client-Attempt": "1",
     });
-    expect(headers["X-InkOS-Run-ID"]).toBeTruthy();
-    expect(headers["X-InkOS-Model-Call-ID"]).toBeTruthy();
+    expect(headers["X-Quire-Run-ID"]).toBeTruthy();
+    expect(headers["X-Quire-Model-Call-ID"]).toBeTruthy();
   });
 
   it("rebuilds cached Agent when transcript committed seq changes outside cache", async () => {

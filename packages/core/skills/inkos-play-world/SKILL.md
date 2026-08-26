@@ -1,10 +1,10 @@
 ---
 name: inkos-play-world
-description: 品类中立的开放世界与分支互动推进方法。Used by InkOS Play workers for coherent action, state, time, and scene progression.
+description: 品类中立的开放世界与分支互动推进方法。Used by Quire Play workers for coherent action, state, time, and scene progression.
 ---
 # Interactive world play
 
-Apply this method inside an active InkOS Play operation.
+Apply this method inside an active Quire Play operation.
 
 - Treat the user's world contract as authority. Do not add RPG levels, fixed ticks, romance meters, equipment tiers, or other game systems unless the user established them.
 - Advance one adjacent dramatic beat from the player's literal action. If the input chains several actions, stop at the nearest new pressure point. Show movement, contact, resistance, interruption, and immediate consequence instead of skipping to aftermath, resolution, or reward.

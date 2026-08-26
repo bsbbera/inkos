@@ -1,4 +1,4 @@
-import type { ActionPayload, ActionSource, PlayMode, RequestedIntent, SessionKind } from "@actalk/inkos-core";
+import type { ActionPayload, ActionSource, PlayMode, RequestedIntent, SessionKind } from "@actalk/quire-core";
 
 // -- Data types --
 

@@ -1,7 +1,7 @@
 {
-  "name": "@actalk/inkos",
+  "name": "@actalk/quire",
   "version": "1.8.0",
-  "description": "InkOS Story Creation AI Agent CLI and TUI for fiction, scripts, interactive worlds, and translation.",
+  "description": "Quire Story Creation AI Agent CLI and TUI for fiction, scripts, interactive worlds, and translation.",
   "keywords": [
     "story-creation-ai-agent",
     "story-agent",
@@ -36,7 +36,7 @@
     "directory": "packages/cli"
   },
   "scripts": {
-    "prepare:workspace-core": "pnpm --filter @actalk/inkos-core build",
+    "prepare:workspace-core": "pnpm --filter @actalk/quire-core build",
     "prepack": "node ../../scripts/prepare-package-for-publish.mjs",
     "postpack": "node ../../scripts/restore-package-json.mjs",
     "prepublishOnly": "node ../../scripts/verify-no-workspace-protocol.mjs .",
@@ -49,8 +49,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@actalk/inkos-core": "workspace:*",
-    "@actalk/inkos-studio": "workspace:*",
+    "@actalk/quire-core": "workspace:*",
+    "@actalk/quire-studio": "workspace:*",
     "commander": "^13.0.0",
     "dotenv": "^16.4.0",
     "epub-gen-memory": "^1.0.10",

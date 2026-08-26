@@ -125,7 +125,7 @@ async function readProjectConfig(root: string): Promise<Record<string, unknown>>
     await access(configPath);
   } catch {
     throw new Error(
-      `inkos.json not found in ${root}.\nMake sure you are inside an InkOS project directory (cd into the project created by 'inkos init').`,
+      `inkos.json not found in ${root}.\nMake sure you are inside an Quire project directory (cd into the project created by 'inkos init').`,
     );
   }
 

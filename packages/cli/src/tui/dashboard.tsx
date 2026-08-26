@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   appendInteractionMessage,
   type InteractionSession,
-} from "@actalk/inkos-core";
+} from "@actalk/quire-core";
 import { Box, Text, useApp, useInput } from "ink";
 import { processTuiAgentInput } from "./agent-input.js";
 import { describeActivityState } from "./activity-state.js";

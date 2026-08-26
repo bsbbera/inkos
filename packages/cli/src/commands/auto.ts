@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { PipelineRunner, StateManager } from "@actalk/inkos-core";
+import { PipelineRunner, StateManager } from "@actalk/quire-core";
 import { loadConfig, buildPipelineConfig, findProjectRoot, getLegacyMigrationHint, resolveBookId, log, logError } from "../utils.js";
 import {
   formatAutoWriteAlreadyComplete,

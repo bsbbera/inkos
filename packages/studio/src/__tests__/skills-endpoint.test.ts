@@ -111,7 +111,7 @@ describe("Studio skill endpoints", () => {
     expect(updateRes.status).toBe(404);
   });
 
-  it("imports a standard AgentSkills folder without manual InkOS fields", async () => {
+  it("imports a standard AgentSkills folder without manual Quire fields", async () => {
     const app = createStudioServer({} as never, root);
     const manifest = Buffer.from([
       "---",

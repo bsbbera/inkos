@@ -3,7 +3,7 @@ import {
   StoryGraphSchema,
   createAndPersistBookSession,
   saveSecrets,
-} from "@actalk/inkos-core";
+} from "@actalk/quire-core";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readdir, rm } from "node:fs/promises";

@@ -8,7 +8,7 @@
  * search, a page could not read what an earlier page established, and the art
  * stage could only be a hardcoded HTTP call made by the host afterwards.
  *
- * That constraint is upstream InkOS's, and it is the right one for chapters:
+ * That constraint is upstream Quire's, and it is the right one for chapters:
  * a chapter pipeline is deterministic by design and the host owns every
  * capability. Publications inherited it by accident, because the class was
  * there. This module is the correction — the same stages, driven through

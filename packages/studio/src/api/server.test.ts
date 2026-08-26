@@ -197,8 +197,8 @@ const logger = {
   error: vi.fn(),
 };
 
-vi.mock("@actalk/inkos-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@actalk/inkos-core")>();
+vi.mock("@actalk/quire-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@actalk/quire-core")>();
   generatePlayImageMock.mockImplementation(actual.generatePlayImage);
 
   class MockSessionAlreadyMigratedError extends Error {
@@ -751,7 +751,7 @@ describe("createStudioServer daemon lifecycle", () => {
   });
 
   it("uses the real core bookId validator in the Studio safety mock", async () => {
-    const { isSafeBookId } = await import("@actalk/inkos-core");
+    const { isSafeBookId } = await import("@actalk/quire-core");
 
     expect(vi.isMockFunction(isSafeBookId)).toBe(false);
     expect(isSafeBookId("demo-book")).toBe(true);
@@ -3731,7 +3731,7 @@ describe("createStudioServer daemon lifecycle", () => {
   // 走真实 transcript 文件验证：确认式生产任务的用户指令必须在任务开始时就
   // 写进 transcript（而不是任务完成后才补写），完成/失败时只追加助手工具消息。
   async function wireRealSessionTranscript() {
-    const actual = await vi.importActual<typeof import("@actalk/inkos-core")>("@actalk/inkos-core");
+    const actual = await vi.importActual<typeof import("@actalk/quire-core")>("@actalk/quire-core");
     appendManualSessionMessagesMock.mockImplementation(actual.appendManualSessionMessages);
     loadBookSessionMock.mockImplementation(
       (projectRoot: string, sessionId: string) => actual.loadBookSession(projectRoot, sessionId),
@@ -4144,7 +4144,7 @@ describe("createStudioServer daemon lifecycle", () => {
       createdAt: 1,
       updatedAt: 1,
     });
-    const core = await import("@actalk/inkos-core");
+    const core = await import("@actalk/quire-core");
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
 
@@ -4897,7 +4897,7 @@ describe("createStudioServer daemon lifecycle", () => {
   }, 60_000);
 
   it("returns BOOK_BUSY when direct write-next collides with an active write", async () => {
-    const lockError = 'Book "demo-book" is locked by an active InkOS write. Wait for it to finish or stop the running task, then retry.';
+    const lockError = 'Book "demo-book" is locked by an active Quire write. Wait for it to finish or stop the running task, then retry.';
     writeNextChapterMock.mockRejectedValueOnce(Object.assign(new Error(lockError), { code: "BOOK_BUSY" }));
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
@@ -5835,7 +5835,7 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(chatCompletionMock).not.toHaveBeenCalled();
   });
 
-  it("classifies InkOS parser/tool errors as internal instead of blaming the selected provider", async () => {
+  it("classifies Quire parser/tool errors as internal instead of blaming the selected provider", async () => {
     const internalError = "sub_agent writer failed: missing YAML frontmatter delimiters";
     runAgentSessionMock.mockResolvedValueOnce({
       responseText: "",
@@ -5867,7 +5867,7 @@ describe("createStudioServer daemon lifecycle", () => {
   });
 
   it("returns an active book write lock as BOOK_BUSY instead of a provider error", async () => {
-    const lockError = 'Book "demo-book" is locked by an active InkOS write (pid:123). Wait for it to finish or stop the running task, then retry. Stale locks are recovered automatically.';
+    const lockError = 'Book "demo-book" is locked by an active Quire write (pid:123). Wait for it to finish or stop the running task, then retry. Stale locks are recovered automatically.';
     runAgentSessionMock.mockResolvedValueOnce({
       responseText: "",
       errorMessage: lockError,

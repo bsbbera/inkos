@@ -1,4 +1,4 @@
-import type { ActionSource, RequestedIntent } from "@actalk/inkos-core";
+import type { ActionSource, RequestedIntent } from "@actalk/quire-core";
 
 const CONFIRMED_PRODUCTION_INTENTS: ReadonlySet<RequestedIntent> = new Set([
   "create_book",

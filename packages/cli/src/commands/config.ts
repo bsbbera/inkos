@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { findProjectRoot, log, logError, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH } from "../utils.js";
-import { listModelsForService } from "@actalk/inkos-core";
+import { listModelsForService } from "@actalk/quire-core";
 import { formatListModelsEmpty, formatListModelsHeader, resolveCliLanguage } from "../localization.js";
 
 export const configCommand = new Command("config")
@@ -105,7 +105,7 @@ configCommand
       await mkdir(GLOBAL_CONFIG_DIR, { recursive: true });
 
       const lines = [
-        "# InkOS Global LLM Configuration",
+        "# Quire Global LLM Configuration",
         `INKOS_LLM_PROVIDER=${opts.provider}`,
         `INKOS_LLM_BASE_URL=${opts.baseUrl}`,
         `INKOS_LLM_API_KEY=${opts.apiKey}`,

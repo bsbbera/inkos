@@ -102,7 +102,7 @@ export function evaluateNodeRuntimeSupport(options?: {
   if (major < MIN_NODE_MAJOR) {
     return {
       ok: false,
-      detail: `Unsupported runtime ${nodeVersion}. InkOS requires Node ${MIN_NODE_MAJOR}+.`,
+      detail: `Unsupported runtime ${nodeVersion}. Quire requires Node ${MIN_NODE_MAJOR}+.`,
     };
   }
 

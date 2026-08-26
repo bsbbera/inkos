@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { gateState, stageStates } from "./publications.js";
-import type { PublicationIssue } from "@actalk/inkos-core";
+import type { PublicationIssue } from "@actalk/quire-core";
 
 const page = (n: number, over: Record<string, unknown> = {}) => ({
   n, title: `p${n}`, type: "feature", density: "heavy", section: 1,

@@ -4,7 +4,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { StateManager } from "@actalk/inkos-core";
+import { StateManager } from "@actalk/quire-core";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
 const cliDir = resolve(testDir, "..", "..");
@@ -542,7 +542,7 @@ describe("CLI integration", () => {
   describe("inkos doctor", () => {
     it("checks environment health", () => {
       const { stdout } = runStderr(["doctor"]);
-      expect(stdout).toContain("InkOS Doctor");
+      expect(stdout).toContain("Quire Doctor");
       expect(stdout).toContain("Node.js >= 22");
       expect(stdout).toContain("inkos.json");
     });

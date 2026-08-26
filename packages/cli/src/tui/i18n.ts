@@ -85,8 +85,8 @@ const ZH_CN: TuiCopy = {
     manual: "手动",
   },
   composer: {
-    placeholder: "告诉 InkOS 要写什么、修改什么，或解释什么…",
-    emptyConversation: "先告诉 InkOS 你要做什么。",
+    placeholder: "告诉 Quire 要写什么、修改什么，或解释什么…",
+    emptyConversation: "先告诉 Quire 你要做什么。",
     helper: "回车发送 • /new • /short • /play • /cover • /write • /confirm • /model • /depth • /help",
     submitting: "处理中…",
     failed: "上次请求失败",
@@ -105,7 +105,7 @@ const ZH_CN: TuiCopy = {
   },
   roles: {
     user: "你",
-    assistant: "InkOS",
+    assistant: "Quire",
     system: "系统",
   },
   activity: {
@@ -156,8 +156,8 @@ const EN: TuiCopy = {
     manual: "manual",
   },
   composer: {
-    placeholder: "Ask InkOS to write, revise, or explain…",
-    emptyConversation: "Start by asking InkOS what to do.",
+    placeholder: "Ask Quire to write, revise, or explain…",
+    emptyConversation: "Start by asking Quire what to do.",
     helper: "Enter to send • /new • /short • /play • /cover • /write • /confirm • /model • /depth • /help",
     submitting: "Submitting…",
     failed: "Last request failed",
@@ -176,7 +176,7 @@ const EN: TuiCopy = {
   },
   roles: {
     user: "You",
-    assistant: "InkOS",
+    assistant: "Quire",
     system: "System",
   },
   activity: {

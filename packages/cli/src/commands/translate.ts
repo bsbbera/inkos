@@ -7,7 +7,7 @@ import {
   resolveProductionSkillActivations,
   runTranslationProject,
   writeTranslationExport,
-} from "@actalk/inkos-core";
+} from "@actalk/quire-core";
 import { createClient, findProjectRoot, loadConfig, log, logError } from "../utils.js";
 
 export const translateCommand = new Command("translate")

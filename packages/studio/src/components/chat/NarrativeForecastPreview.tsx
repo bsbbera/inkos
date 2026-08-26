@@ -13,7 +13,7 @@ import {
   type ForecastBranch,
   type ForecastRisk,
   type NarrativeForecast,
-} from "@actalk/inkos-core/forecast/schema";
+} from "@actalk/quire-core/forecast/schema";
 import type { ToolExecution } from "../../store/chat/types";
 import { tr } from "../../lib/app-language";
 

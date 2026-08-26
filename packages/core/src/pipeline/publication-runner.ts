@@ -8,7 +8,7 @@
  * comes from a PublicationDefinition, so a second type runs the same code with
  * different law.
  *
- * Deliberately not a second engine beside InkOS: the model call arrives as an
+ * Deliberately not a second engine beside Quire: the model call arrives as an
  * `ask` function from the caller, so a run uses whatever provider the session
  * already uses, with the tools that session already has.
  */

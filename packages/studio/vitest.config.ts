@@ -9,10 +9,10 @@ export default defineConfig({
       // matches `<key>/...`, so the bare entry would otherwise swallow these.
       // The app/build resolves these subpaths via core's package.json "exports"
       // (browser-safe, zod-only); tests resolve them to source like the bare pkg.
-      "@actalk/inkos-core/interactive-film/evaluator": resolve(__dirname, "../core/src/interactive-film/evaluator.ts"),
-      "@actalk/inkos-core/interactive-film/graph-schema": resolve(__dirname, "../core/src/interactive-film/graph-schema.ts"),
-      "@actalk/inkos-core/forecast/schema": resolve(__dirname, "../core/src/forecast/schema.ts"),
-      "@actalk/inkos-core": resolve(__dirname, "../core/src/index.ts"),
+      "@actalk/quire-core/interactive-film/evaluator": resolve(__dirname, "../core/src/interactive-film/evaluator.ts"),
+      "@actalk/quire-core/interactive-film/graph-schema": resolve(__dirname, "../core/src/interactive-film/graph-schema.ts"),
+      "@actalk/quire-core/forecast/schema": resolve(__dirname, "../core/src/forecast/schema.ts"),
+      "@actalk/quire-core": resolve(__dirname, "../core/src/index.ts"),
     },
   },
   test: {

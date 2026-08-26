@@ -8,7 +8,7 @@ const getNextChapterNumberMock = vi.fn();
 const logMock = vi.fn();
 const logErrorMock = vi.fn();
 
-vi.mock("@actalk/inkos-core", () => ({
+vi.mock("@actalk/quire-core", () => ({
   PipelineRunner: class {
     writeNextChapter = writeNextChapterMock;
   },

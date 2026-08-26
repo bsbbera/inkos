@@ -1,7 +1,7 @@
 {
-  "name": "@actalk/inkos-core",
+  "name": "@actalk/quire-core",
   "version": "1.8.0",
-  "description": "InkOS pi-agent production harness for story creation, governed context, retrieval, review, and interactive worlds",
+  "description": "Quire pi-agent production harness for story creation, governed context, retrieval, review, and interactive worlds",
   "keywords": [
     "story-creation-ai-agent",
     "story-agent",

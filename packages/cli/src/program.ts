@@ -49,7 +49,7 @@ export function createProgram(hooks: ProgramHooks = {}): Command {
 
   program
     .name("inkos")
-    .description("InkOS — Multi-agent novel production system")
+    .description("Quire — Multi-agent novel production system")
     .version(version)
     .enablePositionalOptions()
     .option("--service <service>", "Override LLM service for this CLI run")

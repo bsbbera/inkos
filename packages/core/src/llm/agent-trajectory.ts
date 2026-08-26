@@ -95,20 +95,20 @@ export function agentTrajectoryHeaders(
 ): Record<string, string> {
   if (!trace || !isKkaiapiEndpoint(baseUrl)) return {};
   return {
-    "X-InkOS-Trace-Version": "1",
-    "X-InkOS-Scaffold": "pi-inkos",
-    "X-InkOS-Conversation-ID": trace.conversationId,
-    "X-InkOS-Run-ID": trace.runId,
-    "X-InkOS-Model-Call-ID": trace.modelCallId,
-    "X-InkOS-Agent-Role": trace.agentRole,
-    "X-InkOS-Pi-Turn-Index": String(trace.piTurnIndex),
-    "X-InkOS-Client-Attempt": String(clientAttempt),
-    "X-InkOS-Thinking-Effort": thinking.effort,
+    "X-Quire-Trace-Version": "1",
+    "X-Quire-Scaffold": "pi-inkos",
+    "X-Quire-Conversation-ID": trace.conversationId,
+    "X-Quire-Run-ID": trace.runId,
+    "X-Quire-Model-Call-ID": trace.modelCallId,
+    "X-Quire-Agent-Role": trace.agentRole,
+    "X-Quire-Pi-Turn-Index": String(trace.piTurnIndex),
+    "X-Quire-Client-Attempt": String(clientAttempt),
+    "X-Quire-Thinking-Effort": thinking.effort,
     ...(thinking.budgetTokens !== undefined
-      ? { "X-InkOS-Thinking-Budget-Tokens": String(thinking.budgetTokens) }
+      ? { "X-Quire-Thinking-Budget-Tokens": String(thinking.budgetTokens) }
       : {}),
     ...(trace.parentToolCallId
-      ? { "X-InkOS-Parent-Tool-Call-ID": trace.parentToolCallId }
+      ? { "X-Quire-Parent-Tool-Call-ID": trace.parentToolCallId }
       : {}),
   };
 }

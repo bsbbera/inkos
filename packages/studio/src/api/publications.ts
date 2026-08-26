@@ -33,7 +33,7 @@ import {
   type PublicationFinding,
   type PublicationIssue,
   type PublicationStage,
-} from "@actalk/inkos-core";
+} from "@actalk/quire-core";
 
 export interface PublicationRouteDeps {
   readonly root: string;
