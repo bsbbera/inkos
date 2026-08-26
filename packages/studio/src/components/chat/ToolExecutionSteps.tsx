@@ -97,7 +97,8 @@ function extractResultPath(result: string | undefined, label: string): string | 
 }
 
 export interface GeneratedArtifactDetails {
-  readonly kind: "short_fiction_created" | "cover_generated" | "script_created" | "storyboard_created" | "interactive_film_created";
+  readonly kind: "short_fiction_created" | "cover_generated" | "script_created"
+    | "storyboard_created" | "interactive_film_created" | "publication";
   readonly title?: string;
   readonly storyId?: string;
   readonly projectId?: string;
@@ -115,6 +116,9 @@ export interface GeneratedArtifactDetails {
   readonly imagePromptsPath?: string;
   readonly assetsManifestPath?: string;
   readonly skillIds?: ReadonlyArray<string>;
+  /** Publications: the issue, and its written pages as project-relative paths. */
+  readonly issueId?: string;
+  readonly pagePaths?: ReadonlyArray<string>;
 }
 
 export interface PlayToolDetails {
@@ -470,19 +474,40 @@ function ChapterStateResyncPreview({ exec }: { exec: ToolExecution }) {
   );
 }
 
+/** Paths, kept as written: unlike stringArrayField, case is not ours to change. */
+function pathArrayField(record: Record<string, unknown>, key: string): string[] | undefined {
+  const value = record[key];
+  if (!Array.isArray(value)) return undefined;
+  const out = value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+  return out.length > 0 ? out : undefined;
+}
+
+const ARTIFACT_KINDS = [
+  "short_fiction_created",
+  "cover_generated",
+  "script_created",
+  "storyboard_created",
+  "interactive_film_created",
+  "publication",
+] as const;
+
+/**
+ * What a completed production run produced, if it produced anything.
+ *
+ * Keyed off the result's own `kind` rather than off a list of tool names. The
+ * tool list was a second thing to remember, and it was already out of step:
+ * publication_create returned a `kind` no branch here recognised, so a
+ * magazine was the one production whose output the chat could only describe.
+ */
 export function getGeneratedArtifactDetails(exec: ToolExecution): GeneratedArtifactDetails | null {
-  if (!["short_fiction_run", "generate_cover", "script_create", "storyboard_create", "interactive_film_create"].includes(exec.tool)) return null;
   if (!exec.details || typeof exec.details !== "object") return null;
   const record = exec.details as Record<string, unknown>;
-  if (
-    record.kind !== "short_fiction_created"
-    && record.kind !== "cover_generated"
-    && record.kind !== "script_created"
-    && record.kind !== "storyboard_created"
-    && record.kind !== "interactive_film_created"
-  ) return null;
+  const kind = ARTIFACT_KINDS.find((k) => k === record.kind);
+  if (!kind) return null;
   return {
-    kind: record.kind,
+    kind,
+    issueId: stringField(record, "id"),
+    pagePaths: pathArrayField(record, "pagePaths"),
     title: stringField(record, "title"),
     storyId: stringField(record, "storyId"),
     projectId: stringField(record, "projectId"),
@@ -503,42 +528,70 @@ export function getGeneratedArtifactDetails(exec: ToolExecution): GeneratedArtif
   };
 }
 
-function ScriptStoryboardResultPreview({ exec, onOpenFilmStudio }: { exec: ToolExecution; onOpenFilmStudio?: (projectId: string) => void }) {
-  const openProjectArtifact = useChatStore((s) => s.openProjectArtifact);
-  if (!["script_create", "storyboard_create", "interactive_film_create"].includes(exec.tool) || exec.status !== "completed") return null;
-  const details = getGeneratedArtifactDetails(exec);
-  if (!details || (
-    details.kind !== "script_created"
-    && details.kind !== "storyboard_created"
-    && details.kind !== "interactive_film_created"
-  )) return null;
-  const maybeRows: Array<readonly [string, string] | null> = [
+/** The heading over the rows, per kind. */
+const ARTIFACT_HEADINGS: Record<GeneratedArtifactDetails["kind"], readonly [string, string]> = {
+  short_fiction_created: ["短篇已生成", "Short fiction generated"],
+  cover_generated: ["封面已生成", "Cover generated"],
+  script_created: ["剧本已生成", "Script generated"],
+  storyboard_created: ["分镜已生成", "Storyboard generated"],
+  interactive_film_created: ["互动影游已生成", "Interactive film generated"],
+  publication: ["刊物已生成", "Publication generated"],
+};
+
+/** Every file a run wrote, labelled, in the order a reader would want them. */
+function artifactRows(details: GeneratedArtifactDetails): Array<readonly [string, string]> {
+  const maybe: Array<readonly [string, string] | null> = [
     details.specPath ? [tr("规格", "Spec"), details.specPath] : null,
     details.storyGraphPath ? [tr("剧情图谱", "Story graph"), details.storyGraphPath] : null,
     details.storyTreePath ? [tr("剧情树", "Story tree"), details.storyTreePath] : null,
     details.flagsPath ? [tr("变量旗标", "Flags"), details.flagsPath] : null,
     details.scriptPath ? [tr("剧本", "Script"), details.scriptPath] : null,
     details.storyboardPath ? [tr("分镜", "Storyboard"), details.storyboardPath] : null,
+    // The short's own files. These have always been in the result and have
+    // never had a row: the preview was gated to three tools, so a finished
+    // story could be looked at only as a paragraph of chat text.
+    details.finalMarkdownPath ? [tr("正文", "Story"), details.finalMarkdownPath] : null,
+    details.salesPackagePath ? [tr("简介与卖点", "Synopsis & selling points"), details.salesPackagePath] : null,
+    details.coverPromptPath ? [tr("封面提示词", "Cover prompt"), details.coverPromptPath] : null,
     details.imagePromptsPath ? [tr("图像提示词", "Image prompts"), details.imagePromptsPath] : null,
     details.assetsManifestPath ? [tr("图片资产", "Image assets"), details.assetsManifestPath] : null,
   ];
-  const rows = maybeRows.filter((row): row is readonly [string, string] => Boolean(row));
-  if (rows.length === 0 && !(details.kind === "interactive_film_created" && details.projectId)) return null;
+  const rows = maybe.filter((row): row is readonly [string, string] => Boolean(row));
+
+  // A magazine has one row per written page rather than a handful of named
+  // files, so they are labelled by page number in reading order.
+  for (const [index, path] of (details.pagePaths ?? []).entries()) {
+    rows.push([tr(`第 ${index + 1} 页`, `Page ${index + 1}`), path]);
+  }
+  return rows;
+}
+
+/**
+ * The files a completed run produced, each opening in the artifact drawer,
+ * which reads, edits and saves them.
+ *
+ * This used to refuse anything that was not a script, a storyboard or an
+ * interactive film — so short fiction, covers and every publication wrote
+ * files the chat named and offered no way to open.
+ */
+function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecution; onOpenFilmStudio?: (projectId: string) => void }) {
+  const openProjectArtifact = useChatStore((s) => s.openProjectArtifact);
+  if (exec.status !== "completed") return null;
+  const details = getGeneratedArtifactDetails(exec);
+  if (!details) return null;
+  const rows = artifactRows(details);
+  const canOpenStudio = details.kind === "interactive_film_created" && Boolean(details.projectId) && Boolean(onOpenFilmStudio);
+  if (rows.length === 0 && !canOpenStudio) return null;
+  const [zh, en] = ARTIFACT_HEADINGS[details.kind];
   return (
     <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[16px] leading-6 font-semibold text-primary">
-          {details.kind === "script_created"
-            ? tr("剧本已生成", "Script generated")
-            : details.kind === "storyboard_created"
-              ? tr("分镜已生成", "Storyboard generated")
-              : tr("互动影游已生成", "Interactive film generated")}
-        </div>
-        {details.kind === "interactive_film_created" && details.projectId && onOpenFilmStudio && (
+        <div className="text-[16px] leading-6 font-semibold text-primary">{tr(zh, en)}</div>
+        {canOpenStudio && (
           <button
             type="button"
             data-testid="open-film-studio"
-            onClick={() => onOpenFilmStudio(details.projectId!)}
+            onClick={() => onOpenFilmStudio!(details.projectId!)}
             className="shrink-0 rounded-lg bg-primary px-3 py-1 text-[13px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
           >
             {tr("打开创作向导 →", "Open creation wizard →")}
@@ -549,7 +602,7 @@ function ScriptStoryboardResultPreview({ exec, onOpenFilmStudio }: { exec: ToolE
         <div className="mt-2 space-y-1.5">
           {rows.map(([label, path]) => (
             <button
-              key={label}
+              key={`${label}:${path}`}
               type="button"
               onClick={() => openProjectArtifact(path)}
               className="group flex w-full items-start justify-between gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-primary/25 hover:bg-background/65"
@@ -567,7 +620,6 @@ function ScriptStoryboardResultPreview({ exec, onOpenFilmStudio }: { exec: ToolE
     </div>
   );
 }
-
 function ShortFictionResultPreview({ exec }: { exec: ToolExecution }) {
   if (!["short_fiction_run", "generate_cover"].includes(exec.tool) || exec.status !== "completed") return null;
   const details = getGeneratedArtifactDetails(exec);
@@ -1009,7 +1061,7 @@ function PipelineExecution({
       />
       <SkillUsagePreview exec={exec} />
       <ShortFictionResultPreview exec={exec} />
-      <ScriptStoryboardResultPreview exec={exec} onOpenFilmStudio={onOpenFilmStudio} />
+      <GeneratedArtifactPreview exec={exec} onOpenFilmStudio={onOpenFilmStudio} />
       <PlayResultPreview exec={exec} />
       <PlayEditPreview exec={exec} />
       <ChapterContextTracePreview exec={exec} />

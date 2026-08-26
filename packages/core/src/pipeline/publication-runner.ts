@@ -744,6 +744,30 @@ export async function runPlan(ctx: RunnerContext, id: string): Promise<Publicati
  * existing issues are markdown. Shared by the writer and the revise pass so a
  * revised page does not leave the pre-revision markdown on disk.
  */
+/**
+ * Where a page's markdown lives, relative to the project root.
+ *
+ * The path is derived, not stored, so it stays right for pages written before
+ * anything asked for it. Returned as posix so the Studio's artifact drawer —
+ * which addresses files by URL segment — can open it on Windows too.
+ */
+export function pagePath(ctx: RunnerContext, id: string, page: PublicationPage): string {
+  return [
+    ctx.definition.outDir,
+    "issues",
+    id,
+    "pages",
+    `${String(page.n).padStart(2, "0")}-${slug(page.title || "page")}.md`,
+  ].join("/");
+}
+
+/** Every written page of an issue, in reading order, as project-relative paths. */
+export function pagePaths(ctx: RunnerContext, issue: PublicationIssue): string[] {
+  return issue.pages
+    .filter((p) => p.body !== null && p.body !== undefined)
+    .map((p) => pagePath(ctx, issue.id, p));
+}
+
 async function writePageMarkdown(
   ctx: RunnerContext,
   id: string,

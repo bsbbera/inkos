@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   isStorySlopFinding,
   runStoryAudit,
@@ -83,13 +83,15 @@ describe("runStoryAudit", () => {
   });
 
   it("rewrites a faulted section and keeps the original beside it", async () => {
-    const ask = vi.fn<StoryAskFn>(async (_prompt, tag) => {
+    // Fault chapter 1 on the first pass only, so the loop terminates.
+    let audits = 0;
+    const ask: StoryAskFn = async (_prompt, tag) => {
       if (tag.startsWith("story-revise")) return { body: "He crushed the teacup." };
-      // Fault chapter 1 on the first pass only, so the loop terminates.
-      return ask.mock.calls.filter(([, t]) => t.startsWith("story-audit")).length <= 2
+      audits += 1;
+      return audits <= 2
         ? { findings: [{ dimension: 11, severity: "warning", description: "names the feeling", suggestion: "show it" }] }
         : { findings: [] };
-    });
+    };
 
     const audit = await runStoryAudit({ projectRoot: root, path, ask });
     const after = await readFile(join(root, path), "utf-8");

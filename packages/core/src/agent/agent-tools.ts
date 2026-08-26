@@ -2731,6 +2731,10 @@ export function createPublicationCreateTool(
         type: definition.id,
         status: issue.status,
         warnings: issue.warnings ?? [],
+        // The pages, so the run that wrote them is also the place they can be
+        // opened, read and edited. A magazine used to be the one production
+        // whose output the chat could only describe.
+        pagePaths: (await import("../pipeline/publication-runner.js")).pagePaths(ctx, issue),
       });
     },
   };

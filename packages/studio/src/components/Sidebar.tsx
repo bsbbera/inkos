@@ -367,8 +367,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
           </div>
         </div>
 
-        {/* Publications made in this workspace. */}
-        {(publications?.publications ?? []).length > 0 && (
+        {/* Publications made in this workspace.
+            Rendered even when there are none. Hidden-when-empty meant a
+            workspace with no issue yet showed no sign that publications
+            exist — and the audit and de-AI passes live on an issue's page,
+            so the whole feature looked missing rather than unused. */}
+        {(
           <div>
             <SectionHeader
               label={tr("我的刊物", "My Publications")}
@@ -394,6 +398,14 @@ export function Sidebar({ nav, activePage, sse, t }: {
                     </span>
                   </button>
                 ))}
+                {(publications?.publications ?? []).length === 0 && (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">
+                    {tr(
+                      "还没有刊物。用上面的入口做一本，做完后可以在它自己的页面里审校和去 AI 味。",
+                      "No publications yet. Make one above; each opens its own page, where it can be audited and de-AI-ed.",
+                    )}
+                  </p>
+                )}
               </div>
             </Collapse>
           </div>
