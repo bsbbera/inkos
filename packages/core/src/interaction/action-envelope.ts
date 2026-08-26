@@ -242,7 +242,11 @@ export const PublicationCreateActionPayloadSchema = z.object({
   angle: z.string().min(1).optional(),
   extent: z.number().int().min(1).optional(),
   notes: z.string().min(1).optional(),
-  stopAt: z.enum(["research", "plan", "write"]).optional(),
+  // Matches publication_create's own stopAt. It did not: the tool defaults to
+  // "audit" and the envelope rejected it, so every proposed magazine failed
+  // validation before the pipeline was reached. Art and build stay out of both,
+  // because each is gated on the copy being approved first.
+  stopAt: z.enum(["research", "plan", "write", "audit"]).optional(),
 }).strict();
 
 export const ActionPayloadSchema = z.object({
