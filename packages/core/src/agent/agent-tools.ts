@@ -291,7 +291,11 @@ const ProposeActionParams = Type.Object({
       Type.Literal("en"),
     ], { description: "Output language of the short fiction. Fill the language the user asked the story to be written in; it may differ from the conversation language (e.g. a Chinese chat asking for an English short => en). When the user does not name one, it defaults to the conversation language." })),
     chapters: Type.Optional(Type.Number({
-      description: "Confirmed complete short chapter count, 12-18.",
+      minimum: 12,
+      maximum: 18,
+      description: "Confirmed complete short chapter count, 12-18. A Quire short is a "
+        + "multi-chapter novelette, not a single scene; values outside 12-18 are rejected "
+        + "before the task starts.",
     })),
     charsPerChapter: Type.Optional(Type.Number({
       minimum: 600,
@@ -625,7 +629,16 @@ function validateProposedActionPayload(payload: ActionPayload | undefined): {
   if (!payload) return {};
   const parsed = ActionPayloadSchema.safeParse(payload);
   if (parsed.success) return { payload: parsed.data };
-  return { error: parsed.error.issues.map((issue) => issue.message).join("; ") };
+  // Name the offending field. Bare zod messages like "Number must be greater than
+  // or equal to 12" give the model nothing to correct on a retry.
+  return {
+    error: parsed.error.issues
+      .map((issue) => {
+        const path = issue.path.join(".");
+        return path ? `${path}: ${issue.message}` : issue.message;
+      })
+      .join("; "),
+  };
 }
 
 function withSingleAttachmentFallback(
