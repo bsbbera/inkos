@@ -1456,6 +1456,239 @@ export async function revisePage(
  * Never fails the run. What survives the rounds goes on the issue and the
  * editor decides — same contract the length governor has upstream.
  */
+/* ------------------------------------------------------- scoped mutation */
+
+/**
+ * The parts of a page a change can be aimed at.
+ *
+ * A page was the smallest thing anything could touch. `placePage` re-lays one
+ * page instead of the whole issue, which is right, but a note about one
+ * sidebar still put the entire page through a rewrite and came back with a
+ * different body as well. These are the addressable elements, so "cut the
+ * sidebar on sixteen" cuts the sidebar on sixteen.
+ */
+export type ElementKind = "title" | "deck" | "body" | "pull_quote" | "furniture" | "brief" | "image";
+
+export interface ElementAddress {
+  readonly page: number;
+  readonly kind: ElementKind;
+  /** 1-based, for the kinds that hold a list. Absent means the whole list. */
+  readonly index?: number;
+}
+
+const ELEMENT_KINDS: ReadonlySet<string> = new Set<ElementKind>([
+  "title", "deck", "body", "pull_quote", "furniture", "brief", "image",
+]);
+
+/**
+ * Parse `page:16/furniture:2`, or `page:16/deck`, or bare `page:16`.
+ *
+ * Stable across rewrites on purpose: a page number and an element name do not
+ * move when the prose around them changes, which a character offset would.
+ */
+export function parseElementAddress(address: string): ElementAddress {
+  const m = /^page:(\d+)(?:\/([a-z_]+)(?::(\d+))?)?$/.exec(String(address).trim());
+  if (!m) {
+    throw new Error(
+      `not an element address: "${address}". Expected page:N, page:N/<element>, `
+      + `or page:N/<element>:M — elements are ${[...ELEMENT_KINDS].join(", ")}.`,
+    );
+  }
+  const kind = m[2] ?? "body";
+  if (!ELEMENT_KINDS.has(kind)) {
+    throw new Error(`unknown element "${kind}". Elements are ${[...ELEMENT_KINDS].join(", ")}.`);
+  }
+  return {
+    page: Number(m[1]),
+    kind: kind as ElementKind,
+    index: m[3] ? Number(m[3]) : undefined,
+  };
+}
+
+/** What an address currently holds, so a rewrite can be asked for against it. */
+function elementValue(page: PublicationPage, at: ElementAddress): string {
+  switch (at.kind) {
+    case "title": return page.title;
+    case "deck": return page.deck ?? "";
+    case "body": return page.body ?? "";
+    case "pull_quote": return page.pullQuote ?? "";
+    case "brief": return page.brief?.prompt ?? "";
+    case "image": return page.image ?? "";
+    case "furniture": {
+      const blocks = page.furniture ?? [];
+      if (at.index === undefined) return blocks.map((f) => `${f.kind}: ${f.text}`).join("\n");
+      const one = blocks[at.index - 1];
+      if (!one) throw new Error(`page ${page.n} has no furniture block ${at.index}`);
+      return `${one.kind}: ${one.text}`;
+    }
+  }
+}
+
+/**
+ * Remove one element, and nothing else.
+ *
+ * Deleting the body would leave a page every later stage treats as unwritten,
+ * which is a state to reach by rewriting rather than by deleting, so it is
+ * refused. The title is what the page is filed under and has the same problem.
+ */
+export async function deleteElement(
+  ctx: RunnerContext,
+  id: string,
+  address: string,
+): Promise<PublicationPage> {
+  const at = parseElementAddress(address);
+  if (at.kind === "body" || at.kind === "title") {
+    throw new Error(
+      `${at.kind} cannot be deleted — a page without one is not a page. `
+      + "Rewrite it instead, or redo the page.",
+    );
+  }
+
+  const issue = await readIssue(ctx, id);
+  const page = issue.pages.find((p) => p.n === at.page);
+  if (!page) throw new Error(`no page ${at.page} in ${id}`);
+
+  if (at.kind === "furniture") {
+    const blocks = page.furniture ?? [];
+    if (at.index === undefined) {
+      page.furniture = [];
+    } else {
+      const index = at.index;
+      if (!blocks[index - 1]) throw new Error(`page ${at.page} has no furniture block ${index}`);
+      page.furniture = blocks.filter((_, i) => i !== index - 1);
+    }
+  } else if (at.kind === "deck") {
+    page.deck = "";
+  } else if (at.kind === "pull_quote") {
+    page.pullQuote = "";
+  } else if (at.kind === "brief") {
+    page.brief = null;
+  } else if (at.kind === "image") {
+    page.image = null;
+  }
+
+  await writePageMarkdown(ctx, id, page);
+  emit(ctx, "publication:element", { id, address, verb: "delete", page: at.page });
+  await save(ctx, issue);
+  return page;
+}
+
+/**
+ * Rewrite one element to an instruction, and nothing else.
+ *
+ * The model is given the page for context and asked for one field back, so a
+ * note about the deck cannot come back having also rewritten the body — which
+ * is what happened when the only tool for this was the whole-page revise.
+ */
+export async function updateElement(
+  ctx: RunnerContext,
+  id: string,
+  address: string,
+  instruction: string,
+): Promise<PublicationPage> {
+  const at = parseElementAddress(address);
+  if (at.kind === "image") {
+    throw new Error(
+      "an image is not rewritten from an instruction — change its brief, "
+      + "then run the art stage for that page",
+    );
+  }
+
+  const issue = await readIssue(ctx, id);
+  const page = issue.pages.find((p) => p.n === at.page);
+  if (!page) throw new Error(`no page ${at.page} in ${id}`);
+
+  emit(ctx, "publication:element", { id, address, verb: "update", state: "start", page: at.page });
+
+  const shape = at.kind === "furniture" && at.index === undefined
+    ? '{"furniture":[{"kind":"sidebar","text":"..."}]}'
+    : at.kind === "furniture"
+      ? '{"kind":"sidebar","text":"the rewritten block"}'
+      : '{"value":"the rewritten element, as plain text"}';
+
+  const out = await ctx.ask([
+    `Rewrite ONE element of page ${at.page} of "${issue.title || issue.subject}".`,
+    `The element is: ${address}`,
+    "",
+    "WHAT THE EDITOR ASKED:",
+    instruction,
+    "",
+    "Change only that element. Everything else on the page stays exactly as it",
+    "is, and your reply must not contain it.",
+    "",
+    `PAGE TITLE: ${page.title}`,
+    page.deck ? `DECK: ${page.deck}` : "",
+    page.pullQuote ? `PULL QUOTE: ${page.pullQuote}` : "",
+    (page.furniture ?? []).length
+      ? `FURNITURE:\n${(page.furniture ?? []).map((f, i) => `${i + 1}. ${f.kind}: ${f.text}`).join("\n")}`
+      : "",
+    page.brief?.prompt ? `IMAGE BRIEF: ${page.brief.prompt}` : "",
+    "",
+    "BODY:",
+    page.body ?? "",
+    "",
+    "CURRENT VALUE OF THE ELEMENT:",
+    elementValue(page, at),
+    "",
+    "Respond with JSON only:",
+    shape,
+  ].filter(Boolean).join("\n"), `element-${at.page}-${at.kind}`);
+
+  applyElement(ctx, page, at, out);
+  await writePageMarkdown(ctx, id, page);
+
+  // Approval is of specific copy. Changing a sidebar is a smaller change than
+  // rewriting the page, but it is still not the copy that was signed off.
+  if (issue.approved) {
+    issue.approved = null;
+    emit(ctx, "publication:issue", { id, approved: false });
+  }
+  emit(ctx, "publication:element", { id, address, verb: "update", state: "done", page: at.page });
+  await save(ctx, issue);
+  return page;
+}
+
+/** Put the model's one field back on the page, or leave the page alone. */
+function applyElement(
+  ctx: RunnerContext,
+  page: PublicationPage,
+  at: ElementAddress,
+  out: Record<string, unknown>,
+): void {
+  if (at.kind === "furniture") {
+    if (at.index === undefined) {
+      const blocks = keepAllowedBlocks(ctx.definition, page.type, out.furniture) ?? [];
+      // An empty result is a failed call, not an instruction to clear the
+      // page. Removing furniture is what deleteElement is for.
+      if (blocks.length) page.furniture = blocks;
+      return;
+    }
+    const text = String(out.text ?? "").trim();
+    if (!text) return;
+    const blocks = [...(page.furniture ?? [])];
+    const existing = blocks[at.index - 1];
+    if (!existing) throw new Error(`page ${at.page} has no furniture block ${at.index}`);
+    blocks[at.index - 1] = { kind: String(out.kind ?? existing.kind), text, source: existing.source };
+    page.furniture = keepAllowedBlocks(ctx.definition, page.type, blocks);
+    return;
+  }
+
+  const value = String(out.value ?? "").trim();
+  if (!value) return;
+  if (at.kind === "title") {
+    page.title = value;
+  } else if (at.kind === "deck") {
+    page.deck = value;
+  } else if (at.kind === "pull_quote") {
+    page.pullQuote = value;
+  } else if (at.kind === "brief") {
+    page.brief = { prompt: value, orientation: page.brief?.orientation ?? "landscape" };
+  } else if (at.kind === "body") {
+    page.body = value;
+    page.words = value.split(/\s+/).filter(Boolean).length;
+  }
+}
+
 export async function runAudit(
   ctx: RunnerContext,
   id: string,

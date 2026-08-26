@@ -707,6 +707,9 @@ describe("runAgentSession cache — bookId switch", () => {
       "publication_art",
       "publication_layout",
       "publication_render",
+      // One element of one page, so a note about a sidebar stops
+      // rewriting the prose around it.
+      "publication_element",
       "publication_audit",
       "publication_deslop",
       "publication_build",

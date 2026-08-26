@@ -2363,6 +2363,23 @@ const AuditParams = Type.Object({
       + "user asked what is wrong rather than for it to be fixed.",
   })),
 });
+const ElementParams = Type.Object({
+  id: Type.String({ description: "The publication issue id." }),
+  address: Type.String({
+    description:
+      "Which element, as page:N/<element>[:M] — page:16/deck, page:16/furniture:2, page:16/body, "
+      + "page:16/pull_quote, page:16/brief, page:16/image. Bare page:16 means the body. Furniture "
+      + "blocks are numbered from 1 in the order they appear on the page; omit the number to mean "
+      + "all of them.",
+  }),
+  verb: Type.Union([Type.Literal("update"), Type.Literal("delete")], {
+    description: "update rewrites the element to the instruction; delete removes it.",
+  }),
+  instruction: Type.Optional(Type.String({
+    description: "For update: what the element should become, in the editor's own words.",
+  })),
+});
+type ElementParamsType = Static<typeof ElementParams>;
 type IssuePageParamsType = Static<typeof IssuePageParams>;
 type IssueOnlyParamsType = Static<typeof IssueOnlyParams>;
 type AuditParamsType = Static<typeof AuditParams>;
@@ -2461,18 +2478,62 @@ export function createPublicationProductionTools(
     {
       name: "publication_render",
       description:
-        "Export ONE spread of an existing issue as an image and return where it was written, so the "
-        + "page can actually be looked at rather than inferred from the layout report. Read-only: it "
-        + "does not change the document, and needs no approval.",
+        "Export ONE spread of an existing issue as an image and look at it. The picture comes back "
+        + "into the conversation, so a layout can be judged by what Affinity actually set rather than "
+        + "inferred from the layout report — call it after a layout change and revise against what you "
+        + "see. Read-only: it does not change the document, and needs no approval.",
       label: "Render Spread",
       parameters: IssuePageParams,
       async execute(_id: string, params: IssuePageParamsType) {
         const { ctx } = await open(params.id);
         const { renderPage } = await import("../pipeline/publication-runner.js");
         const out = await renderPage(ctx, params.id, params.page);
-        return textResult(out.image
-          ? `Spread ${params.page} rendered: ${out.image}`
-          : `Spread ${params.page} could not be rendered: ${out.error ?? "unknown reason"}`);
+        if (!out.image) {
+          return textResult(`Spread ${params.page} could not be rendered: ${out.error ?? "unknown reason"}`);
+        }
+
+        // The point of rendering is to see it. Returning only the path made
+        // this a tool that proved a file existed: the model designed the next
+        // revision blind, against its own idea of the page rather than
+        // against the page. Tool results carry images, so hand it the image.
+        const image = await readFile(out.image, { encoding: "base64" }).catch(() => null);
+        if (!image) {
+          return textResult(`Spread ${params.page} rendered: ${out.image} (written, but could not be read back)`);
+        }
+        return {
+          content: [
+            { type: "text" as const, text: `Spread ${params.page} of "${params.id}", as Affinity has it (${out.image}):` },
+            { type: "image" as const, data: image, mimeType: "image/png" },
+          ],
+          details: { kind: "publication_spread", id: params.id, page: params.page, image: out.image },
+        };
+      },
+    },
+    {
+      name: "publication_element",
+      description:
+        "Change ONE element of ONE page of an existing issue, leaving everything else exactly as it "
+        + "is. Address it as page:16/deck, page:16/furniture:2, page:16/body, page:16/pull_quote, "
+        + "page:16/brief, or page:16/image. Verb 'update' rewrites it to your instruction; 'delete' "
+        + "removes it. This is the right tool for a note about one sidebar, one deck or one pull "
+        + "quote — publication_audit rewrites whole pages, which changes prose nobody complained "
+        + "about. Rewriting copy clears its approval.",
+      label: "Change Page Element",
+      parameters: ElementParams,
+      async execute(_id: string, params: ElementParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+        const { ctx } = await openWithModel(params.id);
+        const runner = await import("../pipeline/publication-runner.js");
+        if (params.verb === "delete") {
+          const page = await runner.deleteElement(ctx, params.id, params.address);
+          return textResult(`Deleted ${params.address}. Page ${page.n} is otherwise unchanged.`);
+        }
+        const instruction = params.instruction?.trim();
+        if (!instruction) {
+          throw new Error("update needs an instruction saying what the element should become");
+        }
+        onUpdate?.(textResult(`Rewriting ${params.address}…`));
+        const page = await runner.updateElement(ctx, params.id, params.address, instruction);
+        return textResult(`Rewrote ${params.address}. Page ${page.n} is otherwise unchanged.`);
       },
     },
     {
