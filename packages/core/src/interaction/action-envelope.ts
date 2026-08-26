@@ -30,6 +30,7 @@ export const RequestedIntentSchema = z.enum([
   "style_imitation",
   "script_create",
   "storyboard_create",
+  "storyboard_art",
   "interactive_film_create",
   "translation_create",
   "publication_create",

@@ -231,6 +231,7 @@ const ProposeActionParams = Type.Object({
     Type.Literal("style_imitation"),
     Type.Literal("script_create"),
     Type.Literal("storyboard_create"),
+    Type.Literal("storyboard_art"),
     Type.Literal("interactive_film_create"),
     Type.Literal("translation_create"),
     Type.Literal("publication_create"),
@@ -465,7 +466,7 @@ function proposedActionSessionKind(action: ProposeActionParamsType["action"]): "
   if (action === "create_book") return "book-create";
   if (action === "play_start") return "play";
   if (action === "script_create") return "script";
-  if (action === "storyboard_create") return "storyboard";
+  if (action === "storyboard_create" || action === "storyboard_art") return "storyboard";
   if (action === "interactive_film_create") return "interactive-film";
   if (action === "translation_create") return "chat";
   if (action === "publication_create") return "chat";
@@ -496,6 +497,8 @@ function proposedActionFallbackTitle(action: ProposeActionParamsType["action"], 
       return isZh ? "创建剧本" : "Create script";
     case "storyboard_create":
       return isZh ? "创建分镜" : "Create storyboard";
+    case "storyboard_art":
+      return isZh ? "渲染分镜画面" : "Render storyboard art";
     case "interactive_film_create":
       return isZh ? "创建互动影游" : "Create interactive film";
     case "translation_create":
@@ -3139,6 +3142,80 @@ const GenerateCoverParams = Type.Object({
 });
 
 type GenerateCoverParamsType = Static<typeof GenerateCoverParams>;
+
+const StoryboardArtParams = Type.Object({
+  manifest_path: Type.String({
+    description:
+      "Project-relative path of the storyboard run's assets.json, e.g. "
+      + "\"storyboards/closing-time/assets.json\". The run that wrote the storyboard reported it.",
+  }),
+  shots: Type.Optional(Type.Array(Type.String(), {
+    description:
+      "Render only these shot ids (shot-001, shot-014). Omit to render every shot that has no image "
+      + "yet — which is what resuming an interrupted run means.",
+  })),
+  redo: Type.Optional(Type.Boolean({
+    description: "Re-render shots that already have an image, adding a new variant beside the old one.",
+  })),
+});
+
+type StoryboardArtParamsType = Static<typeof StoryboardArtParams>;
+
+/**
+ * Draw a storyboard's shots.
+ *
+ * The prompts have always been written and there has never been anything that
+ * renders them: assets.json models every shot and nothing filled it in. Behind
+ * a confirmation like every other art step — nothing is drawn until the user
+ * asks — and resumable, because twenty shots is long enough for a run to be
+ * interrupted and redoing the finished ones is pure waste.
+ */
+export function createStoryboardArtTool(
+  projectRoot: string,
+  shimUrl: string,
+): AgentTool<typeof StoryboardArtParams> {
+  return {
+    name: "storyboard_art",
+    description:
+      "Render a storyboard's shot frames locally with ComfyUI, from the image prompts that "
+      + "storyboard already carries, and record them in its assets manifest. Resumes: a shot that "
+      + "already has an image is skipped unless redo is set, so an interrupted run continues instead "
+      + "of redrawing what is done. Needs no API key.",
+    label: "Render Storyboard Art",
+    parameters: StoryboardArtParams,
+    async execute(
+      _toolCallId: string,
+      params: StoryboardArtParamsType,
+      signal?: AbortSignal,
+      onUpdate?: AgentToolUpdateCallback,
+    ): Promise<AgentToolResult<unknown>> {
+      const { renderStoryboardShots } = await import("../pipeline/storyboard-art.js");
+      const result = await renderStoryboardShots({
+        projectRoot,
+        manifestPath: params.manifest_path,
+        shimUrl,
+        only: params.shots,
+        redo: params.redo,
+        signal,
+        onProgress: (message) => onUpdate?.(textResult(message)),
+      });
+      return textResult([
+        result.rendered.length
+          ? `Rendered ${result.rendered.length} shots: ${result.rendered.join(", ")}.`
+          : "Nothing to render — every shot already has an image.",
+        result.skipped.length ? `Skipped ${result.skipped.length} that were already done.` : "",
+        result.failed.length
+          ? `Failed:\n${result.failed.map((f) => `- ${f.shotId}: ${f.error}`).join("\n")}\n`
+            + "The manifest records which, so running this again picks up only those."
+          : "",
+      ].filter(Boolean).join("\n"), {
+        kind: "storyboard_art",
+        assetsManifestPath: result.manifestPath,
+        rendered: result.rendered,
+      });
+    },
+  };
+}
 
 /* ----------------------------------------------------- story audit / deslop */
 

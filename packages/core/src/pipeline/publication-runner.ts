@@ -40,6 +40,7 @@ import {
   type RecalledPage,
 } from "./publication-memory.js";
 import { buildRuleStack } from "../utils/rule-stack.js";
+import { requireDesigner, requireRenderer } from "../utils/renderer-preflight.js";
 import { validateIssue } from "./publication-schema.js";
 import {
   DEFAULT_DESIGN_PROMPT,
@@ -449,66 +450,6 @@ export function requireApproval(issue: PublicationIssue, what: string): void {
   if (!issue.approved) {
     throw new Error(`${what} needs the copy approved first — every page written, then approved`);
   }
-}
-
-/**
- * The renderer has to be up before a stage starts spending on it.
- *
- * ComfyUI installed-but-not-running surfaced as `art p1: fetch failed`, after
- * the research, the planning, the writing and the audit had already run. It is
- * the one failure the app can fix by itself, and it was being reported as if
- * page one were at fault. Ask the shim; start it if it is only asleep; say
- * plainly what is wrong if it is not.
- */
-async function requireRenderer(ctx: RunnerContext): Promise<void> {
-  const shim = ctx.shimUrl;
-  if (!shim) throw new Error("image rendering needs Quire's shim, which is not reachable");
-  const ask = async (): Promise<{ up?: boolean; installed?: boolean; reason?: string }> =>
-    await fetch(`${shim}/comfy/status`, { signal: AbortSignal.timeout(5000) })
-      .then((r) => r.json() as Promise<{ up?: boolean; installed?: boolean; reason?: string }>)
-      .catch(() => ({}));
-
-  const first = await ask();
-  if (first.up) return;
-  if (first.installed === false) {
-    throw new Error(
-      "ComfyUI is not installed, so there is nothing to render with. Install it from "
-      + "Quire's setup panel and run the art stage again — the written pages and the "
-      + "audit are already on disk and will not be redone.",
-    );
-  }
-  // Installed and idle is the ordinary state after a reboot, and starting it is
-  // the entire fix. It is Quire's own process to start, so start it.
-  await fetch(`${shim}/comfy/start`, { method: "POST", signal: AbortSignal.timeout(200_000) })
-    .catch(() => undefined);
-  const second = await ask();
-  if (second.up) return;
-  throw new Error(
-    `ComfyUI is installed but would not start${second.reason ? `: ${second.reason}` : ""}. `
-    + "Nothing was rendered and nothing is lost — the pages and the audit are on disk. "
-    + "Start ComfyUI, then run the art stage again.",
-  );
-}
-
-/**
- * Same idea for Affinity, which cannot be started on the user's behalf.
- *
- * Its scripting sandbox also has to be able to read the Desktop, or every
- * image placement fails silently once the build is already underway. Better to
- * refuse before staging assets than to produce a document with holes in it.
- */
-async function requireDesigner(ctx: RunnerContext, what: string): Promise<string> {
-  const shim = ctx.shimUrl;
-  if (!shim) throw new Error(`${what} needs Quire's shim, which is not reachable`);
-  type Status = { up?: boolean; canRead?: boolean; reason?: string };
-  const s: Status = await fetch(`${shim}/affinity/status`, { signal: AbortSignal.timeout(40_000) })
-    .then((r) => r.json() as Promise<Status>)
-    .catch((e: unknown): Status => ({ up: false, reason: String(e) }));
-  if (s.up && s.canRead !== false) return shim;
-  throw new Error(
-    `${what} needs Affinity Publisher${s.reason ? `: ${s.reason}` : ", and it is not answering"}. `
-    + "Everything written so far is on disk; start Affinity and run this stage again.",
-  );
 }
 
 export async function approve(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
@@ -929,7 +870,7 @@ export async function artPage(
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "art");
-  await requireRenderer(ctx);
+  await requireRenderer(ctx.shimUrl);
   const page = issue.pages.find((p) => p.n === Number(n));
   if (!page) throw new Error(`no page ${n} in ${id}`);
   if (!page.brief?.prompt) throw new Error(`page ${n} has no visual brief — write it first`);
@@ -1081,7 +1022,7 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "build");
-  await requireDesigner(ctx, "building the document");
+  await requireDesigner(ctx.shimUrl, "building the document");
   requireDesignApproval(issue, "build");
   const designProblems = checkSpec(issue.design?.spec, issue.pages.map((p) => p.n));
   if (designProblems.length) {
@@ -1130,7 +1071,7 @@ export async function placePage(
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "layout");
-  await requireDesigner(ctx, "laying out a page");
+  await requireDesigner(ctx.shimUrl, "laying out a page");
   requireDesignApproval(issue, "layout");
   if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
 
@@ -1168,7 +1109,7 @@ export async function renderPage(
   id: string,
   n: number,
 ): Promise<{ readonly image: string | null; readonly error?: string }> {
-  await requireDesigner(ctx, "rendering a spread");
+  await requireDesigner(ctx.shimUrl, "rendering a spread");
   const issue = await readIssue(ctx, id);
   if (!issue.pages.some((p) => p.n === Number(n))) throw new Error(`no page ${n} in ${id}`);
 

@@ -49,6 +49,7 @@ import {
   createPublicationCreateTool,
   createPublicationProductionTools,
   createStoryAuditTools,
+  createStoryboardArtTool,
   createComfyGenerateTool,
   createIngestMaterialTool,
   createRetrieveMaterialTool,
@@ -941,6 +942,15 @@ function createModeTools(params: CreateAgentToolsForModeParams) {
   }
 
   if (params.sessionKind === "storyboard") {
+    // Art is a confirmed step of its own, exactly as generate_cover is for a
+    // short: the prompts are written by the run, and nothing is drawn until
+    // the user asks for it.
+    if (isConfirmed("storyboard_art")) {
+      return [createStoryboardArtTool(
+        params.projectRoot,
+        process.env.QUIRE_SHIM_URL || `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
+      )];
+    }
     if (isConfirmed("storyboard_create")) {
       return [createStoryboardCreationTool(params.pipeline, params.projectRoot, {
         actionPayload: params.actionPayload,
