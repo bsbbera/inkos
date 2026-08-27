@@ -101,6 +101,14 @@ export interface PublicationDefinition {
   readonly needsImages: boolean;
   /** Whether a PDF is built at the end. */
   readonly needsPdf: boolean;
+  /**
+   * Whether written pages are checked against the web before the audit.
+   *
+   * Declared, not assumed. A magazine states figures a reader could look up
+   * and should be checked; a novel's claims are not supposed to be verifiable
+   * and checking them would be nonsense. Absent means no.
+   */
+  readonly needsFactCheck?: boolean;
 
   /** Where issues of this type are stored, relative to the workspace. */
   readonly outDir: string;

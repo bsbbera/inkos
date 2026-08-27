@@ -24,6 +24,7 @@ import {
   type SearchSource,
 } from "../utils/search-sources.js";
 import { ResearchSearchConfigSchema } from "../models/project.js";
+import { retrieveMaterials } from "../materials/retrieve.js";
 
 /** What a page can actually use: a claim, and where it came from. */
 export interface Finding {
@@ -110,6 +111,39 @@ export async function allSearchSources(projectRoot: string): Promise<SearchSourc
   return [...keys, ...await mcpSearchSources()];
 }
 
+/**
+ * The user's own attachments, as search results.
+ *
+ * Same shape as a web hit so the extraction prompt needs no second branch and
+ * the URL check that drops invented claims still applies. `material:<id>` is
+ * the identifier when a file has no URL of its own, which is most of them.
+ */
+async function materialResults(
+  projectRoot: string,
+  queries: ReadonlyArray<string>,
+): Promise<SearchResult[]> {
+  const byUrl = new Map<string, SearchResult>();
+  for (const query of queries) {
+    let hits: Awaited<ReturnType<typeof retrieveMaterials>>;
+    try {
+      hits = await retrieveMaterials(projectRoot, { query, purpose: "research", limit: 5 });
+    } catch {
+      // No material store, or an unreadable one. The web results stand.
+      return [...byUrl.values()];
+    }
+    for (const hit of hits) {
+      const url = hit.source?.startsWith("http") ? hit.source : `material:${hit.id}`;
+      if (byUrl.has(url)) continue;
+      byUrl.set(url, {
+        title: `Your own material — ${hit.title}`,
+        url,
+        snippet: hit.excerpt,
+      });
+    }
+  }
+  return [...byUrl.values()];
+}
+
 /* ------------------------------------------------------------------- cache */
 
 const keyOf = (query: string) => createHash("sha1").update(query).digest("hex").slice(0, 16);
@@ -144,7 +178,11 @@ Reply as JSON only:
 `.trim();
 
 const EXTRACT_PROMPT = (pillar: string, subject: string, results: SearchResult[]) => `
-Below are web search results about "${subject}", for the pillar "${pillar}".
+Below are research results about "${subject}", for the pillar "${pillar}".
+
+Anything titled "Your own material" was supplied by the editor. It outranks
+everything else here: where it disagrees with a web result, it is right, and a
+claim it supports is worth more than one only the web supports.
 
 Pull out every specific, usable claim. A claim is usable if a reader would
 find it interesting and a fact-checker could verify it. Skip anything vague,
@@ -180,7 +218,11 @@ export async function researchPublication(args: {
   readonly sources?: ReadonlyArray<SearchSource>;
 }): Promise<ResearchReport> {
   const sources = args.sources ?? await allSearchSources(args.projectRoot);
-  if (!sources.length) {
+  // Material the editor attached is research too. Refusing to run because no
+  // search key is set, while their own PDF sits archived in the project, is
+  // the stage telling them their sources do not count.
+  const hasOwnMaterial = (await materialResults(args.projectRoot, [args.subject])).length > 0;
+  if (!sources.length && !hasOwnMaterial) {
     throw new Error(
       "no web search is configured, so this issue would be written from memory alone. "
       + "Enable a search MCP server, or set a Tavily or Brave key in Project Settings "
@@ -217,9 +259,17 @@ export async function researchPublication(args: {
         results.push(...hit.results);
         continue;
       }
+      if (!sources.length) continue;
       const sweep = await searchAllSources(sources, query, RESULTS_PER_SOURCE);
       if (!sweep.results.length) {
-        throw new Error(`every search source failed for "${query}" — ${sweep.failures.join("; ")}`);
+        // Only fatal with nothing else to work from. With the editor's own
+        // material in hand, a dead search provider is a thinner issue, not a
+        // stopped one.
+        if (!hasOwnMaterial) {
+          throw new Error(`every search source failed for "${query}" — ${sweep.failures.join("; ")}`);
+        }
+        args.onProgress?.(`search failed for "${query}" — ${sweep.failures.join("; ")}`);
+        continue;
       }
       for (const id of sweep.answered) answeredBy.add(id);
       cache[key] = {
@@ -231,9 +281,22 @@ export async function researchPublication(args: {
     }
     await writeCache(args.cachePath, cache);
 
+    // What the user gave us, on the same footing as what the web returned.
+    //
+    // The prompts have always told the model that the editor's own material
+    // outranks its research. Nothing ever put that material in front of it:
+    // ingest_material archived the PDF, retrieve_material could find it, and
+    // this stage called neither. An attached source was archived and ignored.
+    const ownMaterial = await materialResults(args.projectRoot, queries);
+    if (ownMaterial.length) {
+      args.onProgress?.(`${pillar}: ${ownMaterial.length} excerpts from your own material`);
+    }
+
     // Same URL from three queries is one source, and repeating it in the
-    // prompt only costs context and biases the model towards it.
-    const unique = [...new Map(results.map((r) => [r.url, r])).values()];
+    // prompt only costs context and biases the model towards it. The user's
+    // own material comes first, so it survives the dedupe when the web
+    // returns the same page.
+    const unique = [...new Map([...ownMaterial, ...results].map((r) => [r.url, r])).values()];
     const extracted = unique.length
       ? await args.ask(EXTRACT_PROMPT(pillar, args.subject, unique), `research:${pillar}`)
       : { findings: [] };

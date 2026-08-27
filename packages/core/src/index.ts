@@ -748,6 +748,16 @@ export {
   STORY_DIMENSIONS, STORY_SLOP_DIMENSIONS,
 } from "./pipeline/story-audit.js";
 export type { StoryAudit, StoryFinding } from "./pipeline/story-audit.js";
+export {
+  factCheck, factCheckReport, isProblem as isFactProblem,
+} from "./pipeline/fact-check.js";
+export type { FactCheckResult, FactFinding, CheckableClaim } from "./pipeline/fact-check.js";
+export {
+  searchAllSources, mcpSearchSources, keySource, RESULTS_PER_SOURCE,
+} from "./utils/search-sources.js";
+export type { SearchSource, SearchSweep, SourcedResult } from "./utils/search-sources.js";
+export { modelCapabilities, modelSearchesWeb } from "./llm/providers/lookup.js";
+
 export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
 export {

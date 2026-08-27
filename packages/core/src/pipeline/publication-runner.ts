@@ -19,11 +19,18 @@ import type { PublicationDefinition } from "../publications/types.js";
 import { renderTemplate } from "../publications/types.js";
 import * as styles from "../publications/styles.js";
 import {
+  allSearchSources,
   findingsFor,
   researchPublication,
   type ResearchReport,
 } from "./publication-research.js";
 import { resolveVoice } from "./publication-voice.js";
+import {
+  factCheck,
+  isProblem,
+  type FactCheckResult,
+  type FactFinding,
+} from "./fact-check.js";
 import { auditPages, summarize, type PublicationAudit, type PublicationFinding } from "./publication-audit.js";
 import {
   buildAuditPrompt,
@@ -193,6 +200,8 @@ export interface PublicationIssue {
   build?: { pdf?: string | null; at?: string };
   /** What the audit stage found. Advisory: it never blocks the pipeline. */
   audit?: PublicationAudit | null;
+  /** Last fact-check over the written pages, when the type asks for one. */
+  factCheck?: FactCheckResult | null;
   /**
    * Why the last run stopped, when it stopped badly.
    *
@@ -1362,7 +1371,7 @@ export async function startQueue(
 
 /* --------------------------------------------------------------------- run */
 
-export type Stage = "research" | "plan" | "write" | "audit" | "art" | "build";
+export type Stage = "research" | "plan" | "write" | "fact-check" | "audit" | "art" | "build";
 
 /**
  * Read every written page and record what is wrong with the prose.
@@ -1755,6 +1764,62 @@ function applyElement(
   }
 }
 
+/**
+ * Check the written pages against the web.
+ *
+ * Between writing and the audit, because the audit reads prose and this reads
+ * facts, and a page whose figures are wrong should be known to be wrong before
+ * anyone spends a revise round on how it sounds. The findings are recorded and
+ * not acted on: deciding whether a contradicted figure means a rewrite or a
+ * better source is the editor's call, not the runner's.
+ *
+ * Only runs when the type asks for it, so fiction never pays for it.
+ */
+export async function runFactCheck(
+  ctx: RunnerContext,
+  id: string,
+): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  emit(ctx, "publication:stage", { id, stage: "fact-check", state: "start" });
+
+  const sources = await allSearchSources(ctx.projectRoot);
+  if (!sources.length) {
+    // Not an error. A user with no search configured has already been told
+    // during research; failing the run here would only repeat it louder.
+    issue.factCheck = { at: new Date().toISOString(), findings: [], checked: 0, searchedWith: [] };
+    emit(ctx, "publication:stage", {
+      id, stage: "fact-check", state: "done", checked: 0,
+      message: "no search source configured — nothing was checked",
+    });
+    return save(ctx, issue);
+  }
+
+  const findings: FactFinding[] = [];
+  const searchedWith = new Set<string>();
+  let checked = 0;
+
+  for (const page of issue.pages) {
+    if (!page.body?.trim()) continue;
+    const result = await factCheck({
+      text: page.body,
+      where: `p${page.n}`,
+      ask: (prompt, label) => ctx.ask(prompt, label),
+      sources,
+      onProgress: (message) => emit(ctx, "publication:stage", {
+        id, stage: "fact-check", state: "progress", message,
+      }),
+    });
+    findings.push(...result.findings);
+    for (const s of result.searchedWith) searchedWith.add(s);
+    checked += result.checked;
+  }
+
+  issue.factCheck = { at: new Date().toISOString(), findings, checked, searchedWith: [...searchedWith] };
+  const problems = findings.filter(isProblem).length;
+  emit(ctx, "publication:stage", { id, stage: "fact-check", state: "done", checked, problems });
+  return save(ctx, issue);
+}
+
 export async function runAudit(
   ctx: RunnerContext,
   id: string,
@@ -1841,7 +1906,7 @@ export async function run(
     redo?: boolean;
   } = {},
 ): Promise<PublicationIssue> {
-  const order: Stage[] = ["research", "plan", "write", "audit", "art", "build"];
+  const order: Stage[] = ["research", "plan", "write", "fact-check", "audit", "art", "build"];
   const start = order.indexOf(from);
   let end = order.indexOf(stopAt);
   if (start < 0 || end < 0) throw new Error(`unknown stage: ${from} or ${stopAt}`);
@@ -1861,6 +1926,7 @@ export async function run(
       const issue = await readIssue(ctx, id);
       for (const n of outstanding(issue, "write", redo)) await writePage(ctx, id, n);
     }
+    if (stage === "fact-check" && ctx.definition.needsFactCheck) await runFactCheck(ctx, id);
     if (stage === "audit") await runAudit(ctx, id);
     if (stage === "art" && ctx.definition.needsImages) {
       const issue = await readIssue(ctx, id);

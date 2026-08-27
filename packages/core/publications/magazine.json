@@ -176,5 +176,6 @@
       "required": false,
       "question": "Anything of your own to work from — corrections, sources, notes, files? Attach them or paste them; they outrank anything found by search."
     }
-  ]
+  ],
+  "needsFactCheck": true
 }
