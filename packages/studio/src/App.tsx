@@ -35,7 +35,7 @@ import { useI18n } from "./hooks/use-i18n";
 import { setAppLanguage, tr } from "./lib/app-language";
 import { postApi, putApi, useApi } from "./hooks/use-api";
 import { Sun, Moon } from "lucide-react";
-import { House } from "lucide-react";
+import { House, PanelLeft } from "lucide-react";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -58,6 +58,7 @@ export function deriveStartupGate(input: {
 
 export function App() {
   const { route, setRoute } = useHashRoute();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const sse = useSSE();
   const { theme, setTheme } = useTheme();
   const { t, lang: currentLang } = useI18n();
@@ -183,14 +184,24 @@ export function App() {
 
   return (
     <div className="h-screen bg-background text-foreground flex overflow-hidden font-sans">
-      {/* Left Sidebar */}
-      <Sidebar nav={nav} activePage={activePage} sse={sse} t={t} />
+      {/* Left Sidebar. Folds away: the audit screen carries its own tree and an
+          editor, and a fixed 260px of navigation on top of that left the work
+          itself the narrowest column on the screen. */}
+      {sidebarOpen ? <Sidebar nav={nav} activePage={activePage} sse={sse} t={t} /> : null}
 
       {/* Center Content */}
       <div className="flex-1 flex flex-col min-w-0 bg-background/30 backdrop-blur-sm">
         {/* Header Strip */}
         <header className="h-14 shrink-0 flex items-center justify-between px-8 border-b border-border/40">
           <div className="flex items-center gap-2">
+             <button
+               onClick={() => setSidebarOpen((v) => !v)}
+               aria-label={sidebarOpen ? "Hide the sidebar" : "Show the sidebar"}
+               title={sidebarOpen ? "Hide the sidebar" : "Show the sidebar"}
+               className="inline-flex items-center rounded-lg border border-border/50 bg-card/70 p-2 text-foreground hover:bg-secondary/50 transition-colors"
+             >
+               <PanelLeft size={18} />
+             </button>
              <button
                onClick={nav.toDashboard}
                className="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-card/70 px-3.5 py-2 text-[17px] font-semibold text-foreground hover:bg-secondary/50 transition-colors"
