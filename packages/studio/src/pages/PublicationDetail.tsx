@@ -20,7 +20,7 @@ import {
   AlertTriangle, BookOpen, Check, Image as ImageIcon, Loader2, Play, RotateCw, X,
 } from "lucide-react";
 
-type Stage = "research" | "plan" | "write" | "audit" | "art" | "build";
+type Stage = "research" | "plan" | "write" | "fact-check" | "audit" | "art" | "build";
 
 interface Finding {
   readonly page: number;
@@ -69,7 +69,10 @@ interface Detail {
 
 interface Nav { toDashboard: () => void }
 
-const STAGES: readonly Stage[] = ["research", "plan", "write", "audit", "art", "build"];
+// Must match the server's list. It did not: `fact-check` was a real stage the
+// server would run and this screen displayed, but neither dropdown offered it,
+// so a run could never be resumed at the only stage that checks facts.
+const STAGES: readonly Stage[] = ["research", "plan", "write", "fact-check", "audit", "art", "build"];
 
 const post = async (path: string, body: unknown) => {
   const res = await fetch(path, {

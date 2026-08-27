@@ -11,17 +11,21 @@
  * needs the artifact to have come from anywhere in particular. This is the
  * surface it was missing.
  */
-import { readdir, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Hono } from "hono";
 import {
+  PRODUCTIONS,
   PipelineRunner,
+  type ProductionRunSnapshot,
+  type PublicationIssue,
   auditableRoots,
   createStoryAsk,
   runStoryAudit,
   runStoryDeslop,
   storyAuditReport,
 } from "@actalk/quire-core";
+import { stageStates } from "./publications.js";
 
 export interface AuditRouteDeps {
   readonly root: string;
@@ -141,6 +145,15 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     return c.json({ targets: await listAuditTargets(root) });
   });
 
+  app.get("/api/v1/audit/projects", async (c) => {
+    return c.json({ projects: await listAuditProjects(root) });
+  });
+
+  app.get("/api/v1/audit/project/:kind/:id", async (c) => {
+    const detail = await readAuditProject(root, c.req.param("kind"), c.req.param("id"));
+    return detail ? c.json(detail) : c.json({ error: "no such project" }, 404);
+  });
+
   /**
    * Check one artifact.
    *
@@ -180,4 +193,164 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
       running.delete(path);
     }
   });
+}
+
+/* ------------------------------------------------------------------ projects
+ *
+ * A file is not the unit anyone works in.
+ *
+ * The screen listed every auditable `.md` on disk, flat, and offered to check
+ * one of them. That is not how the work is shaped: a magazine is sixteen pages
+ * and a short is one story in sixty-four files, and the state that says how far
+ * either has got is already written down — just not anywhere this route looked.
+ *
+ * Two shapes, not eight. Every production except publication commits a
+ * `ProductionRunSnapshot` to `<outDir>/<id>/status.json`, and publication keeps
+ * a richer issue at `Magazine/issues/<id>/publication.json` that the publication
+ * screen already knows how to derive stages and gates from. Both are read here;
+ * a project with neither still lists its files, so nothing disappears because a
+ * run predates the snapshot.
+ */
+
+export interface AuditProject {
+  readonly kind: string;
+  readonly kindLabel: string;
+  readonly id: string;
+  readonly files: number;
+  readonly words: number;
+  readonly modified: string;
+}
+
+export interface AuditItem {
+  readonly path: string;
+  readonly name: string;
+  readonly words: number;
+  readonly modified: string;
+}
+
+export interface AuditProjectDetail {
+  readonly kind: string;
+  readonly kindLabel: string;
+  readonly id: string;
+  readonly title: string;
+  readonly subtitle: string;
+  /** Empty when the project keeps no run state — the file list still stands. */
+  readonly stages: ReadonlyArray<{ stage: string; state: string; detail: string }>;
+  readonly findings: ReadonlyArray<{
+    page: number | null;
+    severity: string;
+    category: string;
+    description: string;
+    suggestion: string;
+  }>;
+  readonly items: ReadonlyArray<AuditItem>;
+}
+
+/** The work, grouped the way it was made. */
+export async function listAuditProjects(root: string): Promise<AuditProject[]> {
+  const byKey = new Map<string, AuditProject>();
+  for (const target of await listAuditTargets(root)) {
+    if (!target.project) continue;
+    const key = `${target.kind}/${target.project}`;
+    const seen = byKey.get(key);
+    byKey.set(key, {
+      kind: target.kind,
+      kindLabel: target.kindLabel,
+      id: target.project,
+      files: (seen?.files ?? 0) + 1,
+      words: (seen?.words ?? 0) + target.words,
+      // Targets arrive newest first, so the first one seen is the project's own.
+      modified: seen?.modified ?? target.modified,
+    });
+  }
+  return [...byKey.values()];
+}
+
+async function readJson<T>(path: string): Promise<T | null> {
+  try { return JSON.parse(await readFile(path, "utf-8")) as T; } catch { return null; }
+}
+
+/** `expected`/`actual` are deliberately `unknown` in the contract. Say them anyway. */
+function describe(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object") {
+    const o = value as Record<string, unknown>;
+    if (typeof o.value !== "undefined") return `${o.value}${o.unit ? ` ${o.unit}` : ""}`;
+    if (typeof o.target !== "undefined") return `${o.target} (${o.min}–${o.max}${o.unit ? ` ${o.unit}` : ""})`;
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+export async function readAuditProject(
+  root: string,
+  kind: string,
+  id: string,
+): Promise<AuditProjectDetail | null> {
+  const spec = PRODUCTIONS.find((p) => p.id === kind);
+  if (!spec || !spec.auditable) return null;
+
+  const items: AuditItem[] = (await listAuditTargets(root))
+    .filter((t) => t.kind === kind && t.project === id)
+    .map(({ path, name, words, modified }) => ({ path, name, words, modified }));
+  if (items.length === 0) return null;
+
+  const base = {
+    kind,
+    kindLabel: spec.label,
+    id,
+    items: [...items].sort((a, b) => a.path.localeCompare(b.path)),
+  };
+
+  // A publication already has a screen that derives stages and gates from the
+  // issue. Reuse that derivation rather than growing a second, drifting one.
+  if (kind === "publication") {
+    const issue = await readJson<PublicationIssue>(
+      join(root, spec.outDir, "issues", id, "publication.json"),
+    );
+    if (issue) {
+      return {
+        ...base,
+        title: issue.title || issue.subject || id,
+        subtitle: `${issue.type} · ${issue.pages.length} pages · ${issue.status}`,
+        stages: stageStates(issue),
+        findings: (issue.audit?.findings ?? []).map((f) => ({
+          page: f.page,
+          severity: f.severity,
+          category: f.category,
+          description: f.description,
+          suggestion: f.suggestion,
+        })),
+      };
+    }
+  }
+
+  const snapshot = await readJson<ProductionRunSnapshot>(join(root, spec.outDir, id, "status.json"));
+  if (snapshot) {
+    return {
+      ...base,
+      title: snapshot.id || id,
+      subtitle: `${snapshot.kind} · ${items.length} files · ${snapshot.status}`,
+      // One production writes one stage, not a ladder of them. Saying "stage:
+      // complete" honestly beats inventing six rows it never claimed.
+      stages: [{ stage: snapshot.stage, state: snapshot.status, detail: snapshot.error ?? "" }],
+      findings: snapshot.observations.map((o) => ({
+        page: null,
+        severity: o.severity,
+        category: o.metric,
+        description: `expected ${describe(o.expected)}, got ${describe(o.actual)}`,
+        suggestion: o.evidence ?? (o.repairable ? "This can be fixed by re-running the stage." : ""),
+      })),
+    };
+  }
+
+  // No run state: older work, or work some skill wrote outside a runner. The
+  // files are real, so list them rather than pretending the project is gone.
+  return {
+    ...base,
+    title: id,
+    subtitle: `${spec.label} · ${items.length} files · no run state on disk`,
+    stages: [],
+    findings: [],
+  };
 }
