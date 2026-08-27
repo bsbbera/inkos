@@ -395,6 +395,19 @@ const SERVICE_CHAT_PROBE_TIMEOUT_MS = 8_000;
 // Hard ceiling for the whole /doctor connectivity probe (models + chat fallback
 // loop) so the diagnostics page never spins on a slow/rate-limited upstream.
 const DOCTOR_LLM_PROBE_BUDGET_MS = 9_000;
+
+// A CLI provider answers by starting a process. The first reply after a cold
+// start takes far longer than any hosted API would, and it is on loopback, so
+// none of the reasons these budgets are short — rate limits, a hung upstream,
+// a page left spinning on someone else's server — apply to it. On the hosted
+// budgets every CLI probe timed out on a fresh launch, and the diagnostics
+// page reported "LLM API connectivity: Failed" for a provider that was about
+// to answer perfectly well.
+const isLoopbackService = (baseUrl: string): boolean =>
+  /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?(?:[/?#]|$)/.test(baseUrl);
+const CLI_MODELS_PROBE_TIMEOUT_MS = 20_000;
+const CLI_CHAT_PROBE_TIMEOUT_MS = 90_000;
+const CLI_DOCTOR_LLM_PROBE_BUDGET_MS = 120_000;
 const MAX_DISCOVERED_MODELS_TO_PING = 2;
 const MAX_GENERIC_FALLBACK_MODELS_TO_PING = 2;
 
@@ -2382,7 +2395,9 @@ async function fetchModelsFromServiceBaseUrl(
   try {
     const res = await fetchWithProxy(modelsUrl, {
       headers: buildBearerAuthHeaders(apiKey, lang),
-      signal: AbortSignal.timeout(SERVICE_MODELS_PROBE_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        isLoopbackService(modelsUrl) ? CLI_MODELS_PROBE_TIMEOUT_MS : SERVICE_MODELS_PROBE_TIMEOUT_MS,
+      ),
     }, proxyUrl);
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -2565,7 +2580,7 @@ async function probeServiceCapabilities(args: {
           // retry+backoff, which would multiply the time when the upstream is
           // rate-limiting (and make the diagnostics page hang).
           chatCompletion(client, model, [{ role: "user", content: "Reply with OK only." }], { maxTokens: 16, retry: false }),
-          SERVICE_CHAT_PROBE_TIMEOUT_MS,
+          isLoopbackService(args.baseUrl) ? CLI_CHAT_PROBE_TIMEOUT_MS : SERVICE_CHAT_PROBE_TIMEOUT_MS,
           "service connection test",
           lang,
         );
@@ -6476,7 +6491,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           proxyUrl: currentConfig.llm.proxyUrl,
           language: normalizeStudioLanguage(currentConfig.language),
         }),
-        DOCTOR_LLM_PROBE_BUDGET_MS,
+        isLoopbackService(currentConfig.llm.baseUrl ?? "")
+          ? CLI_DOCTOR_LLM_PROBE_BUDGET_MS
+          : DOCTOR_LLM_PROBE_BUDGET_MS,
         "doctor llm probe",
       );
       checks.llmConnected = probe.ok;

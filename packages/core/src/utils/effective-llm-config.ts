@@ -108,6 +108,7 @@ export async function resolveEffectiveLLMConfig(
     );
   }
 
+  retargetShimUrls(llm);
   llm.apiKey = apiKey;
   config.llm = llm;
 
@@ -117,6 +118,37 @@ export async function resolveEffectiveLLMConfig(
     llm: parsed.llm,
     diagnostics,
   };
+}
+
+/**
+ * A CLI provider is reached through Quire's shim on loopback, and a saved
+ * config stores that as a URL with a port in it. Which port depends on the
+ * build that saved it: the release app runs its shim on 8787, a dev build
+ * beside it on 8788. Both share one workspace, so choosing a model in one
+ * left the other pointing at a port nothing was listening on — every model
+ * call failed, the doctor reported "LLM API connectivity: Failed", and the
+ * audit and de-AI passes failed with it while the settings panel went on
+ * listing every CLI and all 208 models, because listing them probes the live
+ * endpoints rather than the saved URL.
+ *
+ * Only the CLI paths are retargeted. A bare loopback `/v1` is just as likely
+ * to be Ollama or another local server the user runs on purpose, and moving
+ * that would break something that works.
+ */
+const SHIM_CLI_URL = /^http:\/\/(?:127\.0\.0\.1|localhost):\d+(?=\/(?:claude|codex|devin|antigravity)\/v1)/;
+
+function retargetShimUrls(llm: Record<string, unknown>): void {
+  const port = process.env.SHIM_PORT;
+  if (!port) return;
+  const here = `http://127.0.0.1:${port}`;
+  const fix = (value: string): string => value.replace(SHIM_CLI_URL, here);
+
+  if (typeof llm.baseUrl === "string") llm.baseUrl = fix(llm.baseUrl);
+  if (Array.isArray(llm.services)) {
+    for (const entry of llm.services as Record<string, unknown>[]) {
+      if (entry && typeof entry.baseUrl === "string") entry.baseUrl = fix(entry.baseUrl);
+    }
+  }
 }
 
 async function readProjectConfig(root: string): Promise<Record<string, unknown>> {

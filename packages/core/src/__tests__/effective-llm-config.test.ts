@@ -57,6 +57,41 @@ describe("resolveEffectiveLLMConfig", () => {
     expect(result.diagnostics.warnings.join("\n")).toContain("旧顶层");
   });
 
+  // A model chosen while the dev build was running froze its shim port (8788)
+  // into the shared workspace config. The release app then called a port
+  // nothing was listening on: every model call failed, and the audit and
+  // de-AI passes failed with it.
+  it("points a CLI provider at the shim this app actually started", async () => {
+    await writeProject({
+      configSource: "studio",
+      service: "devinCli",
+      provider: "openai",
+      baseUrl: "http://127.0.0.1:8788/devin/v1",
+      model: "devin/glm-5-2",
+      services: [
+        { service: "devinCli", baseUrl: "http://127.0.0.1:8788/devin/v1", apiFormat: "chat", stream: true },
+        { service: "ollama", baseUrl: "http://127.0.0.1:11434/v1", apiFormat: "chat", stream: true },
+      ],
+      defaultModel: "devin/glm-5-2",
+    });
+
+    process.env.SHIM_PORT = "8787";
+    try {
+      const result = await resolveEffectiveLLMConfig({
+        consumer: "studio",
+        projectRoot: root,
+        envLayers: { global: {}, project: {}, process: {} },
+        requireApiKey: false,
+      });
+      expect(result.llm.baseUrl).toBe("http://127.0.0.1:8787/devin/v1");
+      // A local server the user runs on purpose is not the shim and is left alone.
+      const services = result.llm.services as ReadonlyArray<{ service: string; baseUrl?: string }>;
+      expect(services.find((s) => s.service === "ollama")?.baseUrl).toBe("http://127.0.0.1:11434/v1");
+    } finally {
+      delete process.env.SHIM_PORT;
+    }
+  });
+
   it("CLI consumer 允许 INKOS_LLM_SERVICE 切换服务，并从 provider bank 推导 baseUrl", async () => {
     await writeProject({
       configSource: "studio",
