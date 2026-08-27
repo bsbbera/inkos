@@ -374,6 +374,18 @@ export function Sidebar({ nav, activePage, sse, t }: {
             workspace with no issue yet showed no sign that publications
             exist — and the audit and de-AI passes live on an issue's page,
             so the whole feature looked missing rather than unused. */}
+        {/* Audit sits with the work rather than with the tools. It is not a
+            setting or a utility — it is how you look at something you already
+            made, so it belongs beside the list of things you have made. */}
+        <div>
+          <SidebarItem
+            label={tr("审校", "Audit")}
+            icon={<ShieldCheck size={16} />}
+            active={activePage === "audit"}
+            onClick={nav.toAudit}
+          />
+        </div>
+
         {(
           <div>
             <SectionHeader
@@ -723,12 +735,6 @@ export function Sidebar({ nav, activePage, sse, t }: {
               icon={<Stethoscope size={16} />}
               active={activePage === "doctor"}
               onClick={nav.toDoctor}
-            />
-            <SidebarItem
-              label={tr("审校", "Audit")}
-              icon={<ShieldCheck size={16} />}
-              active={activePage === "audit"}
-              onClick={nav.toAudit}
             />
             <SidebarItem
               label="MCP"

@@ -37,6 +37,8 @@ export interface AuditTarget {
   readonly kind: string;
   /** That production's own name, so the screen need not keep a second table. */
   readonly kindLabel: string;
+  /** The piece of work this file belongs to — one book, one issue, one short. */
+  readonly project: string;
   readonly words: number;
   readonly modified: string;
 }
@@ -69,6 +71,25 @@ const SKIP_FILE = /^(book_rules|story_bible|author_intent|current_focus|series_r
 /** A backup the audit itself left behind. Auditing one would be circular. */
 const IS_BACKUP = /\.pre-audit\.[^.]+$/;
 
+/**
+ * Structural directories that are not the name of anything.
+ *
+ * A file's project is normally the first directory under the production's own
+ * — `shorts/the-lamp-room/...`. Publications nest theirs one deeper under
+ * `issues/`, and grouping eighty files under a folder called "issues" would be
+ * the same as not grouping them.
+ */
+const CONTAINERS = new Set(["issues", "projects", "final", "drafts", "output"]);
+
+function projectOf(relPath: string, outDir: string): string {
+  const rest = relPath.slice(outDir.length).replace(/^\/+/, "").split("/");
+  for (const segment of rest.slice(0, -1)) {
+    if (!CONTAINERS.has(segment.toLowerCase())) return segment;
+  }
+  // A file sitting directly in the production directory belongs to no project.
+  return rest.length > 1 ? rest[0]! : "";
+}
+
 async function walk(dir: string, depth: number, out: string[]): Promise<void> {
   if (depth > 4) return;
   let entries;
@@ -99,6 +120,7 @@ export async function listAuditTargets(root: string): Promise<AuditTarget[]> {
           name: file.split(/[\\/]/).pop() ?? file,
           kind,
           kindLabel: label,
+          project: projectOf(relative(root, file).split("\\").join("/"), dir),
           // Close enough to order by, and far cheaper than reading every file.
           words: Math.round(info.size / 6),
           modified: info.mtime.toISOString(),

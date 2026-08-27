@@ -356,7 +356,7 @@ export function App() {
           )}
           {route.page === "audit" && (
             <div className="fade-in flex-1 flex">
-              <AuditPage theme={theme} t={t} />
+              <AuditPage theme={theme} />
             </div>
           )}
           {route.page === "publication" && (
