@@ -92,6 +92,29 @@ describe("resolveEffectiveLLMConfig", () => {
     }
   });
 
+  // Choosing any of devin's 183 models wrote it to disk and then ran a
+  // different one: the chosen id was checked against the ten-model seed baked
+  // into the endpoint, failed, and was replaced by the endpoint's default.
+  it("keeps a CLI model that only the CLI knows about", async () => {
+    await writeProject({
+      configSource: "studio",
+      service: "devinCli",
+      provider: "openai",
+      model: "devin/glm-5-2",
+      services: [{ service: "devinCli", models: ["devin/glm-5-2"], apiFormat: "chat", stream: true }],
+      defaultModel: "devin/claude-sonnet-5-medium",
+    });
+
+    const result = await resolveEffectiveLLMConfig({
+      consumer: "studio",
+      projectRoot: root,
+      envLayers: { global: {}, project: {}, process: {} },
+      requireApiKey: false,
+    });
+
+    expect(result.llm.model).toBe("devin/claude-sonnet-5-medium");
+  });
+
   it("CLI consumer 允许 INKOS_LLM_SERVICE 切换服务，并从 provider bank 推导 baseUrl", async () => {
     await writeProject({
       configSource: "studio",

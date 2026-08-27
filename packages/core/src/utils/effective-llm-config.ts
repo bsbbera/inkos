@@ -538,7 +538,13 @@ const SERVICES_WITH_DYNAMIC_MODELS: ReadonlySet<string> = new Set([
 ]);
 
 function serviceAllowsUnlistedModels(service: string): boolean {
-  return SERVICES_WITH_DYNAMIC_MODELS.has(service);
+  if (SERVICES_WITH_DYNAMIC_MODELS.has(service)) return true;
+  // A CLI provider is the most dynamic of the lot: its catalogue lives in the
+  // CLI and changes with every update of it — devin offers 183 models against
+  // a seed of ten. Checking a chosen model against that seed silently
+  // replaced it with the endpoint's own default, so picking any of the other
+  // 173 appeared to work and then ran something else.
+  return getEndpoint(service)?.group === "cli";
 }
 
 function serviceEntryKey(entry: ServiceConfigEntry): string {

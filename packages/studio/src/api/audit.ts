@@ -63,10 +63,18 @@ export interface AuditTarget {
  */
 const ROOTS = auditableRoots();
 
-/** Directories that hold working state rather than finished work. */
+/**
+ * Directories that hold working state rather than finished work.
+ *
+ * `drafts` earns its place: a short is written two or three times before
+ * `final/`, each version keeping its own numbered chapters. Offering all of
+ * them listed one short story as sixty-four files with `0001.md` in it four
+ * times, only one of which was the text that survived. Auditing a superseded
+ * draft is auditing writing that has already been replaced.
+ */
 const SKIP = new Set([
   "node_modules", "assets", "source", "generated", "selected", "_trash",
-  ".inkos", ".quire", "truth", "chapters-raw", "cache",
+  ".inkos", ".quire", "truth", "chapters-raw", "cache", "drafts",
 ]);
 
 /** Files that are scaffolding for a run rather than the thing it produced. */

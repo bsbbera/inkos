@@ -3961,6 +3961,41 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     });
   });
 
+  /** The CLI providers, whose catalogue lives in the CLI rather than in code. */
+  const isCliEndpoint = (service: string): boolean =>
+    getAllEndpoints().find((ep) => ep.id === service)?.group === "cli";
+
+  /**
+   * One live catalogue per CLI, shared by every surface that offers a model.
+   *
+   * Same cache as the service page's own probe, so picking a model in the chat
+   * and looking at the service list cannot disagree, and a cold CLI is only
+   * paid for once. A probe that fails returns null and the caller falls back
+   * to the seed — an empty picker would be worse than a short one.
+   */
+  async function probeCliModels(
+    service: string,
+  ): Promise<Array<{ id: string; name: string; maxOutput?: number; contextWindow?: number; capabilities?: unknown }> | null> {
+    const cacheKey = `${service}::cli`;
+    const cached = modelListCache.get(cacheKey);
+    if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.models;
+    try {
+      const enriched = filterTextChatModels(await listModelsForService(service, ""));
+      if (enriched.length === 0) return null;
+      const models = enriched.map((m) => ({
+        id: m.id,
+        name: m.name,
+        ...(m.maxOutput !== undefined ? { maxOutput: m.maxOutput } : {}),
+        ...(m.contextWindow > 0 ? { contextWindow: m.contextWindow } : {}),
+        ...(m.capabilities ? { capabilities: m.capabilities } : {}),
+      }));
+      modelListCache.set(cacheKey, { models, at: Date.now() });
+      return models;
+    } catch {
+      return null;
+    }
+  }
+
   app.get("/api/v1/services/models", async (c) => {
     const secrets = await loadSecrets(root);
     const config = await loadRawConfig(root).catch(() => ({} as Record<string, unknown>));
@@ -3984,23 +4019,29 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         });
       });
 
-    const groups = endpoints.map((ep) => {
+    const groups = await Promise.all(endpoints.map(async (ep) => {
       const staticModels = ep.models
         .filter((m) => m.enabled !== false)
         .filter((m) => isTextChatModelId(m.id));
       const configuredModels = configuredById.get(ep.id)?.models ?? [];
-      const models = mergeServiceModelIds(staticModels.map((model) => model.id), configuredModels)
-        .map((id) => {
-          const known = staticModels.find((model) => model.id.toLowerCase() === id.toLowerCase());
-          return {
-            id,
-            name: id,
-            ...(typeof known?.maxOutput === "number" ? { maxOutput: known.maxOutput } : {}),
-            ...(known && known.contextWindowTokens > 0 ? { contextWindow: known.contextWindowTokens } : {}),
-          };
-        });
+
+      // A CLI's catalogue is whatever the CLI currently offers, and it changes
+      // with every `devin update`. The seed in the endpoint definition is
+      // there so the app has something to show before a probe answers — it is
+      // not the list. Serving it as the list is why the chat picker offered
+      // ten devin models while the service page, which probes, offered 183.
+      const probed = isCliEndpoint(ep.id) ? await probeCliModels(ep.id) : null;
+      const live = probed ?? staticModels.map((model) => ({
+        id: model.id,
+        name: model.id,
+        ...(typeof model.maxOutput === "number" ? { maxOutput: model.maxOutput } : {}),
+        ...(model.contextWindowTokens > 0 ? { contextWindow: model.contextWindowTokens } : {}),
+      }));
+
+      const models = mergeServiceModelIds(live.map((model) => model.id), configuredModels)
+        .map((id) => live.find((model) => model.id.toLowerCase() === id.toLowerCase()) ?? { id, name: id });
       return { service: ep.id, label: ep.label, models };
-    });
+    }));
 
     return c.json({ groups });
   });

@@ -59,6 +59,23 @@ describe("listAuditTargets", () => {
       .toEqual(["shorts/lamp-room/final/full.md"]);
   });
 
+  // A short is written two or three times before final/. Listing every version
+  // showed one story as sixty-four files with 0001.md in it four times.
+  it("leaves superseded drafts out, and keeps the outline and reviews", async () => {
+    const root = await workspace({
+      "shorts/lamp-room/drafts/v001/chapters/0001.md": prose,
+      "shorts/lamp-room/drafts/v002/chapters/0001.md": prose,
+      "shorts/lamp-room/final/chapters/0001.md": prose,
+      "shorts/lamp-room/outline/outline.md": prose,
+      "shorts/lamp-room/reviews/round-1.md": prose,
+    });
+    expect((await listAuditTargets(root)).map((t) => t.path).sort()).toEqual([
+      "shorts/lamp-room/final/chapters/0001.md",
+      "shorts/lamp-room/outline/outline.md",
+      "shorts/lamp-room/reviews/round-1.md",
+    ]);
+  });
+
   it("skips stubs too short to judge", async () => {
     const root = await workspace({ "shorts/x/final/full.md": "# Title\n" });
     expect(await listAuditTargets(root)).toHaveLength(0);

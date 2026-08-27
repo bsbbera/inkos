@@ -1,8 +1,8 @@
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useCallback, useRef, useEffect, useMemo, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
-import { fetchJson, postApi, useApi } from "../hooks/use-api";
+import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { ChatAttachmentPayload } from "../store/chat/types";
 import { chatSelectors, useChatStore } from "../store/chat";
 import type { ChatSessionKind } from "../store/chat";
@@ -466,6 +466,24 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     const model = group?.models.find((item) => item.id === selectedModel);
     return model?.capabilities?.imageInput === false;
   }, [groupedModels, selectedModel, selectedService]);
+
+  /**
+   * Choosing a model here chooses it for the whole app.
+   *
+   * The picker used to set store state only, so the choice lived in this tab
+   * and died with it, while every pipeline — audit, de-AI, a publication run,
+   * a chapter — went on using whatever was last saved on the service page.
+   * One app, one model: the choice is written to the project config, which is
+   * where all of them read it from.
+   */
+  const chooseModel = useCallback((model: string, service: string) => {
+    setSelectedModel(model, service);
+    setConfiguredModelSelection({ service, model });
+    void putApi("/project/default-model", { defaultModel: model, service }).catch(() => {
+      // The chat itself sends the model with each turn, so a failed save costs
+      // the pipelines the new choice, not this conversation.
+    });
+  }, [setSelectedModel]);
 
   // Auto-select from saved service config first, then fall back to the first available model.
   useEffect(() => {
@@ -1157,7 +1175,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       groupedModels={groupedModels}
                       selectedModel={selectedModel}
                       selectedService={selectedService}
-                      onSelect={setSelectedModel}
+                      onSelect={chooseModel}
                       onManage={() => nav.toServices()}
                     />
                   </DropdownMenu>
