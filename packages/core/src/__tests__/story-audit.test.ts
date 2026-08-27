@@ -6,6 +6,7 @@ import {
   isStorySlopFinding,
   runStoryAudit,
   runStoryDeslop,
+  splitMachineTail,
   splitSections,
   storyAuditReport,
   type StoryAskFn,
@@ -52,6 +53,47 @@ describe("isStorySlopFinding", () => {
   it("leaves the story dimensions alone — a plot hole is not slop", () => {
     expect(isStorySlopFinding(f("dim3/Causality"))).toBe(false);
     expect(isStorySlopFinding(f("dim17/Setup and payoff"))).toBe(false);
+  });
+});
+
+describe("splitMachineTail", () => {
+  const PAGE = `# Page
+
+Prose that may be rewritten.
+
+---
+*visual brief 1:* A hand drawing a kolam at dawn.
+`;
+
+  it("separates a page's visual brief from its prose", () => {
+    const { prose, tail } = splitMachineTail(PAGE);
+    expect(prose).toContain("Prose that may be rewritten.");
+    expect(prose).not.toContain("visual brief");
+    expect(tail).toContain("A hand drawing a kolam at dawn.");
+  });
+
+  it("leaves a file with no brief entirely alone", () => {
+    const plain = `# Story
+
+Just prose.
+`;
+    const { prose, tail } = splitMachineTail(plain);
+    expect(prose).toBe(plain);
+    expect(tail).toBe("");
+  });
+
+  // A bare rule is ordinary punctuation. Cutting there would truncate the
+  // writing rather than protect anything.
+  it("does not cut at a horizontal rule that is only punctuation", () => {
+    const { tail } = splitMachineTail(`# Story
+
+One part.
+
+---
+
+Another part.
+`);
+    expect(tail).toBe("");
   });
 });
 
@@ -124,6 +166,34 @@ describe("runStoryAudit", () => {
     // And it grows: the last one carries rewrites the first one did not.
     expect(seen.at(-1)!.match(/rewritten/g)!.length)
       .toBeGreaterThan(seen[0]!.match(/rewritten/g)!.length);
+  });
+
+  // The de-AI pass ate the visual brief off a real magazine page: the whole
+  // file went to the model as prose and came back without the only description
+  // of the picture that page is meant to carry.
+  it("does not let a rewrite touch the visual brief", async () => {
+    const page = `# Inside This Issue
+
+However, perhaps the flour is not decoration. However, it feeds ants.
+
+---
+*visual brief 1:* A hand drawing a kolam at dawn.
+`;
+    await writeFile(join(root, path), page);
+
+    let audits = 0;
+    const ask: StoryAskFn = async (_prompt, tag) => {
+      if (tag.startsWith("story-revise")) return { body: "The flour feeds ants." };
+      audits += 1;
+      return audits <= 2
+        ? { findings: [{ dimension: 29, severity: "warning", description: "d", suggestion: "s" }] }
+        : { findings: [] };
+    };
+
+    await runStoryAudit({ projectRoot: root, path, ask });
+    const after = await readFile(join(root, path), "utf-8");
+    expect(after).toContain("The flour feeds ants.");
+    expect(after).toContain("*visual brief 1:* A hand drawing a kolam at dawn.");
   });
 
   it("keeps the section when a rewrite comes back empty", async () => {

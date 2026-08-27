@@ -106,6 +106,32 @@ export interface StorySection {
 }
 
 /**
+ * Machine instructions that live at the end of a page, and must survive a pass
+ * that rewrites prose.
+ *
+ * A publication page ends with one or more `--- *visual brief N:* ...` blocks,
+ * and that is what the art stage reads to render the picture. The audit had no
+ * idea they were different from prose: the whole file went into the revise
+ * prompt and came back as prose, so a de-AI pass on a magazine page silently
+ * deleted the only description of the image that page is supposed to carry.
+ * Nothing downstream could tell a brief had ever been there — the page simply
+ * became one that had never asked for art.
+ *
+ * Split off before the model sees the text, re-attached to whatever it returns.
+ * Anchored on `*visual brief` rather than on the rule above it, because a bare
+ * `---` is ordinary punctuation in prose and cutting there would truncate the
+ * writing instead of protecting it.
+ */
+const BRIEF_TAIL = /\s*---\s*\*visual brief[\s\S]*$/;
+
+export function splitMachineTail(markdown: string): { prose: string; tail: string } {
+  const at = markdown.search(BRIEF_TAIL);
+  return at === -1
+    ? { prose: markdown, tail: "" }
+    : { prose: markdown.slice(0, at), tail: markdown.slice(at) };
+}
+
+/**
  * A markdown artifact, split the way its author wrote it.
  *
  * Chapters, scenes and shots are all just headings, so the split is on
@@ -342,10 +368,12 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
   const { projectRoot, ask, onProgress, signal } = options;
   const absolute = safeChildPath(projectRoot, options.path);
   const original = await readFile(absolute, "utf-8");
-  const language = languageOf(original);
+  // The brief is not prose and must not be rewritten, reworded, or dropped.
+  const { prose: originalProse, tail } = splitMachineTail(original);
+  const language = languageOf(originalProse);
   const revise = options.revise !== false;
 
-  let markdown = original;
+  let markdown = originalProse;
   let findings: StoryFinding[] = [];
   let rounds = 0;
   let backedUp = false;
@@ -383,9 +411,10 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
 
     onProgress?.(`Rewriting ${new Set(actionable.map((f) => f.section)).size} sections…`);
     markdown = await reviseSections(
-      markdown, sections, actionable, ask, language, signal, options.onText,
+      markdown, sections, actionable, ask, language, signal,
+      options.onText ? (partial: string) => options.onText!(partial + tail) : undefined,
     );
-    await writeFile(absolute, markdown, "utf-8");
+    await writeFile(absolute, markdown + tail, "utf-8");
     rounds = round + 1;
   }
 
