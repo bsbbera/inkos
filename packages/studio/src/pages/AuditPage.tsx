@@ -21,11 +21,12 @@
  * Chinese whatever the app was set to. PublicationDetail, the screen this one
  * is meant to match, carries no translations either.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import { useColors } from "../hooks/use-colors";
+import { useNewSSEMessages, type SSEMessage } from "../hooks/use-sse";
 import {
-  AlertTriangle, ChevronDown, ChevronRight, FileText, Loader2, Save, ShieldCheck,
+  AlertTriangle, Check, ChevronDown, ChevronRight, FileText, Loader2, Save, ShieldCheck, X,
 } from "lucide-react";
 
 interface Project {
@@ -52,6 +53,14 @@ interface Finding {
   readonly suggestion: string;
 }
 
+interface Approval { readonly at: string; readonly by: string }
+
+interface Gates {
+  readonly copy: { approved: Approval | null; warnings: readonly string[] };
+  readonly design: { approved: Approval | null; blockers: readonly string[]; canApprove: boolean };
+  readonly build: { canBuild: boolean; blockers: readonly string[] };
+}
+
 interface Detail {
   readonly kind: string;
   readonly kindLabel: string;
@@ -61,6 +70,8 @@ interface Detail {
   readonly stages: ReadonlyArray<{ stage: string; state: string; detail: string }>;
   readonly findings: ReadonlyArray<Finding>;
   readonly items: ReadonlyArray<Item>;
+  /** Publications only. Nothing else is signed off in two halves. */
+  readonly gates?: Gates;
 }
 
 interface Audit {
@@ -90,7 +101,7 @@ const SELECTED = "bg-primary/10 text-primary";
 const artifact = (path: string) =>
   `/api/v1/project/artifacts/${path.split("/").map(encodeURIComponent).join("/")}`;
 
-export function AuditPage({ theme }: { theme: Theme }) {
+export function AuditPage({ theme, sse }: { theme: Theme; sse: { messages: ReadonlyArray<SSEMessage> } }) {
   const c = useColors(theme);
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +117,24 @@ export function AuditPage({ theme }: { theme: Theme }) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
   const [loadingText, setLoadingText] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+
+  // The live rewrite writes into the editor, so it must not land on top of
+  // something the user typed and has not saved. `dirty` is derived, so the
+  // listener reads it through a ref rather than re-subscribing on every keystroke.
+  const stateRef = useRef({ path: "", dirty: false });
+  stateRef.current = { path: file?.path ?? "", dirty: text !== saved };
+
+  useNewSSEMessages(sse.messages, useCallback((message: SSEMessage) => {
+    const data = message.data as { path?: string; message?: string; markdown?: string; state?: string } | null;
+    if (!data?.path || data.path !== stateRef.current.path) return;
+    if (message.event === "audit:progress" && data.message) setProgress(data.message);
+    if (message.event === "audit:run" && data.state !== "start") setProgress(null);
+    if (message.event === "audit:text" && typeof data.markdown === "string" && !stateRef.current.dirty) {
+      setText(data.markdown);
+      setSaved(data.markdown);
+    }
+  }, []));
 
   useEffect(() => {
     void (async () => {
@@ -189,6 +218,27 @@ export function AuditPage({ theme }: { theme: Theme }) {
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setSaved(text);
+    } catch (e) {
+      setError(String((e as Error).message));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** The same two approvals the build reads, on the same route the issue page uses. */
+  const approve = async (what: "copy" | "design", yes: boolean) => {
+    if (!picked) return;
+    setBusy(what);
+    setError(null);
+    try {
+      const res = await fetch(`/api/v1/publications/${encodeURIComponent(picked.id)}/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ what, approve: yes }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      await openProject(picked.kind, picked.id);
     } catch (e) {
       setError(String((e as Error).message));
     } finally {
@@ -299,6 +349,38 @@ export function AuditPage({ theme }: { theme: Theme }) {
               <h2 className="font-serif text-3xl truncate">{detail.title}</h2>
               <p className={`mt-1 text-xs ${c.muted}`}>{detail.subtitle}</p>
             </div>
+
+            {detail.gates ? (
+              <>
+                <section className="grid gap-4 md:grid-cols-2">
+                  <Gate
+                    c={c}
+                    title="Copy"
+                    approved={detail.gates.copy.approved}
+                    notes={detail.gates.copy.warnings}
+                    notesLabel="Worth knowing before you sign this off:"
+                    canApprove
+                    busy={busy === "copy"}
+                    onToggle={(yes) => void approve("copy", yes)}
+                  />
+                  <Gate
+                    c={c}
+                    title="Design"
+                    approved={detail.gates.design.approved}
+                    notes={detail.gates.design.blockers}
+                    notesLabel="The design cannot be approved until:"
+                    canApprove={detail.gates.design.canApprove}
+                    busy={busy === "design"}
+                    onToggle={(yes) => void approve("design", yes)}
+                  />
+                </section>
+                <div className={`border rounded-lg p-4 text-sm ${detail.gates.build.canBuild ? c.info : c.error}`}>
+                  {detail.gates.build.canBuild
+                    ? "Both gates are open — this issue can be built."
+                    : `Build is held: ${detail.gates.build.blockers.join("; ")}.`}
+                </div>
+              </>
+            ) : null}
 
             {detail.stages.length > 0 && (
               <section className="space-y-3">
@@ -443,6 +525,11 @@ export function AuditPage({ theme }: { theme: Theme }) {
         ) : (
           <>
             <p className={`text-xs truncate ${c.muted}`}>{file.name}</p>
+            {progress ? (
+              <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />{progress}
+              </p>
+            ) : null}
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -452,6 +539,54 @@ export function AuditPage({ theme }: { theme: Theme }) {
           </>
         )}
       </aside>
+    </div>
+  );
+}
+
+/**
+ * One approval. Lifted from PublicationDetail's GateCard rather than imported,
+ * because that one is not exported and this file should not be the reason it
+ * becomes part of that screen's public surface.
+ */
+function Gate({
+  c, title, approved, notes, notesLabel, canApprove, busy, onToggle,
+}: {
+  c: Record<string, string>;
+  title: string;
+  approved: Approval | null;
+  notes: readonly string[];
+  notesLabel: string;
+  canApprove: boolean;
+  busy: boolean;
+  onToggle: (approve: boolean) => void;
+}) {
+  return (
+    <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-3`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="font-serif text-lg">{title}</h3>
+        <span className={`text-xs ${approved ? "text-emerald-500" : c.muted}`}>
+          {approved ? `approved ${new Date(approved.at).toLocaleDateString()}` : "not approved"}
+        </span>
+      </div>
+
+      {!approved && notes.length > 0 ? (
+        <div className={`text-xs ${c.muted} space-y-1`}>
+          <p>{notesLabel}</p>
+          <ul className="list-disc pl-4">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+        </div>
+      ) : null}
+
+      <button
+        disabled={busy || (!approved && !canApprove)}
+        onClick={() => onToggle(!approved)}
+        className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
+          approved ? c.btnSecondary : c.btnSuccess
+        }`}
+      >
+        {approved
+          ? <><X size={14} className="inline mr-1.5 -mt-0.5" />Withdraw</>
+          : <><Check size={14} className="inline mr-1.5 -mt-0.5" />{busy ? "Approving…" : `Approve ${title.toLowerCase()}`}</>}
+      </button>
     </div>
   );
 }

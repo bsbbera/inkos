@@ -25,7 +25,7 @@ import {
   runStoryDeslop,
   storyAuditReport,
 } from "@actalk/quire-core";
-import { stageStates } from "./publications.js";
+import { gateState, stageStates } from "./publications.js";
 
 export interface AuditRouteDeps {
   readonly root: string;
@@ -179,6 +179,9 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
         path,
         ask: createStoryAsk(pipeline),
         onProgress: (message: string) => broadcast("audit:progress", { path, message }),
+        // The rewrite is minutes long and the editor beside it was showing the
+        // text being replaced. Each finished section goes out as it lands.
+        onText: (markdown: string) => broadcast("audit:text", { path, markdown }),
       };
       const audit = body.deslop
         ? await runStoryDeslop(options)
@@ -244,6 +247,14 @@ export interface AuditProjectDetail {
     suggestion: string;
   }>;
   readonly items: ReadonlyArray<AuditItem>;
+  /**
+   * The approvals a publication's build reads, when this is one.
+   *
+   * Left off everything else because nothing else has them: a short is not
+   * signed off in two halves. Omitted rather than sent empty, so the screen
+   * shows the pair or shows nothing instead of two dead buttons.
+   */
+  readonly gates?: ReturnType<typeof gateState>;
 }
 
 /** The work, grouped the way it was made. */
@@ -314,6 +325,7 @@ export async function readAuditProject(
         title: issue.title || issue.subject || id,
         subtitle: `${issue.type} · ${issue.pages.length} pages · ${issue.status}`,
         stages: stageStates(issue),
+        gates: gateState(issue),
         findings: (issue.audit?.findings ?? []).map((f) => ({
           page: f.page,
           severity: f.severity,

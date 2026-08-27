@@ -30,6 +30,11 @@ export const STUDIO_SSE_EVENTS = [
   "audit:start",
   "audit:complete",
   "audit:error",
+  // The audit routes have always broadcast these three and no client ever
+  // listened, because a listener only receives events named in this list.
+  "audit:run",
+  "audit:progress",
+  "audit:text",
   "revise:start",
   "revise:complete",
   "revise:error",

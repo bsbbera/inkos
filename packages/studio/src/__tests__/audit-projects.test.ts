@@ -78,6 +78,20 @@ describe("readAuditProject", () => {
     expect(detail?.items).toHaveLength(2);
   });
 
+  // The build reads these two, and no other screen could set them for an issue
+  // reached from here.
+  it("carries a publication's approval gates", async () => {
+    const detail = await readAuditProject(root, "publication", "kolam");
+    expect(detail?.gates?.copy.approved).toBeNull();
+    expect(detail?.gates?.design.canApprove).toBe(false);
+    expect(detail?.gates?.build.blockers).toContain("the copy is not approved");
+  });
+
+  it("gives no gates to a production that is not signed off in halves", async () => {
+    const detail = await readAuditProject(root, "short", "the-lamp-room");
+    expect(detail?.gates).toBeUndefined();
+  });
+
   it("reads every other production from its run snapshot", async () => {
     const detail = await readAuditProject(root, "short", "the-lamp-room");
     expect(detail?.stages).toEqual([{ stage: "complete", state: "needs-review", detail: "" }]);

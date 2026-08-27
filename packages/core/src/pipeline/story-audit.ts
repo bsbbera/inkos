@@ -311,6 +311,15 @@ export interface StoryAuditOptions {
   /** Only rewrite findings about the prose sounding machine-made. */
   readonly slopOnly?: boolean;
   readonly onProgress?: (message: string) => void;
+  /**
+   * The document as it stands, each time a rewritten section lands in it.
+   *
+   * A revise pass took minutes and showed a spinner, and the panel beside it
+   * went on displaying the text the pass was in the middle of replacing. There
+   * is no token stream to forward — `ask` returns one section's body at a time —
+   * but a section is a real unit of progress and this is what the screen wants.
+   */
+  readonly onText?: (markdown: string) => void;
   readonly signal?: AbortSignal;
 }
 
@@ -373,7 +382,9 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
     }
 
     onProgress?.(`Rewriting ${new Set(actionable.map((f) => f.section)).size} sections…`);
-    markdown = await reviseSections(markdown, sections, actionable, ask, language, signal);
+    markdown = await reviseSections(
+      markdown, sections, actionable, ask, language, signal, options.onText,
+    );
     await writeFile(absolute, markdown, "utf-8");
     rounds = round + 1;
   }
@@ -401,6 +412,7 @@ async function reviseSections(
   ask: StoryAskFn,
   language: "zh" | "en",
   signal?: AbortSignal,
+  onText?: (markdown: string) => void,
 ): Promise<string> {
   let out = markdown;
   const bySection = new Map<string, StoryFinding[]>();
@@ -423,6 +435,7 @@ async function reviseSections(
     if (!body) continue;
     if (!out.includes(section.body)) continue;
     out = out.replace(section.body, body);
+    onText?.(out);
   }
   return out;
 }

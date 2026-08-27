@@ -102,6 +102,30 @@ describe("runStoryAudit", () => {
     expect(kept).toBe(STORY);
   });
 
+  // A revise pass runs for minutes and the panel beside it went on showing the
+  // text the pass was replacing. There is no token stream to forward, but a
+  // finished section is a real unit of progress.
+  it("reports the document after each section it rewrites", async () => {
+    let audits = 0;
+    const ask: StoryAskFn = async (_prompt, tag) => {
+      if (tag.startsWith("story-revise")) return { body: `rewritten ${tag}` };
+      audits += 1;
+      return audits <= 2
+        ? { findings: [{ dimension: 11, severity: "warning", description: "d", suggestion: "s" }] }
+        : { findings: [] };
+    };
+
+    const seen: string[] = [];
+    await runStoryAudit({ projectRoot: root, path, ask, onText: (md) => seen.push(md) });
+
+    expect(seen.length).toBeGreaterThan(1);
+    // Each report is the whole document as it then stood, not a fragment.
+    expect(seen[0]).toContain("# The Tide Ledger");
+    // And it grows: the last one carries rewrites the first one did not.
+    expect(seen.at(-1)!.match(/rewritten/g)!.length)
+      .toBeGreaterThan(seen[0]!.match(/rewritten/g)!.length);
+  });
+
   it("keeps the section when a rewrite comes back empty", async () => {
     const ask: StoryAskFn = async (_prompt, tag) =>
       tag.startsWith("story-revise")
