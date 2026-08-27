@@ -135,6 +135,7 @@ import {
   loadPublicationRegistry,
   listIssues,
 } from "@actalk/quire-core";
+import { registerAuditRoutes } from "./audit.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
@@ -4110,6 +4111,15 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // Its own module: these need a pipeline, and a gate with no surface is a
   // deadlock — which is what every gate here was until now.
   registerPublicationRoutes(app, {
+    root,
+    pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
+    broadcast,
+  });
+
+  // The same checks, for anything already written. A publication had a page of
+  // its own and everything else had buttons that expired with the chat session
+  // that produced it.
+  registerAuditRoutes(app, {
     root,
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
     broadcast,

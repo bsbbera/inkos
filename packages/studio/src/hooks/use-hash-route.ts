@@ -21,6 +21,7 @@ export type HashRoute =
   | { page: "radar" }
   | { page: "doctor" }
   | { page: "mcp" }
+  | { page: "audit" }
   | { page: "publication"; issueId: string }
   | { page: "play"; projectId: string }
   | { page: "film"; projectId: string }
@@ -36,6 +37,7 @@ function parseHash(hash: string): HashRoute {
   if (path === "config" || path === "services") return { page: "services" };
   if (path === "settings") return { page: "project-settings" };
   if (path === "mcp") return { page: "mcp" };
+  if (path === "audit") return { page: "audit" };
 
   const publicationMatch = path.match(/^publication\/([^/]+)$/);
   if (publicationMatch) return { page: "publication", issueId: decodeURIComponent(publicationMatch[1]) };

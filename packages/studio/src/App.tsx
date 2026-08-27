@@ -20,6 +20,7 @@ import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
 import { McpPage } from "./pages/McpPage";
+import { AuditPage } from "./pages/AuditPage";
 import { PublicationDetail } from "./pages/PublicationDetail";
 import { StoryPlayer } from "./pages/StoryPlayer";
 import { StoryGraphTree } from "./pages/StoryGraphTree";
@@ -113,6 +114,7 @@ export function App() {
     toRadar: () => setRoute({ page: "radar" }),
     toDoctor: () => setRoute({ page: "doctor" }),
     toMcp: () => setRoute({ page: "mcp" }),
+    toAudit: () => setRoute({ page: "audit" }),
     toPublication: (issueId: string) => setRoute({ page: "publication", issueId }),
     toPlay: (projectId: string) => setRoute({ page: "play", projectId }),
     toFilm: (projectId: string) => setRoute({ page: "film", projectId }),
@@ -350,6 +352,11 @@ export function App() {
           {route.page === "mcp" && (
             <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
               <McpPage nav={nav} theme={theme} t={t} />
+            </div>
+          )}
+          {route.page === "audit" && (
+            <div className="fade-in flex-1 flex">
+              <AuditPage theme={theme} t={t} />
             </div>
           )}
           {route.page === "publication" && (

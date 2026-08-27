@@ -743,6 +743,11 @@ export { runWorkerAgent, type WorkerAgentOptions } from "./agent/worker-agent.js
 export { loadPublicationRegistry, findPublicationDefinition, userDefinitionsDir } from "./publications/registry.js";
 export type { PublicationRegistry, PublicationDiagnostic } from "./publications/registry.js";
 export type { PublicationDefinition, PublicationDefinitionSource } from "./publications/types.js";
+export {
+  runStoryAudit, runStoryDeslop, createStoryAsk, storyAuditReport,
+  STORY_DIMENSIONS, STORY_SLOP_DIMENSIONS,
+} from "./pipeline/story-audit.js";
+export type { StoryAudit, StoryFinding } from "./pipeline/story-audit.js";
 export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
 export {

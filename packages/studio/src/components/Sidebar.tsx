@@ -37,6 +37,7 @@ import {
   TrendingUp,
   Stethoscope,
   Plug,
+  ShieldCheck,
   Zap,
   FolderOpen,
   ChevronRight,
@@ -90,6 +91,7 @@ interface Nav {
   toRadar: () => void;
   toDoctor: () => void;
   toMcp: () => void;
+  toAudit: () => void;
   toPublication: (issueId: string) => void;
   toFilmStudio: (id: string) => void;
 }
@@ -721,6 +723,12 @@ export function Sidebar({ nav, activePage, sse, t }: {
               icon={<Stethoscope size={16} />}
               active={activePage === "doctor"}
               onClick={nav.toDoctor}
+            />
+            <SidebarItem
+              label={tr("审校", "Audit")}
+              icon={<ShieldCheck size={16} />}
+              active={activePage === "audit"}
+              onClick={nav.toAudit}
             />
             <SidebarItem
               label="MCP"
