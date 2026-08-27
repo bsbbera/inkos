@@ -26,6 +26,7 @@
 import type { PublicationDefinition } from "../publications/types.js";
 import type { PublicationFinding } from "./publication-audit.js";
 import type { PublicationIssue, PublicationPage, PublicationSection } from "./publication-runner.js";
+import { briefsOf } from "./publication-runner.js";
 
 export interface ReviewDimension {
   readonly n: number;
@@ -97,7 +98,7 @@ const brief = (page: PublicationPage) =>
     (page.furniture ?? []).length
       ? `FURNITURE:\n${(page.furniture ?? []).map((f) => `- ${f.kind}: ${f.text}`).join("\n")}`
       : "",
-    page.brief?.prompt ? `IMAGE BRIEF: ${page.brief.prompt}` : "",
+    ...briefsOf(page).map((b, i) => `IMAGE BRIEF ${i + 1}: ${b.prompt}`),
     page.sources?.length ? `SOURCES CITED: ${page.sources.join("; ")}` : "",
     "",
     "BODY:",

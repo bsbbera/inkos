@@ -124,7 +124,7 @@ describe("researchPublication", () => {
       // shim which MCP servers are enabled, and that happens once per run
       // whether or not the query itself is cached.
       const searches = () => fetchMock.mock.calls.filter(
-        ([url]) => !String(url).includes("/mcp/"),
+        (call: unknown[]) => !String(call[0]).includes("/mcp/"),
       ).length;
       await researchPublication(once);
       expect(searches()).toBe(1);

@@ -52,6 +52,13 @@ import {
 
 /* ------------------------------------------------------------------- types */
 
+export interface PageBrief {
+  readonly prompt: string;
+  readonly orientation: string;
+  /** What the picture is for on the page — "hero", "inset", "diagram". */
+  readonly role?: string;
+}
+
 export interface PublicationPage {
   n: number;
   title: string;
@@ -64,11 +71,71 @@ export interface PublicationPage {
   deck?: string;
   pullQuote?: string;
   furniture?: Array<{ kind: string; text: string; source?: string }>;
-  brief?: { prompt: string; orientation: string } | null;
+  /**
+   * The images this page wants, as prompts. Zero is a legal answer.
+   *
+   * This was one prompt, always exactly one, and rendering fired in the same
+   * step that wrote it. A design-led spread that wants four pictures could
+   * only have one, a pure-type page that wants none threw rather than passing,
+   * and nobody could look at the prompts before the GPU had already run.
+   */
+  briefs?: Array<PageBrief>;
+  /** Rendered files, one per brief, by brief index. */
+  images?: Array<string | null>;
   sources?: string[];
   uncertain?: string[];
   words?: number;
   image?: string | null;
+}
+
+/**
+ * The page's image briefs, whichever shape the issue was written in.
+ *
+ * Issues already on disk predate the list and carry a single `brief`. Reading
+ * them through here means an old magazine keeps working with no migration pass
+ * over the workspace.
+ */
+export function briefsOf(page: PublicationPage): ReadonlyArray<PageBrief> {
+  if (page.briefs) return page.briefs;
+  const legacy = (page as { brief?: PageBrief | null }).brief;
+  return legacy?.prompt ? [legacy] : [];
+}
+
+/**
+ * Read whatever shape the model answered in.
+ *
+ * `image_prompts` is what the page prompt now asks for. `image_prompt` is the
+ * single-string form, still accepted because a user's own publication
+ * definition may ask for it, and because a model will sometimes answer in the
+ * old shape regardless of what it was asked.
+ */
+export function readBriefs(
+  out: Record<string, unknown>,
+  page: PublicationPage,
+): PageBrief[] {
+  const fallback = briefsOf(page)[0]?.orientation ?? "landscape";
+  const many = out.image_prompts;
+  if (Array.isArray(many)) {
+    return many.flatMap((raw) => {
+      if (typeof raw === "string") {
+        return raw.trim() ? [{ prompt: raw.trim(), orientation: fallback }] : [];
+      }
+      const r = raw as Record<string, unknown>;
+      const prompt = String(r.prompt ?? r.image_prompt ?? "").trim();
+      if (!prompt) return [];
+      return [{
+        prompt,
+        orientation: String(r.orientation ?? r.image_orientation ?? fallback),
+        ...(r.role ? { role: String(r.role) } : {}),
+      }];
+    });
+  }
+  const one = String(out.image_prompt ?? "").trim();
+  // Zero prompts is a real answer, not a failure: a contents page or a pure
+  // type spread wants no picture, and the single-string shape had no way to
+  // say so — it threw at render time instead.
+  if (!one) return [];
+  return [{ prompt: one, orientation: String(out.image_orientation ?? fallback) }];
 }
 
 export interface PublicationSection {
@@ -699,7 +766,7 @@ export async function runPlan(ctx: RunnerContext, id: string): Promise<Publicati
       pillar: p.pillar ?? "none",
       premise: p.premise ?? "",
       body: null,
-      brief: null,
+      briefs: [],
       image: null,
     }))
     .filter((p) => p.n)
@@ -753,7 +820,10 @@ async function writePageMarkdown(
     `# ${page.title}\n\n> ${page.deck ?? ""}\n\n${page.body ?? ""}\n\n`
     + (page.pullQuote ? `**"${page.pullQuote}"**\n\n` : "")
     + (page.furniture ?? []).map((f) => `- *${f.kind}* - ${f.text}`).join("\n")
-    + `\n\n---\n*visual brief:* ${page.brief?.prompt ?? ""}\n`,
+    + briefsOf(page)
+      .map((b, i) => `\n\n---\n*visual brief ${i + 1}${b.role ? ` (${b.role})` : ""}:* ${b.prompt}`)
+      .join("")
+    + "\n",
     "utf-8",
   );
 }
@@ -905,33 +975,51 @@ export async function artPage(
   await requireRenderer(ctx.shimUrl);
   const page = issue.pages.find((p) => p.n === Number(n));
   if (!page) throw new Error(`no page ${n} in ${id}`);
-  if (!page.brief?.prompt) throw new Error(`page ${n} has no visual brief — write it first`);
-
-  emit(ctx, "publication:stage", { id, stage: "art", state: "start", page: page.n });
-
-  const portrait = page.brief.orientation === "portrait";
-  const square = page.brief.orientation === "square";
-  const outFile = join(dirOf(ctx, id), "art", `${String(page.n).padStart(2, "0")}.png`);
-  await mkdir(join(dirOf(ctx, id), "art"), { recursive: true });
-
-  const res = await fetch(`${ctx.shimUrl}/comfy/generate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      prompt: page.brief.prompt,
-      width: square ? 1280 : portrait ? 1024 : 1536,
-      height: square ? 1280 : portrait ? 1536 : 1024,
-      outFile,
-    }),
-  });
-  const body = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
-  if (!res.ok || body.ok === false) {
-    const why = body.error ?? `HTTP ${res.status}`;
-    emit(ctx, "publication:stage", { id, stage: "art", state: "error", page: page.n, error: why });
-    throw new Error(`art p${page.n}: ${why}`);
+  const briefs = briefsOf(page);
+  // No brief is a finished answer for a contents page or a pure type spread.
+  // This threw, which meant a page that wanted no picture stopped the stage.
+  if (briefs.length === 0) {
+    emit(ctx, "publication:stage", { id, stage: "art", state: "done", page: page.n, images: 0 });
+    return page;
   }
 
-  page.image = outFile;
+  emit(ctx, "publication:stage", { id, stage: "art", state: "start", page: page.n });
+  await mkdir(join(dirOf(ctx, id), "art"), { recursive: true });
+
+  const done = [...(page.images ?? [])];
+  for (const [i, brief] of briefs.entries()) {
+    // Resumable per image, not per page: a four-picture spread that failed on
+    // the fourth should not pay for the first three again.
+    if (done[i]) continue;
+    const portrait = brief.orientation === "portrait";
+    const square = brief.orientation === "square";
+    const suffix = briefs.length > 1 ? `-${i + 1}` : "";
+    const outFile = join(dirOf(ctx, id), "art", `${String(page.n).padStart(2, "0")}${suffix}.png`);
+
+    const res = await fetch(`${ctx.shimUrl}/comfy/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        prompt: brief.prompt,
+        width: square ? 1280 : portrait ? 1024 : 1536,
+        height: square ? 1280 : portrait ? 1536 : 1024,
+        outFile,
+      }),
+    });
+    const body = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
+    if (!res.ok || body.ok === false) {
+      const why = body.error ?? `HTTP ${res.status}`;
+      page.images = done;
+      await save(ctx, issue);
+      emit(ctx, "publication:stage", { id, stage: "art", state: "error", page: page.n, error: why });
+      throw new Error(`art p${page.n} image ${i + 1}: ${why}`);
+    }
+    done[i] = outFile;
+  }
+
+  page.images = done;
+  // The first image is still what a single-picture page means by "its" image.
+  page.image = done[0] ?? null;
   emit(ctx, "publication:stage", { id, stage: "art", state: "done", page: page.n });
   await save(ctx, issue);
   return page;
@@ -946,7 +1034,9 @@ function pageDigest(issue: PublicationIssue): string {
     return `p${p.n} [${p.type}] "${p.title}" — ${p.words ?? 0} words`
       + (p.deck ? `, deck: "${String(p.deck).slice(0, 80)}"` : "")
       + (blocks.length ? `, blocks: ${blocks.join(", ")}` : ", no blocks")
-      + (p.brief?.prompt ? `, image: ${p.brief.orientation}` : ", no image");
+      + (briefsOf(p).length
+        ? `, images: ${briefsOf(p).map((b) => b.orientation).join(" + ")}`
+        : ", no image");
   }).join("\n");
 }
 
@@ -1207,7 +1297,9 @@ export function outstanding(
     .filter((p) => {
       if (redo) return true;
       if (kind === "write") return p.body === null || p.body === undefined;
-      return !p.image && Boolean(p.brief?.prompt);
+      // Outstanding while any of the page's briefs is still unrendered.
+      const briefs = briefsOf(p);
+      return briefs.length > 0 && (p.images ?? []).filter(Boolean).length < briefs.length;
     })
     .map((p) => p.n);
 }
@@ -1390,9 +1482,8 @@ export async function revisePage(
     // three good blocks off p2. Losing content is the one outcome a revise
     // must not have, so the old blocks stand unless real ones replace them.
     furniture: revised.length ? revised : page.furniture,
-    brief: out.image_prompt
-      ? { prompt: String(out.image_prompt), orientation: page.brief?.orientation ?? "landscape" }
-      : page.brief,
+    // Same rule as furniture above: an omitted brief is not a deletion.
+    briefs: (out.image_prompt || out.image_prompts) ? readBriefs(out, page) : page.briefs,
     words: body.split(/\s+/).filter(Boolean).length,
   });
 
@@ -1485,7 +1576,7 @@ function elementValue(page: PublicationPage, at: ElementAddress): string {
     case "deck": return page.deck ?? "";
     case "body": return page.body ?? "";
     case "pull_quote": return page.pullQuote ?? "";
-    case "brief": return page.brief?.prompt ?? "";
+    case "brief": return briefsOf(page).map((b) => b.prompt).join("\n\n");
     case "image": return page.image ?? "";
     case "furniture": {
       const blocks = page.furniture ?? [];
@@ -1535,7 +1626,7 @@ export async function deleteElement(
   } else if (at.kind === "pull_quote") {
     page.pullQuote = "";
   } else if (at.kind === "brief") {
-    page.brief = null;
+    page.briefs = [];
   } else if (at.kind === "image") {
     page.image = null;
   }
@@ -1595,7 +1686,7 @@ export async function updateElement(
     (page.furniture ?? []).length
       ? `FURNITURE:\n${(page.furniture ?? []).map((f, i) => `${i + 1}. ${f.kind}: ${f.text}`).join("\n")}`
       : "",
-    page.brief?.prompt ? `IMAGE BRIEF: ${page.brief.prompt}` : "",
+    ...briefsOf(page).map((b, i) => `IMAGE BRIEF ${i + 1}: ${b.prompt}`),
     "",
     "BODY:",
     page.body ?? "",
@@ -1655,7 +1746,9 @@ function applyElement(
   } else if (at.kind === "pull_quote") {
     page.pullQuote = value;
   } else if (at.kind === "brief") {
-    page.brief = { prompt: value, orientation: page.brief?.orientation ?? "landscape" };
+    // Editing "the brief" replaces the set with the one the user just wrote.
+    // Addressing an individual brief is a separate address this does not have.
+    page.briefs = [{ prompt: value, orientation: briefsOf(page)[0]?.orientation ?? "landscape" }];
   } else if (at.kind === "body") {
     page.body = value;
     page.words = value.split(/\s+/).filter(Boolean).length;
