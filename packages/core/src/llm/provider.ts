@@ -455,6 +455,39 @@ export class ContextWindowExceededError extends Error {
   }
 }
 
+
+/**
+ * The request fragment that turns on a provider's own web search.
+ *
+ * `webSearch: true` was accepted by chatCompletion and then reached no request
+ * body at all — the option existed, the plumbing did not, so "OpenAI has
+ * native search, use it directly" called the model with no search of any kind
+ * and returned whatever it remembered. That is worse than not offering it.
+ *
+ * Returns undefined for a protocol whose shape is not known here, and the
+ * caller then falls back to our own search keys rather than pretending.
+ */
+export function nativeWebSearchPayload(
+  client: LLMClient,
+): Record<string, unknown> | undefined {
+  if (client.provider === "anthropic") {
+    return { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] };
+  }
+  if (client.apiFormat === "responses") {
+    return { tools: [{ type: "web_search" }] };
+  }
+  // xAI takes its own parameter on an otherwise ordinary completions call.
+  if (client.service === "xai") {
+    return { search_parameters: { mode: "auto" } };
+  }
+  return undefined;
+}
+
+/** Can this client search on the wire, as opposed to merely claiming to? */
+export function supportsNativeWebSearch(client: LLMClient): boolean {
+  return nativeWebSearchPayload(client) !== undefined;
+}
+
 /** Keys managed by the provider layer — prevent extra from overriding them. */
 const RESERVED_KEYS = new Set(["max_tokens", "temperature", "model", "messages", "stream"]);
 
@@ -1481,7 +1514,12 @@ export async function chatCompletion(
       options?.temperature ?? client.defaults.temperature,
     ),
     maxTokens: options?.maxTokens ?? client.defaults.maxTokens,
-    extra: client.defaults.extra,
+    // A caller asking for search gets the provider's own search bolted onto the
+    // request here, which is the only place that knows the wire shape. Unknown
+    // protocol: nothing is added, and the caller's fallback does the work.
+    extra: options?.webSearch
+      ? { ...client.defaults.extra, ...nativeWebSearchPayload(client) }
+      : client.defaults.extra,
   };
   const onStreamProgress = options?.onStreamProgress;
   const onTextDelta = options?.onTextDelta;

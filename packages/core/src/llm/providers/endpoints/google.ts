@@ -20,6 +20,9 @@ export const GOOGLE: InkosEndpoint = {
   temperatureRange: [0, 2],
   defaultTemperature: 1,
   writingTemperature: 1,
+  // Every model here reaches the web through its own provider, so our search
+  // keys are a fallback for the ones that cannot rather than the only route.
+  modelDefaults: { webSearch: true },
   models: [
     { id: "gemini-pro-latest", maxOutput: 65536, contextWindowTokens: 1114112 },
     { id: "gemini-flash-latest", maxOutput: 65536, contextWindowTokens: 1114112 },

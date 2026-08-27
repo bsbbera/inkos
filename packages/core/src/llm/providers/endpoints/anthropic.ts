@@ -20,6 +20,9 @@ export const ANTHROPIC: InkosEndpoint = {
   defaultTemperature: 1.0,
   writingTemperature: 1.0,
   temperatureHint: "不要同时改 temperature 和 top_p",
+  // Every model here reaches the web through its own provider, so our search
+  // keys are a fallback for the ones that cannot rather than the only route.
+  modelDefaults: { webSearch: true },
   models: [
     {
       id: "claude-opus-4-6",

@@ -18,6 +18,9 @@ export const XAI: InkosEndpoint = {
   temperatureRange: [0, 2],
   defaultTemperature: 1,
   writingTemperature: 1,
+  // Every model here reaches the web through its own provider, so our search
+  // keys are a fallback for the ones that cannot rather than the only route.
+  modelDefaults: { webSearch: true },
   models: [
     { id: "grok-4.20-beta-0309-reasoning", maxOutput: 4096, contextWindowTokens: 2000000, enabled: true, releasedAt: "2026-03-09" },
     { id: "grok-4.20-beta-0309-non-reasoning", maxOutput: 4096, contextWindowTokens: 2000000, enabled: true, releasedAt: "2026-03-09" },

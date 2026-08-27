@@ -38,6 +38,10 @@ export const CLAUDE_CLI: InkosEndpoint = {
   api: "openai-completions",
   baseUrl: `${SHIM}/claude/v1`,
   checkModel: "claude/sonnet",
+  // Each CLI browses on its own account — that is most of why someone runs
+  // one. A probed model inherits this, which matters here more than
+  // anywhere else: devin lists 183 and seeds ten.
+  modelDefaults: { webSearch: true },
   models: [
     text("claude/default", true),
     text("claude/opus", true),
@@ -53,6 +57,10 @@ export const CODEX_CLI: InkosEndpoint = {
   api: "openai-completions",
   baseUrl: `${SHIM}/codex/v1`,
   checkModel: "codex/gpt-5.5",
+  // Each CLI browses on its own account — that is most of why someone runs
+  // one. A probed model inherits this, which matters here more than
+  // anywhere else: devin lists 183 and seeds ten.
+  modelDefaults: { webSearch: true },
   models: [
     text("codex/gpt-5.6-terra", true),
     text("codex/gpt-5.6-luna", true),
@@ -71,6 +79,10 @@ export const DEVIN_CLI: InkosEndpoint = {
   // Same CLI, same interface, different model capabilities: the glm-5-2 family
   // is text-only while kimi and the claude/gpt families take images. This is
   // the seed's whole reason for existing.
+  // Each CLI browses on its own account — that is most of why someone runs
+  // one. A probed model inherits this, which matters here more than
+  // anywhere else: devin lists 183 and seeds ten.
+  modelDefaults: { webSearch: true },
   models: [
     text("devin/glm-5-2", false),
     text("devin/glm-5-2-max", false),
@@ -92,6 +104,10 @@ export const ANTIGRAVITY_CLI: InkosEndpoint = {
   api: "openai-completions",
   baseUrl: `${SHIM}/antigravity/v1`,
   checkModel: "antigravity/default",
+  // Each CLI browses on its own account — that is most of why someone runs
+  // one. A probed model inherits this, which matters here more than
+  // anywhere else: devin lists 183 and seeds ten.
+  modelDefaults: { webSearch: true },
   models: [
     text("antigravity/default", true),
     text("antigravity/gemini-3.7-flash-high", true),

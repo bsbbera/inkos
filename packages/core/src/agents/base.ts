@@ -1,8 +1,10 @@
 import type { LLMClient, LLMMessage, LLMResponse, OnStreamProgress } from "../llm/provider.js";
+import { supportsNativeWebSearch } from "../llm/provider.js";
 import { runWorkerAgent, runWorkerAgentTool, type WorkerResultTool } from "../agent/worker-agent.js";
 import type { Static, TSchema } from "@sinclair/typebox";
 import { appendPromptPackGuidance } from "../prompts/prompt-pack.js";
 import { searchWeb, fetchUrl } from "../utils/web-search.js";
+import { modelSearchesWeb } from "../llm/providers/lookup.js";
 import type { Logger } from "../utils/logger.js";
 import {
   hydrateActivatedSkillGuidance,
@@ -84,15 +86,30 @@ export abstract class BaseAgent {
 
   /**
    * Chat with web search enabled.
-   * OpenAI: uses native web_search_options / web_search_preview.
-   * Other providers: searches via Tavily API (TAVILY_API_KEY), injects results into prompt.
+   *
+   * A model that browses on its own account is asked to. Everything else gets
+   * our keys, and the results spliced into the prompt.
+   *
+   * Which is which is the provider's declaration, not a name check here. This
+   * read `provider === "openai"`, so a Devin-hosted GLM — a CLI whose whole
+   * point is that it browses — was treated as incapable, and on a machine with
+   * no Tavily key it reported that nothing could be looked up at all.
    */
   protected async chatWithSearch(
     messages: ReadonlyArray<LLMMessage>,
     options?: { readonly temperature?: number; readonly maxTokens?: number },
   ): Promise<LLMResponse> {
-    // OpenAI has native search — use it directly
-    if (this.ctx.client.provider === "openai") {
+    // `service` is the provider the user picked (devinCli, anthropic, ...).
+    // `provider` is only the wire protocol, "openai" or "anthropic", and asking
+    // it which models browse would answer for the wrong thing entirely.
+    // Two conditions, not one. The provider must say this model browses, and
+    // this protocol must have a request shape we can actually write. A CLI
+    // declares the first and not the second, and treating the declaration
+    // alone as sufficient is what made the old OpenAI branch a no-op.
+    if (
+      modelSearchesWeb(this.ctx.client.service ?? "", this.ctx.model)
+      && supportsNativeWebSearch(this.ctx.client)
+    ) {
       return runWorkerAgent(this.ctx.client, this.ctx.model, appendActivatedSkillGuidance(
         messages,
         this.ctx.activatedSkills,

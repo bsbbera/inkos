@@ -120,10 +120,16 @@ describe("researchPublication", () => {
         pillars: ["what"],
         ask,
       };
+      // Count searches, not fetches: resolving the source list also asks the
+      // shim which MCP servers are enabled, and that happens once per run
+      // whether or not the query itself is cached.
+      const searches = () => fetchMock.mock.calls.filter(
+        ([url]) => !String(url).includes("/mcp/"),
+      ).length;
       await researchPublication(once);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(searches()).toBe(1);
       await researchPublication(once);
-      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(searches()).toBe(1);
     } finally {
       vi.unstubAllGlobals();
       delete process.env.TAVILY_API_KEY;

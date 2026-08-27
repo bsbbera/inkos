@@ -19,6 +19,9 @@ export const OPENAI: InkosEndpoint = {
   temperatureRange: [0, 2],
   defaultTemperature: 1,
   writingTemperature: 1,
+  // Every model here reaches the web through its own provider, so our search
+  // keys are a fallback for the ones that cannot rather than the only route.
+  modelDefaults: { webSearch: true },
   models: [
     { id: "gpt-5.4", maxOutput: 128000, contextWindowTokens: 1050000, enabled: true, releasedAt: "2026-03-05" },
     { id: "gpt-5.4-pro", maxOutput: 128000, contextWindowTokens: 1050000, releasedAt: "2026-03-05" },

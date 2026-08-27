@@ -47,7 +47,8 @@ import {
   type ActionPayload,
 } from "../interaction/action-envelope.js";
 import { ResearchSearchConfigSchema } from "../models/project.js";
-import { searchWeb } from "../utils/web-search.js";
+import { searchAllSources, RESULTS_PER_SOURCE } from "../utils/search-sources.js";
+import { allSearchSources } from "../pipeline/publication-research.js";
 import {
   runAsWorkflowTrajectory,
   runWithAgentTrajectoryRole,
@@ -1330,20 +1331,19 @@ export function createResearchWebTool(projectRoot: string): AgentTool<typeof Res
       onUpdate?: AgentToolUpdateCallback,
     ): Promise<AgentToolResult<unknown>> {
       onUpdate?.(textResult(`Researching: ${params.topic}`));
-      const searchConfig = await readResearchSearchConfig(projectRoot);
-      const searchOptions = searchConfig.enabled
-        ? {
-            apiKey: searchConfig.apiKey,
-            apiKeyEnv: searchConfig.apiKeyEnv,
-            baseUrl: searchConfig.baseUrl,
-          }
-        : {};
+      // Every source, not the first configured one. A user running the Tavily
+      // MCP server and holding no API key used to be told research was
+      // unavailable while the thing that could answer sat enabled beside it.
+      const sources = await allSearchSources(projectRoot);
       const report = await runResearchReport({
         topic: params.topic,
         purpose: params.purpose,
         depth: params.depth ?? "standard",
       }, {
-        search: (query, maxResults) => searchWeb(query, maxResults, searchOptions),
+        search: async (query, maxResults) => {
+          const sweep = await searchAllSources(sources, query, maxResults ?? RESULTS_PER_SOURCE);
+          return sweep.results.map(({ title, url, snippet }) => ({ title, url, snippet }));
+        },
       });
       const reportDir = join(projectRoot, ".inkos", "research");
       await mkdir(reportDir, { recursive: true });

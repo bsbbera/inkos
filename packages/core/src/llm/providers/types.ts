@@ -49,6 +49,16 @@ export interface InkosModel {
     readonly imageOutput?: boolean;
     readonly tools?: boolean;
     readonly reasoning?: boolean;
+    /**
+     * The model can search the web itself, without a key of ours.
+     *
+     * Declared by the provider that offers the model, because that is the only
+     * place that knows. It used to be decided by `provider === "openai"` in one
+     * agent method, which is why a Devin-hosted GLM with its own search still
+     * had a Tavily key spliced into its prompt — and why a run with no key at
+     * all reported that nothing could be looked up.
+     */
+    readonly webSearch?: boolean;
   };
 }
 
@@ -86,6 +96,17 @@ export interface InkosEndpoint {
   readonly temperatureHint?: string;
   readonly compat?: ProviderCompat;
   readonly transportDefaults?: ProviderTransportDefaults;
+
+  /**
+   * Capabilities every model of this provider has unless its own card says
+   * otherwise.
+   *
+   * `models` is a seed, not the catalogue — a live /models probe returns ids
+   * and nothing else, so a probed model has no card to read. Devin alone
+   * serves 183 of them. Without a provider-level default, every one of those
+   * would look incapable of the thing the whole provider can do.
+   */
+  readonly modelDefaults?: InkosModel["capabilities"];
 
   readonly models: readonly InkosModel[];
 }

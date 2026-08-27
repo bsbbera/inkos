@@ -68,3 +68,32 @@ export function listActiveTextModels(serviceId: string): InkosModel[] {
   if (!provider) return [];
   return provider.models.filter(isActiveTextModel);
 }
+
+/**
+ * What a model can actually do, provider defaults included.
+ *
+ * `lookupModel` answers from the seed alone, so a probed model — one the
+ * provider listed at runtime and no card describes — came back undefined and
+ * every caller fell to its own conservative guess. Devin serves 183 models
+ * that way. This layers the provider's own declaration underneath the card, so
+ * an unlisted model is treated as what its provider says it is rather than as
+ * nothing at all.
+ */
+export function modelCapabilities(
+  serviceId: string,
+  modelId: string,
+): NonNullable<InkosModel["capabilities"]> {
+  const provider = getEndpoint(serviceId);
+  const card = lookupModel(serviceId, modelId);
+  return { ...provider?.modelDefaults, ...card?.capabilities };
+}
+
+/**
+ * Can this model search the web on its own?
+ *
+ * The one question the research path needs answered, so it is asked here
+ * rather than re-derived at each call site.
+ */
+export function modelSearchesWeb(serviceId: string, modelId: string): boolean {
+  return modelCapabilities(serviceId, modelId).webSearch === true;
+}

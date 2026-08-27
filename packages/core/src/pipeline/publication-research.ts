@@ -15,7 +15,14 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-import { searchWeb, type SearchResult } from "../utils/web-search.js";
+import { type SearchResult } from "../utils/web-search.js";
+import {
+  keySource,
+  mcpSearchSources,
+  searchAllSources,
+  RESULTS_PER_SOURCE,
+  type SearchSource,
+} from "../utils/search-sources.js";
 import { ResearchSearchConfigSchema } from "../models/project.js";
 
 /** What a page can actually use: a claim, and where it came from. */
@@ -92,33 +99,15 @@ export async function searchProviders(projectRoot: string): Promise<SearchSettin
 }
 
 /**
- * Run one query against the first provider that answers.
+ * Every source this machine has: keys and enabled MCP servers alike.
  *
- * A provider that is configured but broken should not end the run while
- * another one is sitting there working, so failures fall through. If none
- * answer, the caller is told — silence here would become an invented fact
- * three stages later.
+ * MCP was invisible here. A user with the Tavily MCP server running and no
+ * TAVILY_API_KEY was told to go and configure search, while the thing that
+ * could answer sat enabled in the same app.
  */
-async function searchOnce(
-  query: string,
-  providers: ReadonlyArray<SearchSettings>,
-): Promise<{ results: ReadonlyArray<SearchResult>; provider: string }> {
-  const failures: string[] = [];
-  for (const p of providers) {
-    try {
-      const results = await searchWeb(query, 6, {
-        provider: p.provider,
-        apiKey: p.apiKey,
-        apiKeyEnv: p.apiKeyEnv,
-        baseUrl: p.baseUrl,
-      });
-      if (results.length) return { results, provider: p.provider };
-      failures.push(`${p.provider}: no results`);
-    } catch (error) {
-      failures.push(`${p.provider}: ${(error as Error).message}`);
-    }
-  }
-  throw new Error(`every search provider failed — ${failures.join("; ")}`);
+export async function allSearchSources(projectRoot: string): Promise<SearchSource[]> {
+  const keys = (await searchProviders(projectRoot)).map(keySource);
+  return [...keys, ...await mcpSearchSources()];
 }
 
 /* ------------------------------------------------------------------- cache */
@@ -187,13 +176,15 @@ export async function researchPublication(args: {
   readonly pillars: ReadonlyArray<string>;
   readonly ask: AskJson;
   readonly onProgress?: (message: string) => void;
+  /** Supplied by a caller that already resolved them; discovered otherwise. */
+  readonly sources?: ReadonlyArray<SearchSource>;
 }): Promise<ResearchReport> {
-  const providers = await searchProviders(args.projectRoot);
-  if (!providers.length) {
+  const sources = args.sources ?? await allSearchSources(args.projectRoot);
+  if (!sources.length) {
     throw new Error(
       "no web search is configured, so this issue would be written from memory alone. "
-      + "Set a Tavily or Brave key in Project Settings → research search, or the "
-      + "TAVILY_API_KEY / BRAVE_API_KEY environment variable.",
+      + "Enable a search MCP server, or set a Tavily or Brave key in Project Settings "
+      + "→ research search, or the TAVILY_API_KEY / BRAVE_API_KEY environment variable.",
     );
   }
 
@@ -206,7 +197,7 @@ export async function researchPublication(args: {
 
   const cache = await readCache(args.cachePath);
   const out: Record<string, PillarResearch> = {};
-  let usedProvider: SearchSettings["provider"] = providers[0]!.provider;
+  const answeredBy = new Set<string>();
 
   for (const pillar of pillars) {
     const queries = (Array.isArray(planned[pillar]) ? planned[pillar] as unknown[] : [])
@@ -226,10 +217,17 @@ export async function researchPublication(args: {
         results.push(...hit.results);
         continue;
       }
-      const fresh = await searchOnce(query, providers);
-      usedProvider = fresh.provider as SearchSettings["provider"];
-      cache[key] = { query, provider: fresh.provider, results: [...fresh.results] };
-      results.push(...fresh.results);
+      const sweep = await searchAllSources(sources, query, RESULTS_PER_SOURCE);
+      if (!sweep.results.length) {
+        throw new Error(`every search source failed for "${query}" — ${sweep.failures.join("; ")}`);
+      }
+      for (const id of sweep.answered) answeredBy.add(id);
+      cache[key] = {
+        query,
+        provider: sweep.answered.join(", "),
+        results: sweep.results.map(({ title, url, snippet }) => ({ title, url, snippet })),
+      };
+      results.push(...sweep.results);
     }
     await writeCache(args.cachePath, cache);
 
@@ -271,7 +269,7 @@ export async function researchPublication(args: {
     title: String(plan.title ?? args.subject),
     thesis: String(plan.thesis ?? ""),
     pillars: out,
-    searchedWith: usedProvider,
+    searchedWith: [...answeredBy].join(", ") || "cache",
     searchedAt: new Date().toISOString(),
   };
 }
