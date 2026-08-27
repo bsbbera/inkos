@@ -785,6 +785,8 @@ export {
   RECALL_THRESHOLD as PUBLICATION_RECALL_THRESHOLD,
 } from "./pipeline/publication-memory.js";
 export { PublicationIssueSchema, validateIssue as validatePublicationIssue } from "./pipeline/publication-schema.js";
+export { briefsOf as publicationPageBriefs } from "./pipeline/publication-runner.js";
+export type { PageBrief as PublicationPageBrief } from "./pipeline/publication-runner.js";
 export type {
   PublicationIssue, PublicationPage, PublicationSection, PublicationSummary,
   PublicationDesign, DesignWorld, RunnerContext as PublicationRunnerContext,

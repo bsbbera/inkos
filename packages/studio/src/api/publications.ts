@@ -32,6 +32,7 @@ import {
   type PipelineRunner,
   type PublicationFinding,
   type PublicationIssue,
+  publicationPageBriefs,
   type PublicationStage,
   setPublicationLastError,
 } from "@actalk/quire-core";
@@ -43,7 +44,7 @@ export interface PublicationRouteDeps {
   readonly broadcast: (event: string, data: unknown) => void;
 }
 
-const STAGES: ReadonlyArray<PublicationStage> = ["research", "plan", "write", "audit", "art", "build"];
+const STAGES: ReadonlyArray<PublicationStage> = ["research", "plan", "write", "fact-check", "audit", "art", "build"];
 
 /**
  * What has actually happened to this issue, read off the issue itself.
@@ -53,7 +54,13 @@ const STAGES: ReadonlyArray<PublicationStage> = ["research", "plan", "write", "a
  */
 export function stageStates(issue: PublicationIssue): Array<{ stage: PublicationStage; state: string; detail: string }> {
   const written = issue.pages.filter(isPublicationPageWritten).length;
-  const withArt = issue.pages.filter((p) => p.image).length;
+  // A page wanting no picture is not a page missing one. Counting by `image`
+  // made every plate-free page read as outstanding art forever.
+  const wantsArt = issue.pages.filter((p) => publicationPageBriefs(p).length > 0);
+  const withArt = wantsArt.filter(
+    (p) => (p.images ?? (p.image ? [p.image] : [])).filter(Boolean).length
+      >= publicationPageBriefs(p).length,
+  ).length;
   const done = (yes: boolean) => (yes ? "done" : "pending");
   return [
     { stage: "research", state: done(!!issue.research), detail: issue.research ? "sources gathered" : "not run" },
@@ -68,6 +75,15 @@ export function stageStates(issue: PublicationIssue): Array<{ stage: Publication
       detail: `${written}/${issue.pages.length} pages written`,
     },
     {
+      stage: "fact-check",
+      state: issue.factCheck ? "done" : "pending",
+      detail: issue.factCheck
+        ? `${issue.factCheck.checked} claims checked, ${
+          issue.factCheck.findings.filter((f) => f.verdict === "unsupported" || f.verdict === "contradicted").length
+        } worth acting on`
+        : "never checked",
+    },
+    {
       stage: "audit",
       state: issue.audit ? "done" : "pending",
       detail: issue.audit
@@ -76,8 +92,12 @@ export function stageStates(issue: PublicationIssue): Array<{ stage: Publication
     },
     {
       stage: "art",
-      state: withArt === 0 ? "pending" : withArt < issue.pages.length ? "partial" : "done",
-      detail: `${withArt}/${issue.pages.length} pages have art`,
+      state: wantsArt.length === 0
+        ? "done"
+        : withArt === 0 ? "pending" : withArt < wantsArt.length ? "partial" : "done",
+      detail: wantsArt.length === 0
+        ? "no page asked for a picture"
+        : `${withArt}/${wantsArt.length} pages have art`,
     },
     {
       stage: "build",
