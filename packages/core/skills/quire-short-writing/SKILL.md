@@ -1,5 +1,5 @@
 ---
-name: inkos-short-writing
+name: quire-short-writing
 description: 12–18章商业短篇的构思、一次写完、整篇审改与包装。Use for confirmed standalone short-fiction production.
 ---
 # Short-fiction writing

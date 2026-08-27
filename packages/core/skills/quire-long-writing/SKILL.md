@@ -1,5 +1,5 @@
 ---
-name: inkos-long-writing
+name: quire-long-writing
 description: 长篇小说的场景构造、人物因果、信息释放与连载节奏。Used by Quire long-form workers as their shared craft method.
 ---
 # Long-form narrative craft

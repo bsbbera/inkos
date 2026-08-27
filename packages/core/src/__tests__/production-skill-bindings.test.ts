@@ -24,25 +24,25 @@ function skill(id: string): AgentSkill {
 describe("production skill bindings", () => {
   it("uses distinct professional skills for each production shape", () => {
     expect(PRODUCTION_SKILL_IDS).toMatchObject({
-      longWriting: ["inkos-long-writing"],
-      shortWriting: ["inkos-short-writing"],
-      play: ["inkos-play-world"],
-      script: ["inkos-script-writing"],
-      storyboard: ["inkos-storyboard"],
-      interactiveFilm: ["inkos-interactive-film"],
-      translation: ["inkos-translation"],
+      longWriting: ["quire-long-writing"],
+      shortWriting: ["quire-short-writing"],
+      play: ["quire-play-world"],
+      script: ["quire-script-writing"],
+      storyboard: ["quire-storyboard"],
+      interactiveFilm: ["quire-interactive-film"],
+      translation: ["quire-translation"],
     });
     for (const capability of NON_LONG_PRODUCTION_CAPABILITIES) {
-      expect(PRODUCTION_SKILL_IDS[capability], capability).not.toContain("inkos-long-writing");
-      expect(PRODUCTION_SKILL_IDS[capability], capability).not.toContain("inkos-story-review");
+      expect(PRODUCTION_SKILL_IDS[capability], capability).not.toContain("quire-long-writing");
+      expect(PRODUCTION_SKILL_IDS[capability], capability).not.toContain("quire-story-review");
     }
   });
 
   it("resolves host-selected skills and lets project replacements win", () => {
-    const builtin = skill("inkos-play-world");
+    const builtin = skill("quire-play-world");
     const replacement = { ...builtin, source: "project" as const, body: "project play method" };
     const resolved = resolveProductionSkillActivations(
-      [builtin, replacement, skill("inkos-long-writing")],
+      [builtin, replacement, skill("quire-long-writing")],
       "play",
     );
 
@@ -50,7 +50,7 @@ describe("production skill bindings", () => {
   });
 
   it("merges default and user-requested skills without duplicates", () => {
-    const defaultActivation = { skill: skill("inkos-play-world"), resources: [] };
+    const defaultActivation = { skill: skill("quire-play-world"), resources: [] };
     const userActivation = { skill: skill("detective-evidence"), resources: [] };
     const replacement = {
       skill: { ...defaultActivation.skill, source: "project" as const, body: "replacement" },
@@ -77,7 +77,7 @@ describe("production skill bindings", () => {
         "Use spatial anchors and sensory continuity.",
       ].join("\n"));
       const activation = {
-        skill: { ...skill("inkos-long-writing"), baseDir },
+        skill: { ...skill("quire-long-writing"), baseDir },
         resources: [],
       };
 

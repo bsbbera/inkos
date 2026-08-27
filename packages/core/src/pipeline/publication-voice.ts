@@ -20,14 +20,35 @@ export interface VoiceResult {
   readonly diagnostic?: string;
 }
 
-// The skill is a document written for a person, so it opens with frontmatter,
-// a title and setup instructions that mean nothing to a page writer. Only the
-// craft sections are worth the context they cost.
-const WANTED = /^#{1,3}\s*(voice|tone|style|writing|storytelling|craft|register|how to write)/i;
+/**
+ * Sections that are instructions to the harness rather than to a writer.
+ *
+ * A denylist, where this used to be an allowlist of headings matching
+ * voice/tone/style/craft/register. That kept the register and threw away
+ * everything else the skill knew — mag-content's page archetypes, its
+ * user-research cross-check, its rule about explaining a thing the way you
+ * would to a five-year-old. Those are the parts worth having, and they were
+ * dropped silently at load time because their headings did not match a word
+ * list. Renaming a heading in the skill degraded every magazine after it, with
+ * no error anywhere.
+ *
+ * So: keep the document, minus the parts that only make sense to whoever runs
+ * the skill by hand.
+ */
+const SCAFFOLD = new RegExp(
+  "^#{1,4}\\s*(" + [
+    "trigger", "usage", "how to (use|run|invoke)", "invocation", "install(ation)?",
+    "setup", "requirements?", "prerequisites?", "inputs?", "outputs?",
+    "file (layout|structure)", "where (files|output)", "folder", "directory",
+    "workflow steps?", "steps? to run", "checklist for the agent",
+    "changelog", "version", "licen[sc]e", "credits?", "see also",
+  ].join("|") + ")\\b",
+  "i",
+);
 
 function craftOf(body: string): string {
-  const sections = body.split(/\n(?=#{1,3}\s)/);
-  const kept = sections.filter((section) => WANTED.test(section.trim()));
+  const sections = body.split(/\n(?=#{1,4}\s)/);
+  const kept = sections.filter((section) => !SCAFFOLD.test(section.trim()));
   return (kept.length ? kept : sections).join("\n").trim();
 }
 
@@ -58,7 +79,10 @@ export async function resolveVoice(args: {
       };
     }
 
-    const craft = craftOf(skill.body ?? "").slice(0, args.maxChars ?? 6000);
+    // Keeping most of the document costs more context than keeping four
+    // sections did. 16k is roughly a full craft skill and still small beside a
+    // page prompt's research block.
+    const craft = craftOf(skill.body ?? "").slice(0, args.maxChars ?? 16000);
     if (!craft) {
       return {
         voice: args.fallback,

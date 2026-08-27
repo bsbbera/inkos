@@ -69,7 +69,14 @@ function normalizeIdList(values: ReadonlyArray<string> | undefined): string[] {
 }
 
 function normalizeSkillId(value: string): string {
-  return value.trim().toLowerCase();
+  const id = value.trim().toLowerCase();
+  // The built-in skills are named for this app, which is Quire. They were
+  // named inkos-*, and every id anyone has already written down — an activated
+  // skill on a session, a voiceSkill in a user's own publication definition, a
+  // requestedSkills list in a saved config — uses the old prefix. Every lookup
+  // funnels through here, so one line keeps all of them working. Renaming
+  // without it would silently disable a user's skills rather than error.
+  return id.startsWith("inkos-") ? `quire-${id.slice("inkos-".length)}` : id;
 }
 
 function dedupeStrings(values: ReadonlyArray<string>): string[] {

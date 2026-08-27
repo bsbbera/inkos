@@ -298,14 +298,14 @@ describe("groupChronologically", () => {
       details: {
         kind: "play_turn_advanced",
         sceneText: "雨雾里的钟声停了一拍。",
-        skillIds: ["inkos-play-world"],
+        skillIds: ["quire-play-world"],
       },
     });
 
-    expect(getExecutionSkillIds(exec)).toEqual(["inkos-play-world"]);
+    expect(getExecutionSkillIds(exec)).toEqual(["quire-play-world"]);
     const html = renderToStaticMarkup(React.createElement(ToolExecutionSteps, { executions: [exec] }));
     expect(html).toContain("专业 Skill");
-    expect(html).toContain("inkos-play-world");
+    expect(html).toContain("quire-play-world");
   });
 
   it("extracts generated cover details from public short fiction tools", () => {

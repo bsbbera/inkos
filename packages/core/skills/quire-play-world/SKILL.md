@@ -1,5 +1,5 @@
 ---
-name: inkos-play-world
+name: quire-play-world
 description: 品类中立的开放世界与分支互动推进方法。Used by Quire Play workers for coherent action, state, time, and scene progression.
 ---
 # Interactive world play

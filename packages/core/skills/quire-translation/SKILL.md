@@ -1,5 +1,5 @@
 ---
-name: inkos-translation
+name: quire-translation
 description: 长文任意语言互译、术语一致性、分段续跑与章节审校方法。Used by Quire translation workers.
 ---
 # Long-form translation

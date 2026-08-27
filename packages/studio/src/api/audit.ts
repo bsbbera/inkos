@@ -16,6 +16,7 @@ import { join, relative } from "node:path";
 import type { Hono } from "hono";
 import {
   PipelineRunner,
+  auditableRoots,
   createStoryAsk,
   runStoryAudit,
   runStoryDeslop,
@@ -34,26 +35,27 @@ export interface AuditTarget {
   readonly name: string;
   /** Which production wrote it, as far as the path can say. */
   readonly kind: string;
+  /** That production's own name, so the screen need not keep a second table. */
+  readonly kindLabel: string;
   readonly words: number;
   readonly modified: string;
 }
 
 /**
- * Where finished work lives.
+ * Where finished work lives — asked, rather than restated.
  *
- * A allowlist rather than a walk of the whole workspace: research caches,
+ * This was a hand-kept list, and it had drifted: it looked for scripts under
+ * `scripts/` while the script runner has always written them to `dramas/`, so
+ * no script has ever been auditable. Play worlds were missing entirely. The
+ * production registry is where an output directory is declared now, and a
+ * production that says it is not auditable — a play world is live state, not a
+ * finished text — is not offered.
+ *
+ * Still an allowlist rather than a walk of the workspace: research caches,
  * per-chapter drafts and truth files are all markdown too, and offering to
  * audit a story bible would be offering nonsense.
  */
-const ROOTS: ReadonlyArray<{ dir: string; kind: string }> = [
-  { dir: "books", kind: "book" },
-  { dir: "shorts", kind: "short" },
-  { dir: "scripts", kind: "script" },
-  { dir: "storyboards", kind: "storyboard" },
-  { dir: "interactive-films", kind: "interactive film" },
-  { dir: "Magazine", kind: "publication" },
-  { dir: "publications", kind: "publication" },
-];
+const ROOTS = auditableRoots();
 
 /** Directories that hold working state rather than finished work. */
 const SKIP = new Set([
@@ -83,7 +85,7 @@ async function walk(dir: string, depth: number, out: string[]): Promise<void> {
 
 export async function listAuditTargets(root: string): Promise<AuditTarget[]> {
   const targets: AuditTarget[] = [];
-  for (const { dir, kind } of ROOTS) {
+  for (const { dir, kind, label } of ROOTS) {
     const files: string[] = [];
     await walk(join(root, dir), 0, files);
     for (const file of files) {
@@ -96,6 +98,7 @@ export async function listAuditTargets(root: string): Promise<AuditTarget[]> {
           path: relative(root, file).split("\\").join("/"),
           name: file.split(/[\\/]/).pop() ?? file,
           kind,
+          kindLabel: label,
           // Close enough to order by, and far cheaper than reading every file.
           words: Math.round(info.size / 6),
           modified: info.mtime.toISOString(),

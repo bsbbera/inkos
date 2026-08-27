@@ -35,7 +35,7 @@ describe("Studio skill endpoints", () => {
 
     expect(res.status).toBe(200);
     expect(json.skills).toContainEqual(expect.objectContaining({
-      id: "inkos-long-writing",
+      id: "quire-long-writing",
       source: "builtin",
       editable: false,
     }));
@@ -52,7 +52,7 @@ describe("Studio skill endpoints", () => {
     const app = createStudioServer({} as never, root);
     const manifest = Buffer.from([
       "---",
-      "name: inkos-story-review",
+      "name: quire-story-review",
       "description: Review with this project's acceptance standard.",
       "---",
       "Apply the project-specific review standard.",
@@ -63,7 +63,7 @@ describe("Studio skill endpoints", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         files: [
-          { path: "inkos-story-review/SKILL.md", dataUrl: `data:text/markdown;base64,${manifest}` },
+          { path: "quire-story-review/SKILL.md", dataUrl: `data:text/markdown;base64,${manifest}` },
         ],
       }),
     });
@@ -73,7 +73,7 @@ describe("Studio skill endpoints", () => {
     const json = await listed.json() as {
       skills: Array<{ id: string; source: string; editable: boolean; body: string }>;
     };
-    const reviewSkills = json.skills.filter((skill) => skill.id === "inkos-story-review");
+    const reviewSkills = json.skills.filter((skill) => skill.id === "quire-story-review");
 
     expect(reviewSkills).toEqual([expect.objectContaining({
       source: "project",

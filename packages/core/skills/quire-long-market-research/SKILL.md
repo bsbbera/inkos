@@ -1,5 +1,5 @@
 ---
-name: inkos-long-market-research
+name: quire-long-market-research
 description: 长篇网文市场、榜单、平台趋势与对标研究。Use for evidence-based long-form fiction market research, not for ordinary drafting.
 ---
 # Long-form market research

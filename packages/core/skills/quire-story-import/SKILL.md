@@ -1,5 +1,5 @@
 ---
-name: inkos-story-import
+name: quire-story-import
 description: 导入已有小说、逆向重建设定与续写工程，并区分母本参考。Use for importing manuscripts or attaching external canon safely.
 ---
 # Story import and reconstruction

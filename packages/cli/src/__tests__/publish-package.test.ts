@@ -286,9 +286,9 @@ describe.sequential("publish packaging", () => {
         encoding: "utf-8",
       });
 
-      expect(archiveListing).toContain("package/skills/inkos-long-writing/SKILL.md");
-      expect(archiveListing).toContain("package/skills/inkos-story-review/references/review-matrix.md");
-      expect(archiveListing).toContain("package/skills/inkos-story-cover/SKILL.md");
+      expect(archiveListing).toContain("package/skills/quire-long-writing/SKILL.md");
+      expect(archiveListing).toContain("package/skills/quire-story-review/references/review-matrix.md");
+      expect(archiveListing).toContain("package/skills/quire-story-cover/SKILL.md");
     } finally {
       await rm(packDir, { recursive: true, force: true });
     }

@@ -12,21 +12,21 @@ import {
 } from "../skills/index.js";
 
 const BUILTIN_SKILL_IDS = [
-  "inkos-interactive-film",
-  "inkos-long-market-research",
-  "inkos-long-story-analysis",
-  "inkos-long-writing",
-  "inkos-play-world",
-  "inkos-script-writing",
-  "inkos-short-market-research",
-  "inkos-short-story-analysis",
-  "inkos-short-writing",
-  "inkos-story-cover",
-  "inkos-story-deslop",
-  "inkos-story-import",
-  "inkos-story-review",
-  "inkos-storyboard",
-  "inkos-translation",
+  "quire-interactive-film",
+  "quire-long-market-research",
+  "quire-long-story-analysis",
+  "quire-long-writing",
+  "quire-play-world",
+  "quire-script-writing",
+  "quire-short-market-research",
+  "quire-short-story-analysis",
+  "quire-short-writing",
+  "quire-story-cover",
+  "quire-story-deslop",
+  "quire-story-import",
+  "quire-story-review",
+  "quire-storyboard",
+  "quire-translation",
 ] as const;
 
 describe("external skill loader", () => {
@@ -47,23 +47,23 @@ describe("external skill loader", () => {
     expect(loaded.skills.map((skill) => skill.id)).toEqual(BUILTIN_SKILL_IDS);
     expect(loaded.skills).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: "inkos-long-writing",
+        id: "quire-long-writing",
         source: "builtin",
         body: expect.stringContaining("objective, resistance"),
-        baseDir: expect.stringMatching(/skills[\\/]inkos-long-writing$/),
+        baseDir: expect.stringMatching(/skills[\\/]quire-long-writing$/),
       }),
       expect.objectContaining({
-        id: "inkos-story-review",
+        id: "quire-story-review",
         source: "builtin",
         body: expect.stringContaining("parser or model-format failure"),
       }),
       expect.objectContaining({
-        id: "inkos-play-world",
+        id: "quire-play-world",
         source: "builtin",
         body: expect.stringContaining("world contract as authority"),
       }),
       expect.objectContaining({
-        id: "inkos-interactive-film",
+        id: "quire-interactive-film",
         source: "builtin",
         body: expect.stringContaining("Variables and flags serve story causality"),
       }),
@@ -71,13 +71,13 @@ describe("external skill loader", () => {
   });
 
   it("lets a project skill replace a built-in skill with the same id", async () => {
-    const skillDir = join(root, ".agents", "skills", "inkos-story-review");
+    const skillDir = join(root, ".agents", "skills", "quire-story-review");
     await mkdir(skillDir, { recursive: true });
     await writeFile(
       join(skillDir, "SKILL.md"),
       [
         "---",
-        "name: inkos-story-review",
+        "name: quire-story-review",
         "description: Project-specific review standard.",
         "---",
         "Use the project's own review standard.",
@@ -92,7 +92,7 @@ describe("external skill loader", () => {
     });
     const registry = createSkillRegistry({ skills: loaded.skills });
 
-    expect(registry.getSkill("inkos-story-review")).toMatchObject({
+    expect(registry.getSkill("quire-story-review")).toMatchObject({
       source: "project",
       body: "Use the project's own review standard.",
       baseDir: skillDir,

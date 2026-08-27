@@ -1,5 +1,5 @@
 ---
-name: inkos-short-story-analysis
+name: quire-short-story-analysis
 description: 商业短篇拆稿、情绪链、证据链和反转机制分析。Use to deconstruct a short story into transferable craft.
 ---
 # Short-story analysis

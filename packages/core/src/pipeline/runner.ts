@@ -1916,7 +1916,7 @@ export class PipelineRunner {
       id: runId,
       stage: `chapter-${chapterNumber}`,
       model: this.config.model,
-      skillIds: ["inkos-long-writing"],
+      skillIds: ["quire-long-writing"],
       resumeCursor: String(chapterNumber),
     };
 

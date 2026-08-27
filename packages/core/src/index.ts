@@ -758,6 +758,9 @@ export {
 export type { SearchSource, SearchSweep, SourcedResult } from "./utils/search-sources.js";
 export { modelCapabilities, modelSearchesWeb } from "./llm/providers/lookup.js";
 
+export { PRODUCTIONS, auditableRoots, productionByDir } from "./productions/registry.js";
+export type { ProductionSpec } from "./productions/registry.js";
+
 export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
 export {

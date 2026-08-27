@@ -78,6 +78,11 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     createLogger: vi.fn(() => logger),
     computeAnalytics: vi.fn(() => ({})),
     isSafeBookId: actual.isSafeBookId,
+    // Registering the audit routes reads the production registry at import
+    // time, so the mock has to carry it or every route in the file 500s.
+    auditableRoots: actual.auditableRoots,
+    PRODUCTIONS: actual.PRODUCTIONS,
+    productionByDir: actual.productionByDir,
     chatCompletion: chatCompletionMock,
     loadProjectConfig: loadProjectConfigMock,
     GLOBAL_ENV_PATH: join(tmpdir(), "inkos-global.env"),

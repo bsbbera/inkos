@@ -323,6 +323,11 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     evaluateBookQuality: evaluateBookQualityMock,
     computeAnalytics: vi.fn(() => ({})),
     isSafeBookId: actual.isSafeBookId,
+    // Registering the audit routes reads the production registry at import
+    // time, so the mock has to carry it or every route in the file 500s.
+    auditableRoots: actual.auditableRoots,
+    PRODUCTIONS: actual.PRODUCTIONS,
+    productionByDir: actual.productionByDir,
     normalizePlatformOrOther: actual.normalizePlatformOrOther,
     defaultChapterLength: actual.defaultChapterLength,
     inferLanguage: actual.inferLanguage,
@@ -3474,7 +3479,7 @@ describe("createStudioServer daemon lifecycle", () => {
       expect.objectContaining({
         language: "en",
         defaultSkills: [expect.objectContaining({
-          skill: expect.objectContaining({ id: "inkos-short-writing" }),
+          skill: expect.objectContaining({ id: "quire-short-writing" }),
         })],
       }),
     );
@@ -3529,7 +3534,7 @@ describe("createStudioServer daemon lifecycle", () => {
       root,
       expect.objectContaining({
         defaultSkills: expect.arrayContaining([
-          expect.objectContaining({ skill: expect.objectContaining({ id: "inkos-short-writing" }) }),
+          expect.objectContaining({ skill: expect.objectContaining({ id: "quire-short-writing" }) }),
           expect.objectContaining({ skill: expect.objectContaining({ id: "evidence-tone" }) }),
         ]),
       }),
@@ -4638,7 +4643,7 @@ describe("createStudioServer daemon lifecycle", () => {
             tool: "play_start",
             status: "completed",
             result: "暴雨敲着铁皮门，封存档案箱压在门口。",
-            details: expect.objectContaining({ skillIds: ["inkos-play-world"] }),
+            details: expect.objectContaining({ skillIds: ["quire-play-world"] }),
           }),
         ],
       },

@@ -1,5 +1,5 @@
 ---
-name: inkos-storyboard
+name: quire-storyboard
 description: 剧本与叙事文本到可拍、可画、可生图分镜的视觉拆解方法。Used for storyboard and image-prompt production.
 ---
 # Storyboard creation
