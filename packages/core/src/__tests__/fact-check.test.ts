@@ -21,7 +21,7 @@ describe("factCheck", () => {
       where: "p14",
       ask: ask(
         { claims: [{ claim: "312 households", cited_source: "" }] },
-        { verdict: "contradicted", note: "the survey says 213", sources: ["https://example.com/k"] },
+        { verdicts: [{ n: 1, verdict: "contradicted", note: "the survey says 213", sources: ["https://example.com/k"] }] },
       ),
       sources: [source([hit])],
     });
@@ -40,7 +40,7 @@ describe("factCheck", () => {
     const result = await factCheck({
       text: "A figure.",
       where: "p14",
-      ask: ask({ claims: [{ claim: "6,393 kolams" }] }, { verdict: "unsupported", note: "not in any result" }),
+      ask: ask({ claims: [{ claim: "6,393 kolams" }] }, { verdicts: [{ n: 1, verdict: "unsupported", note: "not in any result" }] }),
       sources: [source([hit])],
     });
     expect(isProblem(result.findings[0]!)).toBe(true);
@@ -82,10 +82,47 @@ describe("factCheck", () => {
     const result = await factCheck({
       text: "A figure.",
       where: "p1",
-      ask: ask({ claims: [{ claim: "x" }] }, { verdict: "definitely true" }),
+      ask: ask({ claims: [{ claim: "x" }] }, { verdicts: [{ n: 1, verdict: "definitely true" }] }),
       sources: [source([hit])],
     });
     expect(result.findings[0]!.verdict).toBe("unverifiable");
+  });
+
+  // One call judges the whole passage, so a model that drops an entry would
+  // shift every verdict after it onto the wrong claim — silently, and in the
+  // direction of a false verdict. The stated index is what binds them.
+  it("keeps verdicts on their own claims when the model returns them out of order", async () => {
+    const result = await factCheck({
+      text: "three things",
+      where: "p7",
+      ask: ask(
+        { claims: [{ claim: "first" }, { claim: "second" }, { claim: "third" }] },
+        { verdicts: [
+          { n: 3, verdict: "contradicted", note: "third is wrong" },
+          { n: 1, verdict: "supported", note: "first is fine" },
+          { n: 2, verdict: "unsupported", note: "second is thin" },
+        ] },
+      ),
+      sources: [source([hit])],
+    });
+    expect(result.findings.map((f) => [f.claim, f.verdict])).toEqual([
+      ["first", "supported"],
+      ["second", "unsupported"],
+      ["third", "contradicted"],
+    ]);
+  });
+
+  it("does not invent a verdict for a claim the model skipped", async () => {
+    const result = await factCheck({
+      text: "two things",
+      where: "p8",
+      ask: ask(
+        { claims: [{ claim: "first" }, { claim: "second" }] },
+        { verdicts: [{ n: 1, verdict: "supported", note: "fine" }] },
+      ),
+      sources: [source([hit])],
+    });
+    expect(result.findings[1]).toMatchObject({ claim: "second", verdict: "unverifiable" });
   });
 
   it("honours the claim limit", async () => {
@@ -93,7 +130,7 @@ describe("factCheck", () => {
     const result = await factCheck({
       text: "many",
       where: "p1",
-      ask: ask({ claims }, { verdict: "supported" }),
+      ask: ask({ claims }, { verdicts: claims.map((_, i) => ({ n: i + 1, verdict: "supported" })) }),
       sources: [source([hit])],
       limit: 3,
     });

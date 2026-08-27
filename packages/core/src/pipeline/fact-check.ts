@@ -66,17 +66,11 @@ Reply as JSON only:
 {"claims": [{"claim": "the statement, quoted as written", "cited_source": "the URL or source it cites, or empty"}]}
 `.trim();
 
-const VERIFY = (claim: CheckableClaim, evidence: string) => `
-A piece of writing states:
+const VERIFY = (blocks: ReadonlyArray<{ claim: CheckableClaim; evidence: string }>) => `
+Below are statements from a piece of writing, each with what a web search
+returned for it. Judge every one of them.
 
-  "${claim.claim}"
-${claim.citedSource ? `\nIt cites: ${claim.citedSource}` : "\nIt cites nothing."}
-
-Here is what a web search returned for it:
-
-${evidence}
-
-Decide, using only the evidence above:
+Decide, using only the evidence given for that statement:
 - "supported"     — the evidence says this, or says something close enough that
                     the statement is fair.
 - "contradicted"  — the evidence says something different. This is the serious one.
@@ -85,13 +79,51 @@ Decide, using only the evidence above:
 - "unverifiable"  — the statement is not the kind of thing a search can settle.
 
 Do not use your own recollection. If the evidence is silent, the answer is
-"unsupported", not "supported".
+"unsupported", not "supported". Judge each statement only against its own
+evidence block.
 
-Reply as JSON only:
-{"verdict": "supported|contradicted|unsupported|unverifiable",
- "note": "one sentence saying why, naming the number or name that differs if one does",
- "sources": ["the urls from the evidence that decided it"]}
+${blocks.map(({ claim, evidence }, i) => `
+--- STATEMENT ${i + 1} ---
+"${claim.claim}"
+${claim.citedSource ? `It cites: ${claim.citedSource}` : "It cites nothing."}
+
+EVIDENCE FOR STATEMENT ${i + 1}:
+${evidence}
+`).join("\n")}
+
+Reply as JSON only, one entry per statement, in the same order:
+{"verdicts": [{"n": 1,
+               "verdict": "supported|contradicted|unsupported|unverifiable",
+               "note": "one sentence saying why, naming the number or name that differs if one does",
+               "sources": ["the urls from the evidence that decided it"]}]}
 `.trim();
+
+const VERDICTS = ["supported", "unsupported", "contradicted", "unverifiable"] as const;
+
+function readVerdict(value: unknown): Verdict {
+  const v = String(value ?? "");
+  return (VERDICTS as ReadonlyArray<string>).includes(v) ? v as Verdict : "unverifiable";
+}
+
+/**
+ * Run promises a few at a time.
+ *
+ * Every claim needs its own search and they do not depend on each other, so
+ * running them one after another spent the whole stage waiting. Bounded rather
+ * than unbounded: a page can carry a dozen claims and firing a dozen
+ * simultaneous searches at a rate-limited API is how a key gets throttled.
+ */
+async function inBatches<T, R>(
+  items: ReadonlyArray<T>,
+  size: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...await Promise.all(items.slice(i, i + size).map(run)));
+  }
+  return out;
+}
 
 /**
  * Check one passage.
@@ -129,13 +161,20 @@ export async function factCheck(args: {
   }
   args.onProgress?.(`${args.where}: checking ${claims.length} claims`);
 
-  const findings: FactFinding[] = [];
   const searchedWith = new Set<string>();
 
-  for (const claim of claims) {
-    const sweep = await searchAllSources(args.sources, claim.claim, RESULTS_PER_SOURCE);
-    for (const id of sweep.answered) searchedWith.add(id);
+  // Search every claim first, several at a time. These do not depend on each
+  // other and running them in sequence was most of the stage's wall time.
+  const sweeps = await inBatches(claims, 4, async (claim) => ({
+    claim,
+    sweep: await searchAllSources(args.sources, claim.claim, RESULTS_PER_SOURCE),
+  }));
 
+  const findings: FactFinding[] = [];
+  const toJudge: Array<{ claim: CheckableClaim; evidence: string }> = [];
+
+  for (const { claim, sweep } of sweeps) {
+    for (const id of sweep.answered) searchedWith.add(id);
     if (sweep.results.length === 0) {
       // The search failing is not the writing being wrong, and saying so would
       // send the user to rewrite a page that may well be correct.
@@ -148,20 +187,31 @@ export async function factCheck(args: {
       });
       continue;
     }
+    toJudge.push({
+      claim,
+      evidence: sweep.results
+        .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
+        .join("\n\n"),
+    });
+  }
 
-    const evidence = sweep.results
-      .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
-      .join("\n\n");
-    const answer = await args.ask(VERIFY(claim, evidence), `factcheck:verify:${claim.where}`);
-    const verdict = String(answer.verdict ?? "unverifiable") as Verdict;
-    findings.push({
-      where: claim.where,
-      claim: claim.claim,
-      verdict: (["supported", "unsupported", "contradicted", "unverifiable"] as string[]).includes(verdict)
-        ? verdict
-        : "unverifiable",
-      note: String(answer.note ?? ""),
-      sources: Array.isArray(answer.sources) ? answer.sources.map(String) : [],
+  if (toJudge.length) {
+    // One call for the passage, not one per claim. Per-claim cost about thirty
+    // seconds each, which put a sixteen-page issue out of reach entirely.
+    const answer = await args.ask(VERIFY(toJudge), `factcheck:verify:${args.where}`);
+    const rows = (answer.verdicts ?? []) as Array<Record<string, unknown>>;
+    toJudge.forEach(({ claim }, i) => {
+      // Match on the stated index where the model gave one, because a model
+      // that drops an entry would otherwise shift every verdict after it onto
+      // the wrong claim — silently, and in the direction of a false verdict.
+      const row = rows.find((r) => Number(r.n) === i + 1) ?? rows[i] ?? {};
+      findings.push({
+        where: claim.where,
+        claim: claim.claim,
+        verdict: readVerdict(row.verdict),
+        note: String(row.note ?? ""),
+        sources: Array.isArray(row.sources) ? row.sources.map(String) : [],
+      });
     });
   }
 
