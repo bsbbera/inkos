@@ -2842,6 +2842,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     };
   }
 
+  // Who is answering on this port.
+  //
+  // The desktop shell treats an open Studio port as "already running, reuse
+  // it". A Studio left behind by an older install holds the same port, so an
+  // updated app reused the old code and looked as though the update had done
+  // nothing. It asks here first: a build that is not this one gets replaced
+  // rather than reused. An older Studio has no such route and 404s, which is
+  // the same answer.
+  app.get("/api/v1/build", (c) =>
+    c.json({ build: process.env.QUIRE_BUILD ?? null, pid: process.pid }));
+
   // --- Books ---
 
   app.get("/api/v1/books", async (c) => {

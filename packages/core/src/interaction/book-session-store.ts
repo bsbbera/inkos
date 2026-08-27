@@ -134,6 +134,27 @@ export interface BookSessionSummary {
   readonly updatedAt: number;
 }
 
+/**
+ * A session the pipeline opened for itself, rather than one a person is having.
+ *
+ * Every stage of a publication run asks the model through its own session so
+ * the call has a transcript and the tools have somewhere to live —
+ * `publication--<issue>--audit-3`, `--revise-7`, `--factcheck-verify-p14`, one
+ * per call. They were all `sessionKind: "publication"`, the same kind a real
+ * publication chat uses, so the sidebar could not tell them apart and listed
+ * every one: a single issue left forty-three rows reading "Below are
+ * statements…" and "You are the editor a…" where the user's own conversations
+ * should be.
+ *
+ * Matched on the id rather than the kind because the id is the only thing that
+ * differs, and `publicationSessionId` is the sole producer of this shape. The
+ * transcripts stay on disk — they are how a failed stage is diagnosed — they
+ * are simply not conversations, so they are not listed as conversations.
+ */
+export function isPipelineSessionId(sessionId: string): boolean {
+  return sessionId.startsWith("publication--");
+}
+
 export async function listBookSessions(
   projectRoot: string,
   bookId: string | null,
@@ -153,6 +174,10 @@ export async function listBookSessions(
     } else if (file.endsWith(".json")) {
       sessionIds.add(file.slice(0, -".json".length));
     }
+  }
+
+  for (const id of sessionIds) {
+    if (isPipelineSessionId(id)) sessionIds.delete(id);
   }
 
   const summaries = await Promise.all(

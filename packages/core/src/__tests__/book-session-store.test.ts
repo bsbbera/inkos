@@ -11,6 +11,7 @@ import {
   migrateBookSession,
   createAndPersistBookSession,
   extractFirstUserMessageTitle,
+  isPipelineSessionId,
   SessionAlreadyMigratedError,
 } from "../interaction/book-session-store.js";
 import { createBookSession, appendBookSessionMessage } from "../interaction/session.js";
@@ -153,6 +154,24 @@ describe("book-session-store", () => {
       await expect(readFile(join(tempDir, ".inkos", "sessions", "123456-abcdef.json"), "utf-8"))
         .rejects
         .toThrow();
+    });
+
+    // Every stage of a publication run opens its own session so the call has a
+    // transcript. They carry sessionKind "publication", the same as a real
+    // publication chat, so one issue put forty-three rows reading "Below are
+    // statements..." into the sidebar where the user's conversations belong.
+    it("does not list the sessions a publication run opened for itself", async () => {
+      await createAndPersistBookSession(tempDir, null, "123456-mychat", "publication");
+      await createAndPersistBookSession(tempDir, null, "publication--kolam--audit-3", "publication");
+      await createAndPersistBookSession(tempDir, null, "publication--kolam--factcheck-verify-p14", "publication");
+
+      const list = await listBookSessions(tempDir, null);
+      expect(list.map((item) => item.sessionId)).toEqual(["123456-mychat"]);
+    });
+
+    it("knows a pipeline session id from a person's", () => {
+      expect(isPipelineSessionId("publication--kolam--audit-3")).toBe(true);
+      expect(isPipelineSessionId("1787827060370-jpj4no")).toBe(false);
     });
 
     it("persists and restores playMode for play sessions", async () => {
