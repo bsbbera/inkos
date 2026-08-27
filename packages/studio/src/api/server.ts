@@ -89,6 +89,7 @@ import {
   createScriptCreationTool,
   createShortFictionRunTool,
   createPublicationCreateTool,
+  PRODUCTIONS,
   createStoryboardCreationTool,
   createTranslationCreateTool,
   createFanficBookTool,
@@ -491,9 +492,33 @@ function normalizeProjectGeneratedPath(root: string, rawPath: string, code: stri
     throw new ApiError(400, code, "Invalid project artifact path");
   }
 
-  const allowedRoots = ["dramas/", "storyboards/", "interactive-films/", "shorts/", "covers/"];
-  if (!allowedRoots.some((prefix) => relPath.startsWith(prefix))) {
+  // Where productions write, asked rather than restated. This was a fifth
+  // hand-kept copy of that list and it was missing books, publications, worlds
+  // and translations — so a magazine page could be audited and then not opened,
+  // which is most of what the audit screen is for.
+  const allowedRoots = [
+    ...PRODUCTIONS.map((production) => `${production.outDir}/`),
+    // Not a production of its own; cover art belongs to whatever made it.
+    "covers/",
+  ];
+  if (!allowedRoots.some((prefix) => relPath.toLowerCase().startsWith(prefix.toLowerCase()))) {
     throw new ApiError(400, code, "Only generated writing artifacts can be opened");
+  }
+
+  // Control documents are not generated writing, and they have their own route
+  // with its own rules — a legacy shim refuses to be written there, and that
+  // refusal is the point. Reaching them through this route would go around it.
+  // This is why `books/` was excluded wholesale before; the exclusion also took
+  // every chapter with it, which is what the audit screen actually wants.
+  const segments = relPath.split(/[\/]+/u);
+  const name = segments[segments.length - 1]?.toLowerCase() ?? "";
+  const CONTROL_DOCUMENTS = new Set([
+    "story_bible.md", "book_rules.md", "story_frame.md", "volume_map.md",
+    "author_intent.md", "current_focus.md", "series_rules.md", "house_style.md",
+    "volume_outline.md", "fanfic_canon.md",
+  ]);
+  if (CONTROL_DOCUMENTS.has(name) || segments.includes("truth")) {
+    throw new ApiError(400, code, "Control documents are edited through their own endpoint");
   }
 
   const resolved = resolve(root, relPath);

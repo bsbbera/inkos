@@ -2548,8 +2548,24 @@ describe("createStudioServer daemon lifecycle", () => {
     const unsupported = await app.request("http://localhost/api/v1/project/artifacts/interactive-films/demo/cover.png");
     expect(unsupported.status).toBe(415);
 
-    const unsupportedRoot = await app.request("http://localhost/api/v1/project/artifacts/books/demo/story_bible.md");
+    // A control document has its own endpoint with its own rules — a legacy
+    // shim refuses to be written there — so it must not be reachable here.
+    const controlDoc = await app.request("http://localhost/api/v1/project/artifacts/books/demo/story_bible.md");
+    expect(controlDoc.status).toBe(400);
+    const truthDir = await app.request("http://localhost/api/v1/project/artifacts/books/demo/truth/roles.md");
+    expect(truthDir.status).toBe(400);
+
+    // A directory no production writes to stays closed.
+    const unsupportedRoot = await app.request("http://localhost/api/v1/project/artifacts/radar/demo/notes.md");
     expect(unsupportedRoot.status).toBe(400);
+
+    // A magazine page is generated writing and the audit screen must open it.
+    // The old allowlist named five directories and this was not one of them, so
+    // a page could be audited and then not read.
+    await mkdir(join(root, "Magazine", "issues", "demo", "pages"), { recursive: true });
+    await writeFile(join(root, "Magazine", "issues", "demo", "pages", "01-cover.md"), "# Cover\n", "utf-8");
+    const page = await app.request("http://localhost/api/v1/project/artifacts/Magazine/issues/demo/pages/01-cover.md");
+    expect(page.status).toBe(200);
 
     const traversal = await app.request("http://localhost/api/v1/project/artifacts/interactive-films/%2e%2e/inkos.json");
     expect([400, 404]).toContain(traversal.status);
