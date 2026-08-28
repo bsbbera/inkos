@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useApi } from "../hooks/use-api";
 import type { SSEMessage } from "../hooks/use-sse";
 import { applyBookCollectionEvent, shouldRefetchBookCollections, shouldRefetchDaemonStatus } from "../hooks/use-book-activity";
+import { useResizable } from "../hooks/use-resizable";
 import type { TFunction } from "../hooks/use-i18n";
 import { tr } from "../lib/app-language";
 import { setProjectChatSessionId } from "../pages/chat-page-state";
@@ -356,8 +357,29 @@ export function Sidebar({ nav, activePage, sse, t }: {
     setDeleteTarget(null);
   };
 
+  // 260px was hardcoded, which left no room for a long book title next to the
+  // nav. The max stops short of half the window so the sidebar can never bury
+  // the work.
+  const { width, gripProps } = useResizable({
+    key: "quire-studio-sidebar",
+    initial: 260,
+    min: 180,
+    max: 480,
+    side: "end",
+  });
+
   return (
-    <aside className="w-[260px] shrink-0 border-r border-border bg-background/80 backdrop-blur-md flex flex-col h-full overflow-hidden select-none">
+    <aside
+      className="relative shrink-0 border-r border-border bg-background/80 backdrop-blur-md flex flex-col h-full overflow-hidden select-none"
+      style={{ width }}
+    >
+      <div
+        {...gripProps}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={tr("调整侧栏宽度", "Resize sidebar")}
+        className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none hover:bg-primary/20 active:bg-primary/30 transition-colors"
+      />
       {/* Logo Area */}
       <div className="px-6 py-8">
         <button

@@ -29,6 +29,7 @@ const FilmWizard = lazy(() => import("./pages/FilmWizard"));
 import { LanguageSelector } from "./pages/LanguageSelector";
 import { BookSidebar, BookSidebarToggle } from "./components/chat/BookSidebar";
 import { useSSE } from "./hooks/use-sse";
+import { ProgressPanel } from "./components/ProgressPanel";
 import { useSessionEvents } from "./hooks/use-session-events";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
@@ -427,6 +428,11 @@ export function App() {
           )}
         </main>
       </div>
+
+      {/* Floating run status. Was injected by cli-shim/studio-patch/patch.js
+          against the rendered DOM; it is a component now and shares App's one
+          SSE stream instead of opening a second EventSource. */}
+      <ProgressPanel sse={sse} />
     </div>
   );
 }

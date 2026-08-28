@@ -1,8 +1,21 @@
 /*
-  Quire Studio — Atmospheric Literary Workbench
-  Fonts: Instrument Serif (Headings/Literary), DM Sans (UI), JetBrains Mono (Data)
+  Quire Studio — Aurora
+
+  Deep polar night as the ground, one luminous aurora band as the only source
+  of colour. The hue does the talking, so surfaces stay near-neutral and the
+  accent is a cold cyan-teal rather than the usual product amber. Violet and
+  green appear only in the backdrop wash, never on a control.
+
+  This is the product's design system, mirrored in desktop/ui/app.css. It used
+  to live in cli-shim/studio-patch/patch.css and override these tokens at
+  runtime, so the app shipped two palettes and painted the second one over the
+  first after every load.
 */
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Geist ships in node_modules and is bundled by Vite. The Google Fonts CDN
+   was the only remote request this app made, and a desktop app that is offline
+   — or behind a network that blocks the CDN — fell back to system-ui with no
+   warning, which is why the type never looked the same twice. */
+@import "@fontsource-variable/geist";
 
 @import "tailwindcss";
 
@@ -39,9 +52,9 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  --font-serif: 'Instrument Serif', Georgia, serif;
-  --font-sans: 'DM Sans', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-sans: "Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
 
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
@@ -51,95 +64,95 @@
   --shadow-3d-hover: 0 20px 40px -15px oklch(0 0 0 / 0.2), 0 8px 16px -8px oklch(0 0 0 / 0.15);
 }
 
-/* ── Light Mode: Warm Parchment & Ink ── */
+/* ── Light Mode: Aurora on paper ──
+   Near-neutral surfaces so the one cyan-teal accent carries all the colour. */
 :root {
-  --radius: 0.6rem;
+  --radius: 0.75rem;
 
-  /* Background: Warm, aged paper with subtle radial light */
-  --background: oklch(0.985 0.005 80);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.995 0.002 85) 0%, oklch(0.985 0.005 80) 100%);
-  --foreground: oklch(0.13 0.02 60);
+  /* The aurora band itself. Backdrop wash only — never on a control. */
+  --aurora-1: oklch(72% .13 195);   /* cyan-teal   */
+  --aurora-2: oklch(70% .14 155);   /* polar green */
+  --aurora-3: oklch(66% .13 295);   /* dusk violet */
 
-  /* Cards: Crisp sheets on paper */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.015 60);
+  --background: oklch(98% .006 230);
+  --background-radial:
+    radial-gradient(70rem 34rem at 12% -8%,  oklch(72% .13 195 / .16) 0%, transparent 62%),
+    radial-gradient(58rem 30rem at 88% -4%,  oklch(66% .13 295 / .13) 0%, transparent 60%),
+    radial-gradient(46rem 26rem at 52% 108%, oklch(70% .14 155 / .10) 0%, transparent 64%);
+  --foreground: oklch(22% .02 250);
 
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.015 60);
+  --card: oklch(100% 0 0);
+  --card-foreground: oklch(22% .02 250);
 
-  /* Primary: Deep Oxblood / Ink */
-  --primary: oklch(0.45 0.12 25);
-  --primary-foreground: oklch(0.98 0.006 76);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(22% .02 250);
 
-  /* Secondary: Soft paper shadow */
-  --secondary: oklch(0.94 0.01 76);
-  --secondary-foreground: oklch(0.25 0.015 60);
+  --primary: oklch(52% .11 205);
+  --primary-foreground: oklch(99% .01 205);
 
-  /* Muted: Faded ink */
-  --muted: oklch(0.94 0.008 76);
-  --muted-foreground: oklch(0.38 0.02 60);
+  --secondary: oklch(94% .012 225);
+  --secondary-foreground: oklch(30% .02 250);
 
-  /* Accent: Subtle gold leaf */
-  --accent: oklch(0.92 0.02 85);
-  --accent-foreground: oklch(0.25 0.05 60);
+  --muted: oklch(94% .012 225);
+  --muted-foreground: oklch(47% .015 240);
 
-  --destructive: oklch(0.55 0.18 25);
-  --destructive-foreground: oklch(0.98 0 0);
+  --accent: oklch(93% .035 200);
+  --accent-foreground: oklch(34% .07 205);
+
+  --destructive: oklch(56% .19 25);
+  --destructive-foreground: oklch(99% 0 0);
 
   /*
     Severity has three steps, not one. Failure had --destructive and the other
     two had nothing, so every screen reached for text-emerald-500 and
     text-amber-500 — raw palette that does not move with the theme, and amber
-    on the parchment card measures about 1.9:1. These are picked dark enough to
-    clear AA on --card in this mode and light enough to clear it on obsidian.
+    on a light card measures about 1.9:1. These are picked dark enough to clear
+    AA on --card in this mode and light enough to clear it on polar night.
   */
-  --success: oklch(0.48 0.13 155);
-  --warning: oklch(0.50 0.13 70);
+  --success: oklch(52% .12 160);
+  --warning: oklch(50% .13 70);
 
-  --border: oklch(0.84 0.01 76);
-  --input: oklch(0.92 0.005 76);
-  --ring: oklch(0.45 0.12 25);
+  --border: oklch(90% .012 230);
+  --input: oklch(93% .012 230);
+  --ring: oklch(52% .11 205);
 }
 
-/* ── Dark Mode: Obsidian & Candlelight ── */
+/* ── Dark Mode: Polar night ── */
 .dark {
-  /* Background: Deep obsidian with soft top glow */
-  --background: oklch(0.12 0.01 250);
-  --background-radial: radial-gradient(circle at 50% 0%, oklch(0.16 0.015 250) 0%, oklch(0.12 0.01 250) 100%);
-  --foreground: oklch(0.97 0.005 250);
+  --background: oklch(17% .022 265);
+  --background-radial:
+    radial-gradient(72rem 36rem at 10% -10%, oklch(72% .13 195 / .20) 0%, transparent 60%),
+    radial-gradient(60rem 32rem at 90% -6%,  oklch(66% .13 295 / .17) 0%, transparent 58%),
+    radial-gradient(48rem 28rem at 50% 110%, oklch(70% .14 155 / .12) 0%, transparent 62%);
+  --foreground: oklch(95% .008 230);
 
-  /* Cards: Floating graphite */
-  --card: oklch(0.18 0.015 250);
-  --card-foreground: oklch(0.95 0.005 250);
+  --card: oklch(21% .024 265);
+  --card-foreground: oklch(95% .008 230);
 
-  --popover: oklch(0.18 0.015 250);
-  --popover-foreground: oklch(0.95 0.005 250);
+  --popover: oklch(21% .024 265);
+  --popover-foreground: oklch(95% .008 230);
 
-  /* Primary: Warm Amber / Candlelight */
-  --primary: oklch(0.78 0.14 85);
-  --primary-foreground: oklch(0.12 0.01 250);
+  --primary: oklch(82% .13 195);
+  --primary-foreground: oklch(19% .03 220);
 
-  /* Secondary: Dark slate */
-  --secondary: oklch(0.22 0.02 250);
-  --secondary-foreground: oklch(0.92 0.005 250);
+  --secondary: oklch(25% .026 265);
+  --secondary-foreground: oklch(93% .008 230);
 
-  /* Muted: Dimmed graphite */
-  --muted: oklch(0.22 0.015 250);
-  --muted-foreground: oklch(0.78 0.005 250);
+  --muted: oklch(25% .026 265);
+  --muted-foreground: oklch(73% .014 235);
 
-  /* Accent: Muted gold */
-  --accent: oklch(0.28 0.04 85);
-  --accent-foreground: oklch(0.95 0.06 85);
+  --accent: oklch(30% .05 200);
+  --accent-foreground: oklch(90% .09 195);
 
-  --destructive: oklch(0.55 0.2 25);
-  --destructive-foreground: oklch(0.98 0 0);
+  --destructive: oklch(62% .18 25);
+  --destructive-foreground: oklch(98% 0 0);
 
-  --success: oklch(0.78 0.15 155);
-  --warning: oklch(0.82 0.13 85);
+  --success: oklch(72% .11 160);
+  --warning: oklch(82% .13 85);
 
-  --border: oklch(0.30 0.02 250);
-  --input: oklch(0.25 0.02 250);
-  --ring: oklch(0.78 0.14 85);
+  --border: oklch(31% .028 265);
+  --input: oklch(27% .026 265);
+  --ring: oklch(82% .13 195);
 }
 
 body {
@@ -149,11 +162,20 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--background-radial);
-  background-attachment: fixed;
+  background: var(--background);
   color: var(--foreground);
   transition: background 0.5s ease, color 0.5s ease;
 }
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--background-radial);
+}
+body > * { position: relative; z-index: 1; }
 
 /* ── UI readability scale ──
    Studio uses many Tailwind small-text utilities for dense panels. Raise the
