@@ -86,10 +86,22 @@
   --aurora-3: oklch(66% .13 295);   /* dusk violet */
 
   --background: oklch(98% .006 230);
+  /*
+    The aurora has to have a shape. At .16 alpha over a 70rem radius it was an
+    even film across the whole window - about a 3% lightness delta, under the
+    threshold of perception, and painted under a 3.5% noise overlay besides. A
+    gradient that covers everything evenly is not a gradient, it is a tint.
+
+    So: tighter radii, so the falloff happens inside a real window rather than
+    past its edge; and enough alpha to read. The band is anchored to the top
+    corners, where the app keeps its chrome, and is spent before it reaches the
+    column the work sits in. Cards stay opaque, so nothing here is ever behind
+    body copy.
+  */
   --background-radial:
-    radial-gradient(70rem 34rem at 12% -8%,  oklch(72% .13 195 / .16) 0%, transparent 62%),
-    radial-gradient(58rem 30rem at 88% -4%,  oklch(66% .13 295 / .13) 0%, transparent 60%),
-    radial-gradient(46rem 26rem at 52% 108%, oklch(70% .14 155 / .10) 0%, transparent 64%);
+    radial-gradient(52rem 30rem at 8% -6%,   oklch(72% .13 195 / .40) 0%, transparent 66%),
+    radial-gradient(44rem 26rem at 92% -4%,  oklch(66% .13 295 / .34) 0%, transparent 64%),
+    radial-gradient(40rem 24rem at 50% 106%, oklch(70% .14 155 / .20) 0%, transparent 66%);
   --foreground: oklch(22% .02 250);
 
   --card: oklch(100% 0 0);
@@ -131,10 +143,12 @@
 /* ── Dark Mode: Polar night ── */
 .dark {
   --background: oklch(17% .022 265);
+  /* Lower alpha than the light mode: these hues are far lighter than the
+     ground here, so the same number lifts the corner much further. */
   --background-radial:
-    radial-gradient(72rem 36rem at 10% -10%, oklch(72% .13 195 / .20) 0%, transparent 60%),
-    radial-gradient(60rem 32rem at 90% -6%,  oklch(66% .13 295 / .17) 0%, transparent 58%),
-    radial-gradient(48rem 28rem at 50% 110%, oklch(70% .14 155 / .12) 0%, transparent 62%);
+    radial-gradient(52rem 30rem at 8% -8%,   oklch(72% .13 195 / .28) 0%, transparent 66%),
+    radial-gradient(44rem 26rem at 92% -6%,  oklch(66% .13 295 / .24) 0%, transparent 64%),
+    radial-gradient(40rem 24rem at 50% 108%, oklch(70% .14 155 / .16) 0%, transparent 66%);
   --foreground: oklch(95% .008 230);
 
   --card: oklch(21% .024 265);
@@ -388,12 +402,6 @@ h3 { font-size: 1.25rem; }
 .chat-typing-dot { animation: typingWave 1.4s ease-in-out infinite; }
 .chat-typing-dot:nth-child(2) { animation-delay: 0.15s; }
 .chat-typing-dot:nth-child(3) { animation-delay: 0.3s; }
-
-/* Panel slide transition */
-.chat-panel-enter {
-  transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1),
-              opacity 200ms ease-out;
-}
 
 /* Routes arrive rather than snapping in. Keyed on the route in App, so this
    replays on every navigation and not just the first paint. */

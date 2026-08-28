@@ -61,6 +61,26 @@ export function useTheme() {
     return () => clearInterval(timer);
   }, []);
 
+  /*
+   * Tell the shell.
+   *
+   * Studio runs in a cross-origin iframe inside desktop/ui, so the two cannot
+   * share this storage key or read each other's DOM. Without a message the
+   * shell keeps its own separate theme and its own separate toggle, which is
+   * how the settings drawer ended up dark over a light workbench.
+   *
+   * Studio owns the preference; the shell only follows. Sent on mount as well
+   * as on change, so a shell that loaded first still catches up.
+   */
+  useEffect(() => {
+    if (window.parent === window) return;
+    try {
+      window.parent.postMessage({ type: "quire:theme", theme }, "*");
+    } catch {
+      // A shell that will not accept the message is not a reason to fail here.
+    }
+  }, [theme]);
+
   const setTheme = (nextTheme: Theme) => {
     const storage = getThemeStorage();
     try {
