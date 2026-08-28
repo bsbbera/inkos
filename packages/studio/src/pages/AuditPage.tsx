@@ -170,6 +170,14 @@ const say = (map: Record<string, string>, key: string) =>
 
 const SELECTED = "bg-primary/10 text-primary";
 
+/**
+ * A pass that has already run on the open file.
+ *
+ * Quiet, and unmistakably not the same button it was a minute ago: the point is
+ * that a finished check should not look identical to one nobody has clicked.
+ */
+const DONE = "bg-success/10 text-success border border-success/30";
+
 const artifact = (path: string) =>
   `/api/v1/project/artifacts/${path.split("/").map(encodeURIComponent).join("/")}`;
 
@@ -260,6 +268,14 @@ export function AuditPage({
   const [progress, setProgress] = useState<string | null>(null);
   /** The long-running thing, if there is one, and when it started. */
   const [inflight, setInflight] = useState<{ key: string; label: string; at: number } | null>(null);
+  /**
+   * The pass that last finished on the open file.
+   *
+   * Three buttons sat identical before a run and identical after it, so a
+   * finished check looked exactly like one that had never been clicked and the
+   * only way to tell was to remember.
+   */
+  const [ran, setRan] = useState<{ mode: string; findings: number } | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => { remembered.shutKinds = shutKinds; }, [shutKinds]);
@@ -393,6 +409,7 @@ export function AuditPage({
     setDetail(null);
     setFile(null);
     setAudit(null);
+    setRan(null);
     setScope("project");
     setText("");
     setSaved("");
@@ -406,6 +423,7 @@ export function AuditPage({
   const openFile = useCallback(async (item: Item) => {
     setFile(item);
     setAudit(null);
+    setRan(null);
     setScope("project");
     setLoadingText(true);
     setLoadFailed(false);
@@ -504,6 +522,7 @@ export function AuditPage({
   const run = async (mode: "report" | "revise" | "deslop") => {
     if (!file || loadFailed) return;
     setBusy(mode);
+    setRan(null);
     clearError();
     setInflight({ key: mode, label: RUN_LABEL[mode] ?? mode, at: Date.now() });
     try {
@@ -523,6 +542,7 @@ export function AuditPage({
         return;
       }
       setAudit(body.audit ?? null);
+      setRan({ mode, findings: body.audit?.findings?.length ?? 0 });
       setScope("file");
       // A revise pass rewrites the file, so the editor beside it is now stale —
       // and the project listing is too, because the pass has just left a
@@ -567,6 +587,7 @@ export function AuditPage({
       setText(body.content ?? "");
       setSaved(body.content ?? "");
       setAudit(null);
+      setRan(null);
       setNote("The text from before the rewrite is back.");
     } catch (e) {
       fail(e, () => void restore());
@@ -792,7 +813,19 @@ export function AuditPage({
               * this screen, so a pass that took four minutes announced its
               * start, its progress, its finish and its failure to nobody.
               */}
-            <div role="status" aria-live="polite" className="space-y-2 empty:hidden">
+            {/*
+              * Sticky, because it was not.
+              *
+              * This column scrolls, and a pass that runs for minutes reported
+              * itself at the top of it — so the moment the reader scrolled down
+              * to the findings, the only proof the pass was alive scrolled away
+              * with it, and the screen looked exactly as idle as before.
+              */}
+            <div
+              role="status"
+              aria-live="polite"
+              className="sticky top-0 z-20 -mx-1 px-1 py-1 space-y-2 empty:hidden bg-background/85 backdrop-blur-sm"
+            >
               {inflight ? (
                 <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 text-sm ${c.cardStatic}`}>
                   <Loader2 size={16} className="animate-spin text-primary shrink-0" />
@@ -933,9 +966,15 @@ export function AuditPage({
                     <button
                       disabled={runBusy || loadFailed}
                       onClick={() => guarded(() => void run("report"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
+                        ran?.mode === "report" ? DONE : c.btnPrimary
+                      }`}
                     >
-                      {busy === "report" ? "Checking…" : "Check it — change nothing"}
+                      {busy === "report"
+                        ? "Checking…"
+                        : ran?.mode === "report"
+                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Checked</>
+                          : "Check it — change nothing"}
                     </button>
                     {/*
                       * These two write over the manuscript on disk, and they
@@ -946,16 +985,28 @@ export function AuditPage({
                     <button
                       disabled={runBusy || loadFailed}
                       onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnDanger}`}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
+                        ran?.mode === "revise" ? DONE : c.btnDanger
+                      }`}
                     >
-                      {busy === "revise" ? "Rewriting…" : "Check and rewrite"}
+                      {busy === "revise"
+                        ? "Rewriting…"
+                        : ran?.mode === "revise"
+                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Rewritten</>
+                          : "Check and rewrite"}
                     </button>
                     <button
                       disabled={runBusy || loadFailed}
                       onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnDanger}`}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
+                        ran?.mode === "deslop" ? DONE : c.btnDanger
+                      }`}
                     >
-                      {busy === "deslop" ? "Rewriting…" : "Remove AI phrasing"}
+                      {busy === "deslop"
+                        ? "Rewriting…"
+                        : ran?.mode === "deslop"
+                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Cleaned</>
+                          : "Remove AI phrasing"}
                     </button>
                     {file.backup ? (
                       <button

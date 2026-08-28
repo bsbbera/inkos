@@ -42,7 +42,20 @@ export function ConfirmDialog({
   return createPortal(
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in"
+      /*
+        The offsets are inline rather than utilities, and the overlay no longer
+        carries `fade-in`.
+
+        A confirmation that asks before rewriting someone's manuscript was
+        appearing at the bottom of the page, under everything, reachable only by
+        scrolling — a dialog nobody sees is not a dialog. Whatever was defeating
+        `fixed inset-0` there (an animation on the overlay, a utility losing to
+        a later rule), an inline `position: fixed` with all four offsets set
+        cannot be overridden by a stylesheet, so this stops depending on the
+        cascade to be centred. The card keeps its own entrance animation.
+      */
+      style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0, zIndex: 200 }}
+      className="flex items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
       role="dialog"
       aria-modal="true"
