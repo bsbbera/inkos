@@ -56,6 +56,17 @@
   --font-sans: "Geist Variable", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
 
+  /* ── Motion budget ──
+     Three durations, one easing. 120ms is hover and press - fast enough that
+     it reads as the control responding rather than as an animation. 240ms is
+     anything that moves layout: a panel, a route. 480ms is reserved for the
+     one or two moments that are meant to be noticed. Anything outside this
+     set is a bug, not a decision. */
+  --ease-out-quart: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 120ms;
+  --dur-med: 240ms;
+  --dur-slow: 480ms;
+
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
@@ -162,20 +173,15 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: var(--background);
+  /* Gradient layered over the solid ground, not instead of it: the aurora
+     stops are all partly transparent, so they need something behind them. */
+  background: var(--background-radial), var(--background);
+  background-attachment: fixed;
   color: var(--foreground);
   transition: background 0.5s ease, color 0.5s ease;
 }
 
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: var(--background-radial);
-}
-body > * { position: relative; z-index: 1; }
+
 
 /* ── UI readability scale ──
    Studio uses many Tailwind small-text utilities for dense panels. Raise the
@@ -200,11 +206,34 @@ button:disabled, [aria-disabled="true"] { cursor: not-allowed; }
 input[type="text"], input[type="number"], input[type="email"], input[type="password"], textarea { cursor: text; }
 input[type="checkbox"], input[type="radio"] { cursor: pointer; }
 
-/* Button hover micro-feedback */
-button:not(:disabled):active {
-  transform: scale(0.97);
-  transition: transform 0.1s ease;
+/* Every control acknowledges the pointer, in the same time, with the same
+   curve. Colour and shadow only - transform is left to the press below so a
+   hover never nudges layout. */
+button, [role="button"], a, summary, input, textarea, select,
+[role="tab"], [role="option"], [role="menuitem"] {
+  transition:
+    background-color var(--dur-fast) var(--ease-out-quart),
+    border-color     var(--dur-fast) var(--ease-out-quart),
+    color            var(--dur-fast) var(--ease-out-quart),
+    box-shadow       var(--dur-fast) var(--ease-out-quart),
+    opacity          var(--dur-fast) var(--ease-out-quart);
 }
+
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.97);
+  transition: transform var(--dur-fast) var(--ease-out-quart);
+}
+
+/* One focus ring for the whole app, and only for keyboard users. Focus was
+   inheriting the browser default, which is a different colour on every
+   platform and the one thing on screen not drawn in this palette. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+:focus:not(:focus-visible) { outline: none; }
 
 /* Subtle grain texture for physical feel */
 body::before {
@@ -364,6 +393,25 @@ h3 { font-size: 1.25rem; }
 .chat-panel-enter {
   transition: width 300ms cubic-bezier(0.16, 1, 0.3, 1),
               opacity 200ms ease-out;
+}
+
+/* Routes arrive rather than snapping in. Keyed on the route in App, so this
+   replays on every navigation and not just the first paint. */
+.route-enter {
+  animation: routeIn var(--dur-med) var(--ease-out-quart) both;
+}
+@keyframes routeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The run panel is one of the two moments meant to be noticed, so it gets an
+   overshoot rather than a fade: it appears while the person is looking
+   somewhere else and has to earn a glance. */
+@keyframes panelIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* ── Streamdown overrides ── */

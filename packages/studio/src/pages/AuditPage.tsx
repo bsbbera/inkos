@@ -48,6 +48,7 @@
  * Chinese whatever the app was set to. PublicationDetail, the screen this one
  * is meant to match, carries no translations either.
  */
+import { useResizable } from "../hooks/use-resizable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import { useColors } from "../hooks/use-colors";
@@ -744,10 +745,26 @@ export function AuditPage({
     ? (audit?.findings ?? []).map((f) => ({ ...f, page: null }))
     : (detail?.findings ?? []);
 
+  // Both columns were fixed widths. The runtime patch used to grip every
+  // <aside> on the page, so these two were draggable and stopped being so when
+  // that patch was replaced by a hook wired to the two chat sidebars only.
+  const nav = useResizable({ key: "quire-audit-nav", initial: 256, min: 200, max: 420, side: "end" });
+  const editor = useResizable({ key: "quire-audit-editor", initial: 416, min: 320, max: 900, side: "start" });
+
   return (
     <div className="flex-1 min-w-0 flex gap-6 h-full min-h-0 px-6 py-8 md:px-10">
       {/* ---------------------------------------------- kind, project, file */}
-      <aside className="w-64 shrink-0 h-full overflow-y-auto pr-1 space-y-4">
+      <aside
+        className="relative shrink-0 h-full overflow-y-auto pr-1 space-y-4"
+        style={{ width: nav.width }}
+      >
+        <div
+          {...nav.gripProps}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/20 active:bg-primary/30"
+        />
         <h1 className="font-serif text-2xl flex items-center gap-2">
           <ShieldCheck size={20} className="text-primary" />Audit
         </h1>
@@ -1260,7 +1277,17 @@ export function AuditPage({
 
       {/* -------------------------------------------------------- the edit */}
       {showEditor && (
-        <aside className="w-[26rem] shrink-0 h-full overflow-y-auto pr-1 space-y-3">
+        <aside
+          className="relative shrink-0 h-full overflow-y-auto pl-2 pr-1 space-y-3"
+          style={{ width: editor.width }}
+        >
+          <div
+            {...editor.gripProps}
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize editor"
+            className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/20 active:bg-primary/30"
+          />
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-serif text-xl">Edit</h3>
             <button

@@ -125,7 +125,7 @@ export function ProgressPanel({ sse }: { sse: { messages: ReadonlyArray<SSEMessa
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-4 right-4 z-50 w-72 rounded-lg border bg-card/95 p-3 shadow-xl backdrop-blur ${
+      className={`fixed bottom-4 right-4 z-50 w-72 animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both] rounded-lg border bg-card/95 p-3 shadow-xl backdrop-blur ${
         failed ? "border-destructive/60" : "border-border/60"
       }`}
     >

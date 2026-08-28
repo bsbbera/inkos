@@ -184,7 +184,7 @@ export function App() {
   }
 
   return (
-    <div className="h-screen bg-background text-foreground flex overflow-hidden font-sans">
+    <div className="h-screen text-foreground flex overflow-hidden font-sans">
       {/* Left Sidebar. Folds away: the audit screen carries its own tree and an
           editor, and a fixed 260px of navigation on top of that left the work
           itself the narrowest column on the screen. */}
@@ -262,7 +262,7 @@ export function App() {
         ) : null}
 
         {/* Main Content Area */}
-        <main className="flex-1 relative overflow-y-auto scroll-smooth">
+        <main key={route.page} className="route-enter flex-1 relative overflow-y-auto scroll-smooth">
           {route.page === "dashboard" && (
             <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
               <Dashboard nav={nav} sse={sse} theme={theme} t={t} />
