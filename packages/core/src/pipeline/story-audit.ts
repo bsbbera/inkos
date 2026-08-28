@@ -346,6 +346,15 @@ export interface StoryAuditOptions {
    * but a section is a real unit of progress and this is what the screen wants.
    */
   readonly onText?: (markdown: string) => void;
+  /**
+   * The heading of each section as its rewrite lands.
+   *
+   * `onText` carries the whole document, which is what the editor needs and
+   * exactly the wrong thing to show progress with: two whole-document swaps
+   * several minutes apart look like a reload, not like work arriving. The
+   * heading is the unit a person can watch tick past.
+   */
+  readonly onSection?: (heading: string) => void;
   readonly signal?: AbortSignal;
 }
 
@@ -413,6 +422,7 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
     markdown = await reviseSections(
       markdown, sections, actionable, ask, language, signal,
       options.onText ? (partial: string) => options.onText!(partial + tail) : undefined,
+      options.onSection,
     );
     await writeFile(absolute, markdown + tail, "utf-8");
     rounds = round + 1;
@@ -442,6 +452,7 @@ async function reviseSections(
   language: "zh" | "en",
   signal?: AbortSignal,
   onText?: (markdown: string) => void,
+  onSection?: (heading: string) => void,
 ): Promise<string> {
   let out = markdown;
   const bySection = new Map<string, StoryFinding[]>();
@@ -465,6 +476,7 @@ async function reviseSections(
     if (!out.includes(section.body)) continue;
     out = out.replace(section.body, body);
     onText?.(out);
+    onSection?.(heading);
   }
   return out;
 }

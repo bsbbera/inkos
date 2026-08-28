@@ -297,6 +297,15 @@ export function AuditPage({
    */
   const [streamed, setStreamed] = useState<{ count: number; at: number } | null>(null);
   /**
+   * The headings rewritten so far, in the order they landed.
+   *
+   * This is the stream as a person can watch it. `audit:text` carries the whole
+   * document each time, so applying it is invisible — the text differs at some
+   * point, minutes apart, which reads as a reload. A section name appearing is
+   * something happening.
+   */
+  const [sections, setSections] = useState<readonly string[]>([]);
+  /**
    * Approved files the reader has deliberately reopened, this visit.
    *
    * Not persisted: reopening is a decision about the next few minutes, not a
@@ -356,7 +365,7 @@ export function AuditPage({
   useNewSSEMessages(sse.messages, useCallback((message: SSEMessage) => {
     const data = message.data as {
       path?: string; id?: string; message?: string; markdown?: string;
-      state?: string; stage?: string;
+      state?: string; stage?: string; heading?: string;
     } | null;
     if (!data) return;
 
@@ -389,6 +398,13 @@ export function AuditPage({
       setText(data.markdown);
       setSaved(data.markdown);
       setStreamed((s) => ({ count: (s?.count ?? 0) + 1, at: Date.now() }));
+    }
+    if (message.event === "audit:section" && typeof data.heading === "string") {
+      // A chapter file is often one unheaded section, so the heading arrives
+      // empty. Counting them is still the honest signal — "the second piece has
+      // landed" is a fact, "untitled section" is not information.
+      const heading = data.heading.trim();
+      setSections((list) => [...list, heading || `Part ${list.length + 1}`]);
     }
     // The tree's marks live in a file the server writes, so a run that changes
     // them has to say so.
@@ -442,6 +458,7 @@ export function AuditPage({
     setAudit(null);
     setRan(null);
     setStreamed(null);
+    setSections([]);
     setScope("project");
     setText("");
     setSaved("");
@@ -457,6 +474,7 @@ export function AuditPage({
     setAudit(null);
     setRan(null);
     setStreamed(null);
+    setSections([]);
     setScope("project");
     setLoadingText(true);
     setLoadFailed(false);
@@ -559,6 +577,7 @@ export function AuditPage({
     setBusy(mode);
     setRan(null);
     setStreamed(null);
+    setSections([]);
     clearError();
     setInflight({ key: mode, label: RUN_LABEL[mode] ?? mode, at: Date.now() });
     try {
@@ -1095,7 +1114,8 @@ export function AuditPage({
                       * destructive ones whispering.
                       */}
                     <button
-                      disabled={runBusy || loadFailed}
+                      disabled={runBusy || loadFailed || locked}
+                      title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
                       onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
                         ran?.mode === "revise" ? DONE : c.btnDanger
@@ -1108,7 +1128,8 @@ export function AuditPage({
                           : "Check and rewrite"}
                     </button>
                     <button
-                      disabled={runBusy || loadFailed}
+                      disabled={runBusy || loadFailed || locked}
+                      title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
                       onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
                         ran?.mode === "deslop" ? DONE : c.btnDanger
@@ -1122,10 +1143,12 @@ export function AuditPage({
                     </button>
                     {current?.backup ? (
                       <button
-                        disabled={busy !== null}
+                        disabled={busy !== null || locked}
                         onClick={() => void restore()}
                         className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
-                        title="Put back the text from before the last rewrite"
+                        title={locked
+                          ? "This file is signed off. Withdraw the sign-off to put an older copy back."
+                          : "Put back the text from before the last rewrite"}
                       >
                         <RotateCcw size={14} className="inline mr-1.5 -mt-0.5" />
                         {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
@@ -1143,6 +1166,14 @@ export function AuditPage({
                         : <><Check size={14} className="inline mr-1.5 -mt-0.5" />{busy === "approve" ? "Signing off…" : "Sign this off"}</>}
                     </button>
                   </div>
+
+                  {locked ? (
+                    <p className="text-xs flex items-center gap-1.5 text-primary">
+                      <Lock size={12} className="shrink-0" />
+                      Signed off — rewriting and undo are off for this file. Checking still works;
+                      it changes nothing.
+                    </p>
+                  ) : null}
 
                   {current?.audit?.checked ? (
                     <p className={`text-xs ${c.muted}`}>
@@ -1301,13 +1332,49 @@ export function AuditPage({
                 * differed at some point, which reads as a reload rather than as
                 * work arriving.
                 */}
-              {streamed ? (
-                <p role="status" aria-live="polite" className="text-xs text-success flex items-center gap-1.5">
-                  <Check size={12} />
-                  {streamed.count === 1
-                    ? "1 rewritten section has landed here"
-                    : `${streamed.count} rewritten sections have landed here`}
-                </p>
+              {/*
+                * The rewrite as it arrives.
+                *
+                * The pass has streamed the whole document into the textarea
+                * after every section since it was written, and nothing about
+                * that is watchable: two identical-looking swaps, minutes apart,
+                * with the changed sentences wherever they happen to be in a
+                * scrolled box. A section landing is an event; this says so.
+                */}
+              {runBusy || sections.length > 0 ? (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className={`border rounded-lg p-3 text-xs space-y-2 ${c.cardStatic}`}
+                >
+                  <p className="flex items-center gap-1.5 font-medium">
+                    {runBusy ? <Loader2 size={12} className="animate-spin text-primary" /> : <Check size={12} className="text-success" />}
+                    {runBusy
+                      ? busy === "report" ? "Checking — nothing is being rewritten" : "Rewriting, section by section"
+                      : `${sections.length} section${sections.length === 1 ? "" : "s"} rewritten`}
+                  </p>
+                  {sections.length > 0 ? (
+                    <ul className="space-y-1">
+                      {sections.map((heading, i) => (
+                        <li key={`${heading}-${i}`} className="flex items-start gap-1.5">
+                          <Check size={11} className="text-success shrink-0 mt-0.5" />
+                          <span className="min-w-0 break-words">{heading}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={c.muted}>
+                      {busy === "report"
+                        ? "A report pass never changes the text, so nothing will land here."
+                        : "Nothing has landed yet — the first section takes the longest."}
+                    </p>
+                  )}
+                  {streamed ? (
+                    <p className={c.muted}>
+                      The text beside this was replaced {streamed.count === 1 ? "once" : `${streamed.count} times`}.
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
 
               {progress ? (

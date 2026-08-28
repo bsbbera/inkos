@@ -27,7 +27,7 @@ import {
 } from "@actalk/quire-core";
 import { gateState, stageStates } from "./publications.js";
 import {
-  readAuditState, updateFileAudit, type FileAudit,
+  isApproved, readAuditState, updateFileAudit, type FileAudit,
 } from "./audit-state.js";
 
 export interface AuditRouteDeps {
@@ -196,6 +196,24 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     if (!path) return c.json({ error: "an artifact path is required" }, 400);
     if (running.has(path)) return c.json({ error: "this artifact is already being audited" }, 409);
 
+    /*
+     * A signed-off file is not rewritten by a button.
+     *
+     * The editor was made read-only on approval and every pass beside it went
+     * on working, so the lock stopped typing and permitted the model to
+     * replace the whole chapter — which is the larger of the two edits.
+     * Reporting is still allowed: it changes nothing.
+     */
+    const rewriting = body.revise === true || body.deslop === true;
+    if (rewriting && !(body as { force?: boolean }).force) {
+      const state = await readAuditState(root);
+      if (isApproved(state, path)) {
+        return c.json({
+          error: "this file has been signed off — withdraw the sign-off, or reopen it, before rewriting it",
+        }, 409);
+      }
+    }
+
     const control = new AbortController();
     running.set(path, control);
     broadcast("audit:run", { path, state: "start" });
@@ -210,6 +228,10 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
         // The rewrite is minutes long and the editor beside it was showing the
         // text being replaced. Each finished section goes out as it lands.
         onText: (markdown: string) => broadcast("audit:text", { path, markdown }),
+        // The heading of each section as it lands. `audit:text` carries the
+        // whole document, which is what the editor needs and useless as a
+        // progress signal.
+        onSection: (heading: string) => broadcast("audit:section", { path, heading }),
       };
       const audit = body.deslop
         ? await runStoryDeslop(options)
@@ -268,6 +290,11 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     const path = String(body.path ?? "").trim();
     if (!path) return c.json({ error: "an artifact path is required" }, 400);
     if (running.has(path)) return c.json({ error: "this artifact is being audited right now" }, 409);
+    if (isApproved(await readAuditState(root), path)) {
+      return c.json({
+        error: "this file has been signed off — withdraw the sign-off before putting an older copy back",
+      }, 409);
+    }
 
     const backup = join(root, backupPathOf(path));
     if (!(await exists(backup))) {

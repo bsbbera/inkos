@@ -36,6 +36,7 @@ export const STUDIO_SSE_EVENTS = [
   "audit:progress",
   "audit:text",
   "audit:state",
+  "audit:section",
   // Same story for the publication routes: art, render and build all broadcast
   // their start/done/error and no client heard any of it, so every one of those
   // buttons looked like it had done nothing at all.
