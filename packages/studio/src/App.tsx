@@ -35,7 +35,7 @@ import { useI18n } from "./hooks/use-i18n";
 import { setAppLanguage, tr } from "./lib/app-language";
 import { postApi, putApi, useApi } from "./hooks/use-api";
 import { Sun, Moon } from "lucide-react";
-import { House, PanelLeft } from "lucide-react";
+import { House, PanelLeft, PlugZap } from "lucide-react";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -235,12 +235,30 @@ export function App() {
 
             <button
               onClick={() => setTheme(isDark ? "light" : "dark")}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={isDark ? "Switch to the light theme" : "Switch to the dark theme"}
+              title={isDark ? "Switch to the light theme" : "Switch to the dark theme"}
+              className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
             >
               {isDark ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
         </header>
+
+        {/*
+          * The server going away used to be invisible: a run in flight simply
+          * stopped producing events and the screen sat on "Thinking…" with no
+          * way to tell a dead backend from a slow model. The browser retries
+          * the stream by itself, so this says so and then clears itself.
+          */}
+        {sse.lost ? (
+          <div
+            role="status"
+            className="shrink-0 flex items-center gap-2 px-8 py-2 bg-destructive/10 text-destructive text-sm border-b border-destructive/20"
+          >
+            <PlugZap size={15} className="shrink-0" />
+            <span>Lost the connection to Quire. Anything already running keeps going; this reconnects on its own.</span>
+          </div>
+        ) : null}
 
         {/* Main Content Area */}
         <main className="flex-1 relative overflow-y-auto scroll-smooth">
@@ -366,7 +384,7 @@ export function App() {
             </div>
           )}
           {route.page === "audit" && (
-            <div className="fade-in flex-1 flex">
+            <div className="fade-in flex-1 flex h-full min-h-0">
               <AuditPage theme={theme} sse={sse} />
             </div>
           )}

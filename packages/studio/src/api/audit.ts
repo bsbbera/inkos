@@ -11,7 +11,7 @@
  * needs the artifact to have come from anywhere in particular. This is the
  * surface it was missing.
  */
-import { readFile, readdir, stat } from "node:fs/promises";
+import { copyFile, readFile, readdir, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { Hono } from "hono";
 import {
@@ -143,8 +143,23 @@ export async function listAuditTargets(root: string): Promise<AuditTarget[]> {
   return targets.sort((a, b) => b.modified.localeCompare(a.modified));
 }
 
-/** One audit at a time per file, so a second click cannot race the first. */
-const running = new Set<string>();
+/**
+ * The audit in flight for a file, so a second click cannot race the first and
+ * so the person who started a minutes-long rewrite can stop it.
+ *
+ * This was a Set of paths. `runStoryAudit` has taken an `AbortSignal` since it
+ * was written; nothing was ever holding the controller that could fire it.
+ */
+const running = new Map<string, AbortController>();
+
+/** Where a rewriting pass keeps the text as it stood before it ran. */
+function backupPathOf(path: string): string {
+  return path.replace(/(\.[^.]+)$/, ".pre-audit$1");
+}
+
+async function exists(absolute: string): Promise<boolean> {
+  try { await stat(absolute); return true; } catch { return false; }
+}
 
 export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
   const { root, broadcast } = deps;
@@ -178,14 +193,16 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     if (!path) return c.json({ error: "an artifact path is required" }, 400);
     if (running.has(path)) return c.json({ error: "this artifact is already being audited" }, 409);
 
-    running.add(path);
+    const control = new AbortController();
+    running.set(path, control);
     broadcast("audit:run", { path, state: "start" });
     try {
       const pipeline = await deps.pipeline();
       const options = {
         projectRoot: root,
         path,
-        ask: createStoryAsk(pipeline),
+        signal: control.signal,
+        ask: createStoryAsk(pipeline, control.signal),
         onProgress: (message: string) => broadcast("audit:progress", { path, message }),
         // The rewrite is minutes long and the editor beside it was showing the
         // text being replaced. Each finished section goes out as it lands.
@@ -198,11 +215,55 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
       return c.json({ audit, report: storyAuditReport(audit) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      broadcast("audit:run", { path, state: "error", message });
-      return c.json({ error: message }, 500);
+      // A pass the user stopped is not a failure, and saying "AbortError" to a
+      // novelist who just clicked Stop is the app blaming them for it.
+      const stopped = control.signal.aborted;
+      broadcast("audit:run", { path, state: stopped ? "cancelled" : "error", message });
+      return stopped
+        ? c.json({ cancelled: true }, 200)
+        : c.json({ error: message }, 500);
     } finally {
       running.delete(path);
     }
+  });
+
+  /**
+   * Stop the pass running against one artifact.
+   *
+   * There was no way to. A de-AI pass on a long chapter is minutes of model
+   * time writing over the user's prose, and the only options were to watch it
+   * finish or kill the app.
+   */
+  app.post("/api/v1/audit/cancel", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { path?: string };
+    const path = String(body.path ?? "").trim();
+    const control = running.get(path);
+    if (!control) return c.json({ error: "nothing is running for that path" }, 404);
+    control.abort();
+    return c.json({ cancelled: true });
+  });
+
+  /**
+   * Put back the text as it stood before the last rewriting pass.
+   *
+   * `runStoryAudit` writes `<name>.pre-audit.md` before it changes a word and
+   * always has. Nothing read it. The backup is kept rather than consumed, so
+   * restoring twice is the same as restoring once.
+   */
+  app.post("/api/v1/audit/restore", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { path?: string };
+    const path = String(body.path ?? "").trim();
+    if (!path) return c.json({ error: "an artifact path is required" }, 400);
+    if (running.has(path)) return c.json({ error: "this artifact is being audited right now" }, 409);
+
+    const backup = join(root, backupPathOf(path));
+    if (!(await exists(backup))) {
+      return c.json({ error: "there is no pre-audit copy of this file" }, 404);
+    }
+    await copyFile(backup, join(root, path));
+    const content = await readFile(join(root, path), "utf-8");
+    broadcast("audit:text", { path, markdown: content });
+    return c.json({ restored: true, content });
   });
 }
 
@@ -237,6 +298,15 @@ export interface AuditItem {
   readonly name: string;
   readonly words: number;
   readonly modified: string;
+  /**
+   * Whether a rewriting pass left `<name>.pre-audit.md` beside this file.
+   *
+   * The backup has always been written and the screen has never known about
+   * it, so a person watching a de-AI pass replace their chapter had no way to
+   * learn the original still existed. One `stat` per listed file; the listing
+   * already does one each.
+   */
+  readonly backup: boolean;
 }
 
 export interface AuditProjectDetail {
@@ -309,9 +379,14 @@ export async function readAuditProject(
   const spec = PRODUCTIONS.find((p) => p.id === kind);
   if (!spec || !spec.auditable) return null;
 
-  const items: AuditItem[] = (await listAuditTargets(root))
-    .filter((t) => t.kind === kind && t.project === id)
-    .map(({ path, name, words, modified }) => ({ path, name, words, modified }));
+  const items: AuditItem[] = await Promise.all(
+    (await listAuditTargets(root))
+      .filter((t) => t.kind === kind && t.project === id)
+      .map(async ({ path, name, words, modified }) => ({
+        path, name, words, modified,
+        backup: await exists(join(root, backupPathOf(path))),
+      })),
+  );
   if (items.length === 0) return null;
 
   const base = {

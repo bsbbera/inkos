@@ -25,6 +25,23 @@
  * (Affinity, the `build` stage). Both already existed behind `/resume`, which
  * takes a stage range — no new route, just the two the audit screen was missing.
  *
+ * What this screen got wrong for a long time, all of it the same mistake in
+ * different places: it never said what it was doing.
+ *
+ *   - Three columns scrolled as one, so reading a finding scrolled the sentence
+ *     it was about off the screen.
+ *   - Every `Make` button was fire-and-forget. The route returns before the
+ *     work starts, the events it broadcasts were not in the client's allowlist,
+ *     and `busy` cleared in milliseconds — so a build that was running looked
+ *     exactly like a build that had never begun, and clicking again earned a
+ *     409 rendered as a stack trace.
+ *   - A rewriting pass took minutes, could not be stopped, and could not be
+ *     undone, though the pass has written `<name>.pre-audit.md` before touching
+ *     a word since the day it was written.
+ *   - The confirmation dialog guarded unsaved typing and left the finished
+ *     manuscript unguarded, which is the wrong way round.
+ *   - Nothing on it announced anything to a screen reader.
+ *
  * English only, deliberately. This page used to call a `tr()` helper gated on
  * `t("nav.myBooks") !== "My Books"`, and the English string for that key is
  * "My Works" — so the comparison was true forever and every label rendered in
@@ -35,9 +52,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import { useColors } from "../hooks/use-colors";
 import { useNewSSEMessages, type SSEMessage } from "../hooks/use-sse";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
-  Loader2, PanelRightClose, PanelRightOpen, Play, Save, ShieldCheck, X,
+  Loader2, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save, ShieldCheck,
+  Square, X,
 } from "lucide-react";
 
 interface Project {
@@ -54,6 +73,8 @@ interface Item {
   readonly name: string;
   readonly words: number;
   readonly modified: string;
+  /** A `.pre-audit` copy exists, so the last rewrite can be undone. */
+  readonly backup?: boolean;
 }
 
 interface Finding {
@@ -94,18 +115,58 @@ interface Audit {
   }>;
 }
 
+/**
+ * Severity, through the theme rather than around it.
+ *
+ * These were `text-emerald-500`, `text-amber-500` and `text-red-500` — raw
+ * palette that does not move between parchment and obsidian, and amber on the
+ * light card measures about 1.9:1, which is not a severity indicator so much as
+ * a rumour of one. `--success` and `--warning` are new; `--destructive` was
+ * always there and this file was not using it.
+ */
 const STATE_TONE: Record<string, string> = {
-  done: "text-emerald-500",
-  complete: "text-emerald-500",
-  partial: "text-amber-500",
-  "needs-review": "text-amber-500",
-  failed: "text-red-500",
+  done: "text-success",
+  complete: "text-success",
+  running: "text-primary",
+  partial: "text-warning",
+  "needs-review": "text-warning",
+  failed: "text-destructive",
+  error: "text-destructive",
 };
 
 const SEVERITY_TONE: Record<string, string> = {
-  warning: "text-amber-500",
-  blocking: "text-red-500",
+  warning: "text-warning",
+  blocking: "text-destructive",
 };
+
+/** Run-state words as a person would say them. `s.state` is an enum off disk. */
+const STATE_LABEL: Record<string, string> = {
+  done: "finished",
+  complete: "finished",
+  running: "running",
+  partial: "part-way",
+  "needs-review": "needs a look",
+  failed: "failed",
+  error: "failed",
+  pending: "not started",
+  idle: "not started",
+};
+
+/** Stage names as a person would say them. Unknown stages keep their own name. */
+const STAGE_LABEL: Record<string, string> = {
+  art: "Pictures",
+  build: "Document",
+  write: "Writing",
+  outline: "Outline",
+  audit: "Checks",
+  revise: "Rewrite",
+  layout: "Layout",
+  research: "Research",
+  publish: "Publishing",
+};
+
+const say = (map: Record<string, string>, key: string) =>
+  map[key] ?? key.replace(/[-_]/g, " ");
 
 const SELECTED = "bg-primary/10 text-primary";
 
@@ -118,6 +179,46 @@ function pageNumberOf(name: string): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/**
+ * The part of a path that says which stage of the work a file belongs to —
+ * `final/chapters`, `outline`, `reviews` — relative to its own project.
+ */
+function folderOf(path: string): string {
+  const parts = path.split("/");
+  // drop the production directory, the project directory, and the filename
+  return parts.slice(2, -1).join("/");
+}
+
+/** `2m 41s`, for a pass whose only other progress report is a spinner. */
+function elapsed(sinceMs: number): string {
+  const s = Math.max(0, Math.round((Date.now() - sinceMs) / 1000));
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
+}
+
+/**
+ * What the tree was showing last time this screen was open.
+ *
+ * Kind, project and file selection were component state, so navigating to Chat
+ * and back dropped all of it and the whole path had to be clicked again. Module
+ * scope, not localStorage: this should survive a route change, not a restart,
+ * because a project that has since been deleted should not be waiting here.
+ */
+const remembered: {
+  shutKinds: Record<string, boolean>;
+  openProjects: Record<string, boolean>;
+  picked: { kind: string; id: string } | null;
+  showEditor: boolean;
+} = { shutKinds: {}, openProjects: {}, picked: null, showEditor: true };
+
+/** A held action, and the words to ask about it with. */
+interface Pending {
+  readonly act: () => void;
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel: string;
+  readonly cancelLabel: string;
+}
+
 export function AuditPage({
   theme, sse,
 }: { theme: Theme; sse: { messages: ReadonlyArray<SSEMessage> } }) {
@@ -125,36 +226,120 @@ export function AuditPage({
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState<{ readonly act: () => void } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [image, setImage] = useState<string | null>(null);
 
   // Everything folds. `false` is the default for a kind, `true` for a project,
   // so the tree opens showing what you have rather than every file you own.
-  const [shutKinds, setShutKinds] = useState<Record<string, boolean>>({});
-  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>({});
-  const [showEditor, setShowEditor] = useState(true);
+  const [shutKinds, setShutKinds] = useState<Record<string, boolean>>(remembered.shutKinds);
+  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>(remembered.openProjects);
+  const [showEditor, setShowEditor] = useState(remembered.showEditor);
 
-  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(null);
+  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(remembered.picked);
   const [detail, setDetail] = useState<Detail | null>(null);
 
   const [file, setFile] = useState<Item | null>(null);
   const [audit, setAudit] = useState<Audit | null>(null);
+  const [scope, setScope] = useState<"file" | "project">("project");
   const [text, setText] = useState("");
   const [saved, setSaved] = useState("");
+  const [loadFailed, setLoadFailed] = useState(false);
+  /**
+   * An action held back until the user has answered for it.
+   *
+   * This guarded one thing — unsaved typing about to be replaced — and left the
+   * more valuable artifact unguarded: `Rewrite` and `Remove AI phrasing` write
+   * over the finished chapter on disk, and on a file the user had not just
+   * typed into they did it with no question asked at all. Both now ask, and so
+   * does switching projects, which blanked the editor without a word.
+   */
+  const [pending, setPending] = useState<Pending | null>(null);
   const [loadingText, setLoadingText] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
+  /** The long-running thing, if there is one, and when it started. */
+  const [inflight, setInflight] = useState<{ key: string; label: string; at: number } | null>(null);
+  const [, setTick] = useState(0);
+
+  useEffect(() => { remembered.shutKinds = shutKinds; }, [shutKinds]);
+  useEffect(() => { remembered.openProjects = openProjects; }, [openProjects]);
+  useEffect(() => { remembered.picked = picked; }, [picked]);
+  useEffect(() => { remembered.showEditor = showEditor; }, [showEditor]);
+
+  // One second, only while something is running: the elapsed time beside a
+  // minutes-long pass is the only thing on screen that proves it is still alive.
+  useEffect(() => {
+    if (!inflight) return;
+    const id = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [inflight]);
+
+  const fail = useCallback((e: unknown, again?: () => void) => {
+    setError(String((e as Error).message ?? e));
+    setRetry(again ? { act: again } : null);
+  }, []);
+
+  const clearError = useCallback(() => { setError(null); setRetry(null); }, []);
 
   // The live rewrite writes into the editor, so it must not land on top of
   // something the user typed and has not saved. `dirty` is derived, so the
   // listener reads it through a ref rather than re-subscribing on every keystroke.
-  const stateRef = useRef({ path: "", dirty: false });
-  stateRef.current = { path: file?.path ?? "", dirty: text !== saved };
+  const stateRef = useRef({ path: "", dirty: false, projectId: "" });
+  stateRef.current = {
+    path: file?.path ?? "",
+    dirty: text !== saved,
+    projectId: picked?.id ?? "",
+  };
+
+  const loadProject = useCallback(async (kind: string, id: string) => {
+    try {
+      const res = await fetch(
+        `/api/v1/audit/project/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
+      );
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setDetail(body);
+    } catch (e) {
+      fail(e, () => void loadProject(kind, id));
+    }
+  }, [fail]);
+
+  // The SSE listener must be able to refresh the project it is watching without
+  // re-subscribing every time the selection changes.
+  const reload = useRef<() => void>(() => {});
+  reload.current = () => { if (picked) void loadProject(picked.kind, picked.id); };
 
   useNewSSEMessages(sse.messages, useCallback((message: SSEMessage) => {
     const data = message.data as {
-      path?: string; message?: string; markdown?: string; state?: string;
+      path?: string; id?: string; message?: string; markdown?: string;
+      state?: string; stage?: string;
     } | null;
-    if (!data?.path || data.path !== stateRef.current.path) return;
+    if (!data) return;
+
+    /**
+     * Publication events are keyed by issue id, not by path — which is why the
+     * old handler, which returned early unless `data.path` matched the open
+     * file, threw every single one of them away.
+     */
+    if (message.event.startsWith("publication:")) {
+      if (!data.id || data.id !== stateRef.current.projectId) return;
+      if (message.event === "publication:event" && data.stage) {
+        setProgress(say(STAGE_LABEL, data.stage));
+      }
+      if (message.event === "publication:run") {
+        if (data.state === "start") return;
+        setBusy(null);
+        setInflight(null);
+        setProgress(null);
+        if (data.state === "error" && data.message) setError(data.message);
+        reload.current();
+      }
+      if (message.event === "publication:issue") reload.current();
+      return;
+    }
+
+    if (!data.path || data.path !== stateRef.current.path) return;
     if (message.event === "audit:progress" && data.message) setProgress(data.message);
     if (message.event === "audit:run" && data.state !== "start") setProgress(null);
     if (message.event === "audit:text" && typeof data.markdown === "string" && !stateRef.current.dirty) {
@@ -170,13 +355,20 @@ export function AuditPage({
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setProjects(body.projects ?? []);
     } catch (e) {
-      setError(String((e as Error).message));
+      fail(e, () => void loadProjects());
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fail]);
 
   useEffect(() => { void loadProjects(); }, [loadProjects]);
+
+  // Whatever was open last time this screen was mounted.
+  useEffect(() => {
+    if (remembered.picked) void loadProject(remembered.picked.kind, remembered.picked.id);
+    // Deliberately once, on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const groups = useMemo(() => {
     const byKind = new Map<string, { label: string; rows: Project[] }>();
@@ -192,19 +384,6 @@ export function AuditPage({
     }));
   }, [projects]);
 
-  const loadProject = useCallback(async (kind: string, id: string) => {
-    try {
-      const res = await fetch(
-        `/api/v1/audit/project/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
-      );
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setDetail(body);
-    } catch (e) {
-      setError(String((e as Error).message));
-    }
-  }, []);
-
   const openProject = useCallback(async (kind: string, id: string) => {
     const key = `${kind}/${id}`;
     const already = picked?.kind === kind && picked.id === id;
@@ -214,18 +393,23 @@ export function AuditPage({
     setDetail(null);
     setFile(null);
     setAudit(null);
+    setScope("project");
     setText("");
     setSaved("");
-    setError(null);
+    setLoadFailed(false);
+    clearError();
     setNote(null);
+    setImage(null);
     await loadProject(kind, id);
-  }, [loadProject, picked]);
+  }, [clearError, loadProject, picked]);
 
   const openFile = useCallback(async (item: Item) => {
     setFile(item);
     setAudit(null);
+    setScope("project");
     setLoadingText(true);
-    setError(null);
+    setLoadFailed(false);
+    clearError();
     try {
       const res = await fetch(artifact(item.path));
       const body = await res.json();
@@ -233,18 +417,22 @@ export function AuditPage({
       setText(body.content ?? "");
       setSaved(body.content ?? "");
     } catch (e) {
-      setError(String((e as Error).message));
+      // An empty editor used to be the only sign of this, which is
+      // indistinguishable from an empty file — and typing one character into it
+      // and saving would write one character over a real chapter.
+      setLoadFailed(true);
       setText("");
       setSaved("");
+      fail(e, () => void openFile(item));
     } finally {
       setLoadingText(false);
     }
-  }, []);
+  }, [clearError, fail]);
 
   const save = async () => {
-    if (!file) return;
+    if (!file || loadFailed) return;
     setBusy("save");
-    setError(null);
+    clearError();
     try {
       const res = await fetch(artifact(file.path), {
         method: "PUT",
@@ -255,38 +443,69 @@ export function AuditPage({
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
       setSaved(text);
     } catch (e) {
-      setError(String((e as Error).message));
+      fail(e, () => void save());
     } finally {
       setBusy(null);
     }
   };
 
-  /** Anything that runs against the publication as a whole, on its own routes. */
-  const publication = async (key: string, path: string, body: unknown) => {
+  /**
+   * Anything that runs against the publication as a whole, on its own routes.
+   *
+   * `/resume` answers `{started: true}` before the work begins, so this cannot
+   * clear `busy` when the POST returns — doing that is what made every one of
+   * these buttons look like it had done nothing. The SSE handler above clears
+   * it when `publication:run` reports done or error.
+   */
+  const publication = async (key: string, label: string, path: string, body: unknown) => {
     if (!picked) return;
     setBusy(key);
-    setError(null);
+    clearError();
     setNote(null);
+    setImage(null);
+    setInflight({ key, label, at: Date.now() });
     try {
       const res = await fetch(
         `/api/v1/publications/${encodeURIComponent(picked.id)}${path}`,
         { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
       );
       const out = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        // Not a failure. It means the thing the user just asked for is already
+        // happening, which is status, and it used to render as a stack trace.
+        setNote(String(out.error ?? "Already running."));
+        return;
+      }
       if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
-      if (out.image) setNote(`Rendered to ${out.image}`);
-      await loadProject(picked.kind, picked.id);
+      if (out.image) {
+        setImage(artifact(String(out.image)));
+        setNote("Spread rendered.");
+      }
+      // A render answers with its result rather than streaming, so nothing else
+      // is coming for it.
+      if (out.image || out.started !== true) {
+        setBusy(null);
+        setInflight(null);
+        await loadProject(picked.kind, picked.id);
+      }
     } catch (e) {
-      setError(String((e as Error).message));
-    } finally {
       setBusy(null);
+      setInflight(null);
+      fail(e, () => void publication(key, label, path, body));
     }
   };
 
+  const RUN_LABEL: Record<string, string> = {
+    report: "Checking",
+    revise: "Rewriting",
+    deslop: "Removing AI phrasing",
+  };
+
   const run = async (mode: "report" | "revise" | "deslop") => {
-    if (!file) return;
+    if (!file || loadFailed) return;
     setBusy(mode);
-    setError(null);
+    clearError();
+    setInflight({ key: mode, label: RUN_LABEL[mode] ?? mode, at: Date.now() });
     try {
       const res = await fetch("/api/v1/audit/run", {
         method: "POST",
@@ -299,11 +518,58 @@ export function AuditPage({
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      if (body.cancelled) {
+        setNote("Stopped. Nothing further was changed.");
+        return;
+      }
       setAudit(body.audit ?? null);
-      // A revise pass rewrites the file, so the editor beside it is now stale.
-      if (mode !== "report") await openFile(file);
+      setScope("file");
+      // A revise pass rewrites the file, so the editor beside it is now stale —
+      // and the project listing is too, because the pass has just left a
+      // `.pre-audit` copy that the Undo button reads.
+      if (mode !== "report") {
+        await openFile(file);
+        if (picked) await loadProject(picked.kind, picked.id);
+      }
     } catch (e) {
-      setError(String((e as Error).message));
+      fail(e, () => void run(mode));
+    } finally {
+      setBusy(null);
+      setInflight(null);
+    }
+  };
+
+  /** Stop the pass now. The server holds the AbortController it was missing. */
+  const cancel = async () => {
+    if (!file) return;
+    try {
+      await fetch("/api/v1/audit/cancel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: file.path }),
+      });
+    } catch { /* the run finishing on its own is not a failure to report */ }
+  };
+
+  /** Put back the copy the rewriting pass took before it changed anything. */
+  const restore = async () => {
+    if (!file) return;
+    setBusy("restore");
+    clearError();
+    try {
+      const res = await fetch("/api/v1/audit/restore", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: file.path }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      setText(body.content ?? "");
+      setSaved(body.content ?? "");
+      setAudit(null);
+      setNote("The text from before the rewrite is back.");
+    } catch (e) {
+      fail(e, () => void restore());
     } finally {
       setBusy(null);
     }
@@ -311,26 +577,73 @@ export function AuditPage({
 
   const dirty = text !== saved;
   const page = file ? pageNumberOf(file.name) : null;
+  const running = inflight !== null;
+  const runBusy = busy === "report" || busy === "revise" || busy === "deslop";
+
+  /** Ask, then run `act` — or run it now if there is nothing to warn about. */
+  const guarded = (act: () => void, ask?: Partial<Pending>) => {
+    const needed = dirty || ask?.message !== undefined;
+    if (!needed) { act(); return; }
+    setPending({
+      act,
+      title: ask?.title ?? "Unsaved changes",
+      message: dirty
+        ? `Your edits to ${file?.name ?? "this file"} have not been saved. Continuing replaces them, and they cannot be recovered.`
+        : ask?.message ?? "",
+      confirmLabel: ask?.confirmLabel ?? "Discard and continue",
+      cancelLabel: ask?.cancelLabel ?? "Keep editing",
+    });
+  };
+
+  /** The words for a pass that writes over the manuscript on disk. */
+  const rewriteAsk = (mode: "revise" | "deslop"): Partial<Pending> => ({
+    title: mode === "revise" ? "Rewrite this file?" : "Remove AI phrasing?",
+    message: `${file?.name ?? "This file"} will be rewritten in place. A copy of the text as it stands is kept beside it as ${file?.name?.replace(/(\.[^.]+)$/, ".pre-audit$1") ?? "a .pre-audit copy"}, and Undo below puts it back.`,
+    confirmLabel: mode === "revise" ? "Rewrite it" : "Remove it",
+    cancelLabel: "Leave it alone",
+  });
+
+  /** Arrow keys walk the tree, which was mouse-only in every direction. */
+  const treeRef = useRef<HTMLDivElement>(null);
+  const onTreeKey = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const rows = Array.from(
+      treeRef.current?.querySelectorAll<HTMLButtonElement>("[data-row]") ?? [],
+    );
+    const here = rows.indexOf(document.activeElement as HTMLButtonElement);
+    const next = rows[e.key === "ArrowDown" ? here + 1 : here - 1];
+    if (next) { e.preventDefault(); next.focus(); }
+  };
+
+  const shown: ReadonlyArray<Finding> = scope === "file"
+    ? (audit?.findings ?? []).map((f) => ({ ...f, page: null }))
+    : (detail?.findings ?? []);
 
   return (
-    <div className="flex gap-6 items-start">
+    <div className="flex-1 min-w-0 flex gap-6 h-full min-h-0 px-6 py-8 md:px-10">
       {/* ---------------------------------------------- kind, project, file */}
-      <aside className="w-64 shrink-0 space-y-4">
+      <aside className="w-64 shrink-0 h-full overflow-y-auto pr-1 space-y-4">
         <h1 className="font-serif text-2xl flex items-center gap-2">
           <ShieldCheck size={20} className="text-primary" />Audit
         </h1>
 
         {loading ? (
-          <Loader2 size={18} className="animate-spin text-primary" />
+          <Spinner label="Loading your work" />
+        ) : error && groups.length === 0 ? (
+          // Error and empty used to render together: a red box saying something
+          // broke, beside a cheerful note saying you have finished nothing.
+          <p className={`text-sm ${c.muted}`}>Could not read your work — see the message beside this.</p>
         ) : groups.length === 0 ? (
           <p className={`text-sm ${c.muted}`}>Nothing finished yet.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" ref={treeRef} onKeyDown={onTreeKey}>
             {groups.map((g) => {
               const shut = shutKinds[g.kind] === true;
               return (
                 <div key={g.kind}>
                   <button
+                    data-row
+                    aria-expanded={!shut}
                     onClick={() => setShutKinds((p) => ({ ...p, [g.kind]: !shut }))}
                     className={`w-full flex items-center gap-1.5 text-xs uppercase tracking-wide ${c.muted}`}
                   >
@@ -344,13 +657,20 @@ export function AuditPage({
                       {g.rows.map((p) => {
                         const key = `${p.kind}/${p.id}`;
                         const on = picked?.kind === p.kind && picked.id === p.id;
-                        const open = openProjects[key] === true;
+                        // The files show on `open && on`, so the chevron has to
+                        // say the same thing. It read `open` alone, which meant
+                        // a project you had moved away from kept an open
+                        // chevron over nothing, and clicking it to see the files
+                        // folded it instead.
+                        const open = openProjects[key] === true && on;
                         return (
                           <div key={p.id}>
                             <button
-                              onClick={() => void openProject(p.kind, p.id)}
+                              data-row
+                              aria-expanded={open}
+                              onClick={() => guarded(() => void openProject(p.kind, p.id))}
                               className={`w-full flex items-center gap-1 px-1.5 py-1.5 rounded text-sm ${
-                                on ? SELECTED : c.tableHover
+                                on ? `${SELECTED} hover:bg-primary/15` : c.tableHover
                               }`}
                               title={p.id}
                             >
@@ -362,25 +682,38 @@ export function AuditPage({
 
                             {/* The files live here rather than in a section of
                                 their own beside the project. One navigator. */}
-                            {open && on ? (
+                            {open ? (
                               detail ? (
                                 <div className="ml-3 pl-2 border-l border-border space-y-0.5 mt-0.5">
                                   {detail.items.map((item) => (
                                     <button
                                       key={item.path}
-                                      onClick={() => void openFile(item)}
+                                      data-row
+                                      onClick={() => guarded(() => void openFile(item))}
                                       className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xs ${
-                                        file?.path === item.path ? SELECTED : c.tableHover
+                                        file?.path === item.path
+                                          ? `${SELECTED} hover:bg-primary/15`
+                                          : c.tableHover
                                       }`}
                                       title={item.path}
                                     >
                                       <FileText size={11} className="shrink-0 opacity-60" />
-                                      <span className="flex-1 text-left truncate">{item.name}</span>
+                                      <span className="flex-1 min-w-0 text-left">
+                                        <span className="block truncate">{item.name}</span>
+                                        {/* Which folder it came from. Without this,
+                                            final/chapters/0001.md and outline/0001.md
+                                            are the same row printed twice. */}
+                                        {folderOf(item.path) ? (
+                                          <span className={`block truncate text-[11px] ${c.muted}`}>
+                                            {folderOf(item.path)}
+                                          </span>
+                                        ) : null}
+                                      </span>
                                     </button>
                                   ))}
                                 </div>
                               ) : (
-                                <Loader2 size={12} className="animate-spin text-primary ml-5 my-1" />
+                                <Spinner label="Loading files" className="ml-5 my-1" size={12} />
                               )
                             ) : null}
                           </div>
@@ -396,11 +729,35 @@ export function AuditPage({
       </aside>
 
       {/* --------------------------------------------- the project itself */}
-      <div className="flex-1 min-w-0 space-y-6">
+      <div className="flex-1 min-w-0 h-full overflow-y-auto pr-1 space-y-6">
         {error && (
-          <div className={`flex items-start gap-3 border rounded-lg p-4 text-sm ${c.error}`}>
+          <div role="alert" className={`flex items-start gap-3 border rounded-lg p-4 text-sm ${c.error}`}>
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-            <p className="font-mono text-xs break-all">{error}</p>
+            {/*
+              * This was `font-mono text-xs break-all` — the visual grammar of a
+              * stack trace, applied to sentences the server writes for people
+              * ("this artifact is already being audited"). Body copy, and a way
+              * out of it.
+              */}
+            <div className="flex-1 min-w-0 space-y-2">
+              <p className="break-words">{error}</p>
+              <div className="flex items-center gap-2">
+                {retry ? (
+                  <button
+                    onClick={() => { const again = retry.act; clearError(); again(); }}
+                    className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
+                  >
+                    Try again
+                  </button>
+                ) : null}
+                <button
+                  onClick={clearError}
+                  className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -410,7 +767,7 @@ export function AuditPage({
             filed under what made it.
           </p>
         ) : !detail ? (
-          <Loader2 size={20} className="animate-spin text-primary" />
+          <Spinner label="Loading this project" size={20} />
         ) : (
           <>
             <div className="flex items-start justify-between gap-4">
@@ -420,6 +777,7 @@ export function AuditPage({
               </div>
               <button
                 onClick={() => setShowEditor((v) => !v)}
+                aria-label={showEditor ? "Hide the editor" : "Show the editor"}
                 className={`px-3 py-1.5 text-sm rounded-lg shrink-0 ${c.btnSecondary}`}
               >
                 {showEditor
@@ -428,7 +786,42 @@ export function AuditPage({
               </button>
             </div>
 
-            {note ? <p className="text-sm text-emerald-500">{note}</p> : null}
+            {/*
+              * Everything this page says about work in progress, in one place a
+              * screen reader is watching. There was no live region anywhere on
+              * this screen, so a pass that took four minutes announced its
+              * start, its progress, its finish and its failure to nobody.
+              */}
+            <div role="status" aria-live="polite" className="space-y-2 empty:hidden">
+              {inflight ? (
+                <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 text-sm ${c.cardStatic}`}>
+                  <Loader2 size={16} className="animate-spin text-primary shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">
+                    {progress ?? `${inflight.label}…`}
+                  </span>
+                  <span className={`text-xs tabular-nums ${c.muted}`}>{elapsed(inflight.at)}</span>
+                  {runBusy ? (
+                    <button
+                      onClick={() => void cancel()}
+                      className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
+                    >
+                      <Square size={11} className="inline mr-1 -mt-0.5" fill="currentColor" />
+                      Stop
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+              {note ? <p className="text-sm text-success">{note}</p> : null}
+              {image ? (
+                // A render produced a picture and the reward for it was the path
+                // it was written to, in green text.
+                <img
+                  src={image}
+                  alt="The spread that was just rendered"
+                  className="max-h-64 rounded-lg border border-border"
+                />
+              ) : null}
+            </div>
 
             {detail.gates ? (
               <>
@@ -439,9 +832,10 @@ export function AuditPage({
                     approved={detail.gates.copy.approved}
                     notes={detail.gates.copy.warnings}
                     notesLabel="Worth knowing before you sign this off:"
+                    approvedLabel="Signed off with these still open:"
                     canApprove
                     busy={busy === "copy"}
-                    onToggle={(yes) => void publication("copy", "/approve", { what: "copy", approve: yes })}
+                    onToggle={(yes) => void publication("copy", "Approving", "/approve", { what: "copy", approve: yes })}
                   />
                   <Gate
                     c={c}
@@ -449,9 +843,10 @@ export function AuditPage({
                     approved={detail.gates.design.approved}
                     notes={detail.gates.design.blockers}
                     notesLabel="The design cannot be approved until:"
+                    approvedLabel="Signed off with these still open:"
                     canApprove={detail.gates.design.canApprove}
                     busy={busy === "design"}
-                    onToggle={(yes) => void publication("design", "/approve", { what: "design", approve: yes })}
+                    onToggle={(yes) => void publication("design", "Approving", "/approve", { what: "design", approve: yes })}
                   />
                 </section>
                 <div className={`border rounded-lg p-4 text-sm ${detail.gates.build.canBuild ? c.info : c.error}`}>
@@ -467,30 +862,36 @@ export function AuditPage({
                   <h3 className="font-serif text-xl">Make</h3>
                   <div className={`border ${c.cardStatic} rounded-lg p-4 flex flex-wrap items-center gap-2`}>
                     <button
-                      disabled={busy !== null}
-                      onClick={() => void publication("art", "/resume", { from: "art", stopAt: "art" })}
+                      disabled={running}
+                      onClick={() => void publication("art", "Drawing", "/resume", { from: "art", stopAt: "art" })}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
                     >
                       <ImageIcon size={14} className="inline mr-1.5 -mt-0.5" />
                       {busy === "art" ? "Drawing…" : "Generate images (ComfyUI)"}
                     </button>
                     <button
-                      disabled={busy !== null || page === null}
-                      onClick={() => void publication("render", "/render", { page })}
+                      disabled={running || page === null}
+                      onClick={() => void publication("render", "Rendering", "/render", { page })}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
                       title={page === null ? "Pick a numbered page on the left first" : `Render page ${page}`}
                     >
                       {busy === "render" ? "Rendering…" : `Render spread (Affinity)${page ? ` — p${page}` : ""}`}
                     </button>
                     <button
-                      disabled={busy !== null || !detail.gates.build.canBuild}
-                      onClick={() => void publication("build", "/resume", { from: "build", stopAt: "build" })}
+                      disabled={running || !detail.gates.build.canBuild}
+                      onClick={() => void publication("build", "Building", "/resume", { from: "build", stopAt: "build" })}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
                       title={detail.gates.build.canBuild ? "Build the PDF" : detail.gates.build.blockers.join("; ")}
                     >
                       <Play size={14} className="inline mr-1.5 -mt-0.5" />
                       {busy === "build" ? "Building…" : "Build document (Affinity)"}
                     </button>
+                    {page === null ? (
+                      <p className={`w-full text-xs ${c.muted}`}>
+                        Rendering a spread needs a numbered page — pick one like
+                        <code className="mx-1">03-feature.md</code> on the left.
+                      </p>
+                    ) : null}
                   </div>
                 </section>
               </>
@@ -502,9 +903,15 @@ export function AuditPage({
                 <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
                   {detail.stages.map((s) => (
                     <div key={s.stage} className="flex items-center gap-3 p-3 text-sm">
-                      <span className="w-24 font-medium truncate">{s.stage}</span>
-                      <span className={`w-24 text-xs ${STATE_TONE[s.state] ?? c.muted}`}>{s.state}</span>
-                      <span className={`flex-1 text-xs truncate ${c.muted}`}>{s.detail}</span>
+                      <span className="w-24 font-medium truncate">{say(STAGE_LABEL, s.stage)}</span>
+                      <span className={`w-28 text-xs ${STATE_TONE[s.state] ?? c.muted}`}>
+                        {say(STATE_LABEL, s.state)}
+                      </span>
+                      {/* The clipped half of this is usually the failure reason,
+                          which is the one string anyone reading it wants. */}
+                      <span className={`flex-1 text-xs truncate ${c.muted}`} title={s.detail}>
+                        {s.detail}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -518,67 +925,105 @@ export function AuditPage({
                 <p className={`text-sm ${c.muted}`}>Pick a file on the left to check it.</p>
               ) : (
                 <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-3`}>
-                  <p className={`text-xs font-mono break-all ${c.muted}`}>{file.path}</p>
+                  <p className={`text-xs truncate ${c.muted}`} title={file.path}>
+                    {file.name}
+                    {folderOf(file.path) ? ` · ${folderOf(file.path)}` : ""}
+                  </p>
                   <div className="flex flex-wrap gap-2">
                     <button
-                      disabled={busy !== null}
-                      onClick={() => void run("report")}
+                      disabled={runBusy || loadFailed}
+                      onClick={() => guarded(() => void run("report"))}
                       className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
                     >
-                      {busy === "report" ? "Checking…" : "Audit — report only"}
+                      {busy === "report" ? "Checking…" : "Check it — change nothing"}
+                    </button>
+                    {/*
+                      * These two write over the manuscript on disk, and they
+                      * were `btnSecondary` while the harmless one above was
+                      * `btnPrimary` — the safe action shouting and the two
+                      * destructive ones whispering.
+                      */}
+                    <button
+                      disabled={runBusy || loadFailed}
+                      onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnDanger}`}
+                    >
+                      {busy === "revise" ? "Rewriting…" : "Check and rewrite"}
                     </button>
                     <button
-                      disabled={busy !== null}
-                      onClick={() => void run("revise")}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
+                      disabled={runBusy || loadFailed}
+                      onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnDanger}`}
                     >
-                      {busy === "revise" ? "Revising…" : "Audit & revise"}
+                      {busy === "deslop" ? "Rewriting…" : "Remove AI phrasing"}
                     </button>
-                    <button
-                      disabled={busy !== null}
-                      onClick={() => void run("deslop")}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
-                    >
-                      {busy === "deslop" ? "Rewriting…" : "De-AI pass"}
-                    </button>
+                    {file.backup ? (
+                      <button
+                        disabled={busy !== null}
+                        onClick={() => void restore()}
+                        className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
+                        title="Put back the text from before the last rewrite"
+                      >
+                        <RotateCcw size={14} className="inline mr-1.5 -mt-0.5" />
+                        {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
+                      </button>
+                    ) : null}
                   </div>
-                  {audit ? (
-                    audit.findings.length === 0 ? (
-                      <p className="text-sm text-emerald-500">Nothing to fix in this file.</p>
-                    ) : (
-                      <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide} max-h-64 overflow-y-auto`}>
-                        {audit.findings.map((f, i) => (
-                          <div key={i} className="p-3 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs px-1.5 py-0.5 rounded ${c.code}`}>{f.category}</span>
-                              <span className={`text-xs ${SEVERITY_TONE[f.severity] ?? c.muted}`}>
-                                {f.severity}
-                              </span>
-                            </div>
-                            <p className="mt-1.5">{f.description}</p>
-                            {f.suggestion ? <p className={`mt-1 text-xs ${c.muted}`}>→ {f.suggestion}</p> : null}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  ) : null}
+                  {/*
+                    * What the three of them actually do. The difference between
+                    * the last two was written down once, in a comment in
+                    * `api/audit.ts`, where nobody using this could read it.
+                    */}
+                  <p className={`text-xs ${c.muted}`}>
+                    Checking reports and changes nothing. Rewriting acts on everything
+                    it finds; removing AI phrasing acts only on prose that reads
+                    machine-made and leaves a plot hole reported but untouched. Both
+                    keep a copy of the file as it stands before they start.
+                  </p>
                 </div>
               )}
             </section>
 
+            {/*
+              * One findings list, not two.
+              *
+              * There were two, in the same card, with the same divider, chip and
+              * arrow, one holding this run's findings for one file and the other
+              * the project's findings on record — and nothing but a heading to
+              * tell them apart once you had scrolled past it.
+              */}
             <section className="space-y-3">
-              <h3 className="font-serif text-xl">
-                Findings
-                <span className={`ml-2 text-sm ${c.muted}`}>{detail.findings.length}</span>
-              </h3>
-              {detail.findings.length === 0 ? (
-                <p className={`text-sm ${c.muted}`}>
-                  Nothing on record for this project.
+              <div className="flex items-center gap-3">
+                <h3 className="font-serif text-xl">Findings</h3>
+                <div className={`flex rounded-lg border ${c.cardStatic} p-0.5 text-xs`}>
+                  <button
+                    onClick={() => setScope("project")}
+                    aria-pressed={scope === "project"}
+                    className={`px-2.5 py-1 rounded-md ${scope === "project" ? SELECTED : c.muted}`}
+                  >
+                    This project ({detail.findings.length})
+                  </button>
+                  <button
+                    onClick={() => setScope("file")}
+                    disabled={!audit}
+                    aria-pressed={scope === "file"}
+                    className={`px-2.5 py-1 rounded-md disabled:opacity-40 ${scope === "file" ? SELECTED : c.muted}`}
+                  >
+                    {audit ? `Last check (${audit.findings.length})` : "Last check"}
+                  </button>
+                </div>
+              </div>
+
+              {shown.length === 0 ? (
+                <p className={`text-sm ${scope === "file" ? "text-success" : c.muted}`}>
+                  {scope === "file"
+                    ? `Nothing to fix in ${file?.name ?? "this file"}.`
+                    : "Nothing on record for this project."}
                 </p>
               ) : (
-                <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide} max-h-80 overflow-y-auto`}>
-                  {detail.findings.map((f, i) => (
-                    <div key={i} className="p-3 text-sm">
+                <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
+                  {shown.map((f, i) => (
+                    <div key={`${f.category}-${i}`} className="p-3 text-sm">
                       <div className="flex items-center gap-2">
                         <span className={`text-xs px-1.5 py-0.5 rounded ${c.code}`}>{f.category}</span>
                         <span className={`text-xs ${SEVERITY_TONE[f.severity] ?? c.muted}`}>{f.severity}</span>
@@ -597,11 +1042,11 @@ export function AuditPage({
 
       {/* -------------------------------------------------------- the edit */}
       {showEditor && (
-        <aside className="w-[26rem] shrink-0 space-y-3">
+        <aside className="w-[26rem] shrink-0 h-full overflow-y-auto pr-1 space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-serif text-xl">Edit</h3>
             <button
-              disabled={!file || !dirty || busy !== null}
+              disabled={!file || !dirty || loadFailed || busy !== null}
               onClick={() => void save()}
               className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
             >
@@ -613,26 +1058,80 @@ export function AuditPage({
           {!file ? (
             <p className={`text-sm ${c.muted}`}>Pick a file to edit it here.</p>
           ) : loadingText ? (
-            <Loader2 size={18} className="animate-spin text-primary" />
+            <Spinner label="Opening the file" />
+          ) : loadFailed ? (
+            <div className={`border rounded-lg p-4 text-sm space-y-2 ${c.error}`}>
+              <p>This file would not open, so there is nothing here to edit.</p>
+              <button
+                onClick={() => void openFile(file)}
+                className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
+              >
+                Try again
+              </button>
+            </div>
           ) : (
             <>
               <p className={`text-xs truncate ${c.muted}`}>{file.name}</p>
               {progress ? (
-                <p className="text-xs text-amber-500 flex items-center gap-1.5">
+                <p role="status" aria-live="polite" className="text-xs text-warning flex items-center gap-1.5">
                   <Loader2 size={12} className="animate-spin" />{progress}
                 </p>
               ) : null}
+              {/*
+                * Prose, not configuration. This is where a novelist reads what
+                * the model just rewrote, and it was 12px monospace with the
+                * spellchecker off and no way to save from the keyboard.
+                */}
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                spellCheck={false}
-                className={`w-full h-[36rem] px-3 py-2 text-xs font-mono rounded resize-none ${c.input}`}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+                    e.preventDefault();
+                    if (dirty && busy === null) void save();
+                  }
+                }}
+                spellCheck
+                aria-label={file ? `Edit ${file.name}` : "Edit the selected file"}
+                className={`w-full h-[36rem] px-3 py-2 text-sm leading-7 rounded resize-y ${c.input}`}
               />
+              <p className={`text-xs ${c.muted}`}>
+                {text.trim() ? `${text.trim().split(/\s+/).length.toLocaleString()} words` : "empty"}
+                {dirty ? " · unsaved — Ctrl+S to save" : " · saved"}
+              </p>
             </>
           )}
         </aside>
       )}
+
+      <ConfirmDialog
+        open={pending !== null}
+        variant="danger"
+        title={pending?.title ?? ""}
+        message={pending?.message ?? ""}
+        confirmLabel={pending?.confirmLabel ?? "Continue"}
+        cancelLabel={pending?.cancelLabel ?? "Cancel"}
+        onConfirm={() => { const held = pending; setPending(null); held?.act(); }}
+        onCancel={() => setPending(null)}
+      />
     </div>
+  );
+}
+
+/**
+ * A spinner that says what it is waiting for.
+ *
+ * Five bare `Loader2`s on this page announced nothing at all, on a screen whose
+ * slowest operations are the ones worth announcing.
+ */
+function Spinner({
+  label, size = 18, className = "",
+}: { label: string; size?: number; className?: string }) {
+  return (
+    <span role="status" className={`inline-flex items-center ${className}`}>
+      <Loader2 size={size} className="animate-spin text-primary" />
+      <span className="sr-only">{label}</span>
+    </span>
   );
 }
 
@@ -642,13 +1141,14 @@ export function AuditPage({
  * becomes part of that screen's public surface.
  */
 function Gate({
-  c, title, approved, notes, notesLabel, canApprove, busy, onToggle,
+  c, title, approved, notes, notesLabel, approvedLabel, canApprove, busy, onToggle,
 }: {
   c: Record<string, string>;
   title: string;
   approved: Approval | null;
   notes: readonly string[];
   notesLabel: string;
+  approvedLabel: string;
   canApprove: boolean;
   busy: boolean;
   onToggle: (approve: boolean) => void;
@@ -657,14 +1157,28 @@ function Gate({
     <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-3`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-serif text-lg">{title}</h3>
-        <span className={`text-xs ${approved ? "text-emerald-500" : c.muted}`}>
-          {approved ? `approved ${new Date(approved.at).toLocaleDateString()}` : "not approved"}
+        <span className={`text-xs text-right ${approved ? "text-success" : c.muted}`}>
+          {approved ? (
+            <>
+              approved {new Date(approved.at).toLocaleString()}
+              {/* Who signed this off was carried in the type and rendered
+                  nowhere, which made an approval unattributable. */}
+              {approved.by ? <span className={`block ${c.muted}`}>by {approved.by}</span> : null}
+            </>
+          ) : "not approved"}
         </span>
       </div>
 
-      {!approved && notes.length > 0 ? (
+      {/*
+        * Warnings stay after the sign-off.
+        *
+        * Copy can be approved over its warnings on purpose — that is what
+        * `canApprove` being true regardless is for. Hiding them the instant
+        * someone does destroys the record of what they chose to overrule.
+        */}
+      {notes.length > 0 ? (
         <div className={`text-xs ${c.muted} space-y-1`}>
-          <p>{notesLabel}</p>
+          <p>{approved ? approvedLabel : notesLabel}</p>
           <ul className="list-disc pl-4">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
         </div>
       ) : null}

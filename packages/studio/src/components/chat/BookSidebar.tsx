@@ -4,6 +4,7 @@ import type { TFunction } from "../../hooks/use-i18n";
 import type { SSEMessage } from "../../hooks/use-sse";
 import { useChatStore } from "../../store/chat";
 import { fetchJson } from "../../hooks/use-api";
+import { tr } from "../../lib/app-language";
 import { PanelRightClose, PanelRightOpen, ArrowLeft, Loader2, Pencil, Save, X } from "lucide-react";
 import { Streamdown } from "streamdown";
 import { cjk } from "@streamdown/cjk";
@@ -157,6 +158,8 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-border/20 shrink-0">
         <button
           onClick={closeArtifact}
+          aria-label={tr("返回", "Back")}
+          title={tr("返回", "Back")}
           className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
         >
           <ArrowLeft size={14} />
@@ -165,6 +168,8 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
         {!loading && content !== null && !editing && (
           <button
             onClick={handleEdit}
+            aria-label={tr("编辑", "Edit")}
+            title={tr("编辑", "Edit")}
             className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
           >
             <Pencil size={12} />
@@ -175,12 +180,16 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
             <button
               onClick={handleSave}
               disabled={saving}
+              aria-label={tr("保存", "Save")}
+              title={tr("保存", "Save")}
               className="w-6 h-6 rounded-md flex items-center justify-center text-emerald-500 hover:bg-emerald-500/10 transition-colors"
             >
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             </button>
             <button
               onClick={() => setEditing(false)}
+              aria-label={tr("取消", "Cancel")}
+              title={tr("取消", "Cancel")}
               className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
             >
               <X size={12} />
@@ -318,6 +327,8 @@ export function BookSidebarToggle({ bookId, theme, t, sse }: BookSidebarProps) {
     <>
       <button
         onClick={() => setOpen(true)}
+        aria-label={tr("打开书籍信息", "Show book details")}
+        title={tr("打开书籍信息", "Show book details")}
         className="fixed right-3 top-[72px] z-20 lg:hidden w-8 h-8 rounded-lg bg-card border border-border/40 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
       >
         <PanelRightOpen size={14} />
@@ -331,8 +342,13 @@ export function BookSidebarToggle({ bookId, theme, t, sse }: BookSidebarProps) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/20">
-              <span className="text-[15px] leading-6 font-medium text-muted-foreground">书籍信息</span>
-              <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground">
+              <span className="text-[15px] leading-6 font-medium text-muted-foreground">{tr("书籍信息", "Book details")}</span>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label={tr("关闭", "Close")}
+                title={tr("关闭", "Close")}
+                className="text-muted-foreground hover:text-foreground"
+              >
                 <PanelRightClose size={14} />
               </button>
             </div>

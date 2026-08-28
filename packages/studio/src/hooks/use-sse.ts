@@ -35,6 +35,12 @@ export const STUDIO_SSE_EVENTS = [
   "audit:run",
   "audit:progress",
   "audit:text",
+  // Same story for the publication routes: art, render and build all broadcast
+  // their start/done/error and no client heard any of it, so every one of those
+  // buttons looked like it had done nothing at all.
+  "publication:run",
+  "publication:issue",
+  "publication:event",
   "revise:start",
   "revise:complete",
   "revise:error",
@@ -91,6 +97,15 @@ export function useNewSSEMessages(
 export function useSSE(url = "/api/v1/events") {
   const [messages, setMessages] = useState<ReadonlyArray<SSEMessage>>([]);
   const [connected, setConnected] = useState(false);
+  /**
+   * Whether the stream has ever been open.
+   *
+   * `connected` is false for the first moment of every load, so a banner keyed
+   * on it alone would announce a lost connection to everyone who just opened
+   * the app. Only a stream that was open and then dropped is worth telling
+   * somebody about.
+   */
+  const [everConnected, setEverConnected] = useState(false);
   const esRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
 
@@ -98,7 +113,7 @@ export function useSSE(url = "/api/v1/events") {
     const es = new EventSource(url);
     esRef.current = es;
 
-    es.onopen = () => setConnected(true);
+    es.onopen = () => { setConnected(true); setEverConnected(true); };
     es.onerror = () => setConnected(false);
 
     const handleEvent = (e: MessageEvent) => {
@@ -126,5 +141,11 @@ export function useSSE(url = "/api/v1/events") {
 
   const clear = useCallback(() => setMessages([]), []);
 
-  return { messages, connected, clear };
+  /**
+   * `lost` is the state no screen had: the server going away mid-run left the
+   * UI showing "Thinking…" forever, indistinguishable from a slow model. The
+   * browser retries an EventSource on its own, so this clears itself when the
+   * server comes back.
+   */
+  return { messages, connected, lost: everConnected && !connected, clear };
 }

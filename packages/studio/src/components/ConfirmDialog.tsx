@@ -44,6 +44,9 @@ export function ConfirmDialog({
       ref={overlayRef}
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm fade-in"
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
     >
       <div className="bg-card border border-border rounded-2xl shadow-2xl shadow-primary/10 w-full max-w-md mx-4 overflow-hidden chat-msg-assistant">
         {/* Header */}
@@ -58,6 +61,8 @@ export function ConfirmDialog({
           </div>
           <button
             onClick={onCancel}
+            aria-label={cancelLabel}
+            title={cancelLabel}
             className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
             <X size={16} />

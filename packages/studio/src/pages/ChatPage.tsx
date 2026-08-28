@@ -2,6 +2,7 @@ import { useCallback, useRef, useEffect, useMemo, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
+import { toFamilies } from "./model-picker-state";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { ChatAttachmentPayload } from "../store/chat/types";
 import { chatSelectors, useChatStore } from "../store/chat";
@@ -1148,16 +1149,35 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   rows={1}
                   className="flex-1 bg-transparent text-base leading-7 placeholder:text-muted-foreground/50 outline-none! border-none! ring-0! shadow-none focus:outline-none! focus:ring-0! focus:border-none! resize-none disabled:opacity-50 max-h-[200px] overflow-y-auto"
                 />
+                {/*
+                  * Stop is its own control, and it stays put.
+                  *
+                  * It used to be the send button wearing a different icon,
+                  * shown only while the composer was empty — so typing the
+                  * next thought during a generation that runs for minutes
+                  * removed the only way to interrupt it, which is exactly when
+                  * a person reaches for it.
+                  */}
+                {(loading || chatStreaming) && activeSessionId ? (
+                  <button
+                    type="button"
+                    onClick={() => void abortSession(activeSessionId)}
+                    aria-label={isZh ? "停止当前回复" : "Stop generating"}
+                    title={isZh ? "停止当前回复" : "Stop generating"}
+                    className="w-8 h-8 rounded-lg bg-secondary text-foreground border border-border/60 flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all"
+                  >
+                    <Square size={13} fill="currentColor" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void onSend(input)}
-                  disabled={(!input.trim() && attachedFiles.length === 0 && !loading) || !activeSessionId}
+                  disabled={(!input.trim() && attachedFiles.length === 0) || !activeSessionId}
+                  aria-label={isZh ? "发送" : "Send message"}
+                  title={isZh ? "发送" : "Send message"}
                   className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all disabled:opacity-20 disabled:scale-100 shadow-sm shadow-primary/20"
-                  title={loading && !input.trim() && attachedFiles.length === 0 ? (isZh ? "停止当前回复" : "Stop") : undefined}
                 >
-                  {loading && !input.trim() && attachedFiles.length === 0
-                    ? <Square size={13} fill="currentColor" />
-                    : <ArrowUp size={14} strokeWidth={2.5} />}
+                  <ArrowUp size={14} strokeWidth={2.5} />
                 </button>
               </div>
               <div className="flex items-center gap-2 px-3 pb-2 border-t border-border/20 pt-1.5">
@@ -1177,6 +1197,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       selectedService={selectedService}
                       onSelect={chooseModel}
                       onManage={() => nav.toServices()}
+                      isZh={isZh}
                     />
                   </DropdownMenu>
                 ) : (
@@ -1278,61 +1299,99 @@ function ModelPickerContent({
   selectedService,
   onSelect,
   onManage,
+  isZh,
 }: {
-  groupedModels: ReadonlyArray<{ service: string; label: string; models: ReadonlyArray<{ id: string; name?: string }> }>;
+  groupedModels: ReadonlyArray<{ service: string; label: string; models: ReadonlyArray<{ id: string; name?: string; contextWindow?: number }> }>;
   selectedModel: string | null;
   selectedService: string | null;
   onSelect: (model: string, service: string) => void;
   onManage: () => void;
+  isZh: boolean;
 }) {
   const [search, setSearch] = useState("");
   const filtered = useMemo(() => filterModelGroups(groupedModels, search), [groupedModels, search]);
 
   return (
-    <DropdownMenuContent side="top" align="start" className="w-64 max-h-80 flex flex-col">
+    <DropdownMenuContent side="top" align="start" className="w-[26rem] max-h-[28rem] flex flex-col">
       <div className="px-2 py-1.5 border-b border-border/30">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索模型..."
+          placeholder={isZh ? "搜索模型…" : "Search models…"}
+          aria-label={isZh ? "搜索模型" : "Search models"}
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
           onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
+          // Typing must not reach the menu, or every letter jumps the
+          // selection to whatever item starts with it. Arrows, Enter and
+          // Escape are the menu's own and used to be swallowed here too,
+          // which left the search box a dead end you could only leave with
+          // the mouse.
+          onKeyDown={(e) => {
+            if (!["ArrowDown", "ArrowUp", "Enter", "Escape", "Tab"].includes(e.key)) {
+              e.stopPropagation();
+            }
+          }}
         />
       </div>
       <div className="overflow-y-auto flex-1">
         {filtered.map((group) => (
           <div key={group.service}>
-            <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+            <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
               {group.label}
             </div>
-            {group.models.map((m) => {
-              const isSelected = selectedModel === m.id && selectedService === group.service;
+            {toFamilies(group.models).map((family) => {
+              const only = family.variants.length === 1 && family.variants[0]!.variant === "";
+              const context = family.variants[0]?.contextWindow;
               return (
-                <DropdownMenuItem
-                  key={`${group.service}:${m.id}`}
-                  onClick={() => onSelect(m.id, group.service)}
-                  className={isSelected ? "bg-muted/50" : ""}
-                >
-                  <div className="flex flex-1 items-center justify-between">
-                    <span className="text-sm">{m.name ?? m.id}</span>
-                    {isSelected && <Check size={14} className="text-primary shrink-0" />}
+                <div key={`${group.service}:${family.base}`} className="px-2 py-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-sm truncate">{family.base.split("/").pop()}</span>
+                    {context ? (
+                      <span className="text-[11px] text-muted-foreground shrink-0">
+                        {Math.round(context / 1000)}k context
+                      </span>
+                    ) : null}
                   </div>
-                </DropdownMenuItem>
+                  {/* One row per model, its efforts as chips beside it: the
+                      three dimensions the ids encode, laid out as three
+                      dimensions instead of as 183 siblings. */}
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {family.variants.map((v) => {
+                      const isSelected = selectedModel === v.id && selectedService === group.service;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          onClick={() => onSelect(v.id, group.service)}
+                          aria-pressed={isSelected}
+                          title={v.id}
+                          className={`px-2 py-0.5 rounded-md text-[12px] border transition-colors ${
+                            isSelected
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "border-border/50 text-muted-foreground hover:bg-muted"
+                          }`}
+                        >
+                          {only ? (isZh ? "选择" : "Use") : v.variant}
+                          {isSelected ? <Check size={11} className="inline ml-1 -mt-0.5" /> : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               );
             })}
           </div>
         ))}
         {filtered.length === 0 && (
           <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center italic">
-            无匹配模型
+            {isZh ? "无匹配模型" : "No model matches that"}
           </div>
         )}
       </div>
       <div className="border-t border-border/30">
         <DropdownMenuItem onClick={onManage} className="text-primary">
-          管理服务商
+          {isZh ? "管理服务商" : "Manage providers"}
         </DropdownMenuItem>
       </div>
     </DropdownMenuContent>

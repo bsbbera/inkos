@@ -2,7 +2,8 @@ import { useApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
-import { Stethoscope, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { doctorViewState } from "./doctor-view-state";
+import { Stethoscope, CheckCircle2, XCircle, Loader2, AlertTriangle } from "lucide-react";
 
 interface DoctorChecks {
   readonly inkosJson: boolean;
@@ -19,9 +20,9 @@ function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail?: 
   return (
     <div className="flex items-center gap-3 py-3 border-b border-border/30 last:border-0">
       {ok ? (
-        <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+        <CheckCircle2 size={18} className="text-emerald-500 shrink-0" role="img" aria-label="passed" />
       ) : (
-        <XCircle size={18} className="text-destructive shrink-0" />
+        <XCircle size={18} className="text-destructive shrink-0" role="img" aria-label="failed" />
       )}
       <span className="text-sm font-medium flex-1">{label}</span>
       {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
@@ -31,7 +32,8 @@ function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail?: 
 
 export function DoctorView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
-  const { data, refetch } = useApi<DoctorChecks>("/doctor");
+  const { data, error, loading, refetch } = useApi<DoctorChecks>("/doctor");
+  const state = doctorViewState({ error, data });
 
   return (
     <div className="space-y-8">
@@ -46,14 +48,38 @@ export function DoctorView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           <Stethoscope size={28} className="text-primary" />
           {t("doctor.title")}
         </h1>
-        <button onClick={() => refetch()} className={`px-4 py-2 text-sm rounded-lg ${c.btnSecondary}`}>
-          {t("doctor.recheck")}
+        <button
+          onClick={() => refetch()}
+          disabled={loading}
+          className={`px-4 py-2 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
+        >
+          {loading ? t("doctor.checking") : t("doctor.recheck")}
         </button>
       </div>
 
-      {!data ? (
-        <div className="flex items-center justify-center py-12">
+      {/*
+        * This page is the one a person opens *because* something is wrong, so
+        * it has to survive its own subject failing. It used to render a
+        * spinner whenever there was no data and never look at `error`, which
+        * meant the check that says "the backend is unreachable" was displayed
+        * as an endless spinner — indistinguishable from a slow probe, with no
+        * way to tell that the answer had already come back and was a failure.
+        */}
+      {state === "error" ? (
+        <div className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`} role="alert">
+          <div className="flex items-center gap-3">
+            <AlertTriangle size={18} className="text-destructive shrink-0" />
+            <span className="text-sm font-medium flex-1">{t("doctor.unreachable")}</span>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {t("doctor.unreachableHint")}
+          </p>
+          <p className="text-xs font-mono text-muted-foreground break-all">{error}</p>
+        </div>
+      ) : state === "loading" || !data ? (
+        <div className="flex items-center justify-center py-12" role="status" aria-live="polite">
           <Loader2 size={24} className="animate-spin text-primary" />
+          <span className="sr-only">{t("doctor.checking")}</span>
         </div>
       ) : (
         <div className={`border ${c.cardStatic} rounded-lg p-5`}>

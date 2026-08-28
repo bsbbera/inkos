@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { listAuditTargets } from "./audit.js";
+import { listAuditTargets, readAuditProject } from "./audit.js";
 
 async function workspace(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "audit-targets-"));
@@ -83,5 +83,26 @@ describe("listAuditTargets", () => {
 
   it("is empty rather than broken on a workspace with nothing in it", async () => {
     expect(await listAuditTargets(await workspace({}))).toEqual([]);
+  });
+});
+
+describe("readAuditProject", () => {
+  /**
+   * The backup has been written before every rewrite since the pass was
+   * written, and the screen had no way to know it existed — so the undo it
+   * makes possible could not be offered.
+   */
+  it("says which files have a pre-audit copy to go back to", async () => {
+    const root = await workspace({
+      "shorts/lamp-room/final/one.md": prose,
+      "shorts/lamp-room/final/one.pre-audit.md": prose,
+      "shorts/lamp-room/final/two.md": prose,
+    });
+    const detail = await readAuditProject(root, "short", "lamp-room");
+    const backup = Object.fromEntries(
+      (detail?.items ?? []).map((i) => [i.name, i.backup]),
+    );
+    expect(backup["one.md"]).toBe(true);
+    expect(backup["two.md"]).toBe(false);
   });
 });

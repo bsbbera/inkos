@@ -246,6 +246,12 @@ const strings = {
   // Doctor
   "doctor.title": { zh: "环境诊断", en: "Environment Check" },
   "doctor.recheck": { zh: "重新检查", en: "Re-check" },
+  "doctor.checking": { zh: "检查中…", en: "Checking…" },
+  "doctor.unreachable": { zh: "无法连接到 Quire", en: "Quire is not answering" },
+  "doctor.unreachableHint": {
+    zh: "诊断本身无法完成，因为后端未响应。请重启 Quire；若仍然失败，请查看日志。",
+    en: "The checks could not run because the app's own server did not answer. Restart Quire; if it still fails, the studio log has the reason.",
+  },
   "doctor.inkosJson": { zh: "inkos.json 配置", en: "inkos.json configuration" },
   "doctor.projectEnv": { zh: "项目 .env 文件", en: "Project .env file" },
   "doctor.globalEnv": { zh: "全局 ~/.inkos/.env", en: "Global ~/.inkos/.env" },

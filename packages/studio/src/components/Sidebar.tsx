@@ -5,6 +5,23 @@ import { applyBookCollectionEvent, shouldRefetchBookCollections, shouldRefetchDa
 import type { TFunction } from "../hooks/use-i18n";
 import { tr } from "../lib/app-language";
 import { setProjectChatSessionId } from "../pages/chat-page-state";
+
+/**
+ * What each derivative launcher puts in the composer.
+ *
+ * The instruction, not the answer: every one leaves the user naming the work
+ * it is derived from, which is the one thing only they know.
+ */
+const DERIVED_SEEDS: Record<
+  "fanfic" | "spinoff" | "imitation" | "continuation" | "translation",
+  () => string
+> = {
+  fanfic: () => tr("写一篇同人，原作：", "Write fan fiction based on "),
+  spinoff: () => tr("写一部外传，原作：", "Write a spinoff of "),
+  imitation: () => tr("模仿这位作家的风格写作：", "Write in the style of "),
+  continuation: () => tr("继续写这部作品：", "Continue this work: "),
+  translation: () => tr("把这部作品翻译成：", "Translate this work into "),
+};
 import { useChatStore } from "../store/chat";
 import { ConfirmDialog } from "./ConfirmDialog";
 import {
@@ -272,6 +289,25 @@ export function Sidebar({ nav, activePage, sse, t }: {
   };
 
   /**
+   * The derivative-work launchers: fanfic, spinoff, imitation, continuation,
+   * translation.
+   *
+   * All five used to call `handleCreateProjectChatSession`, which opens a bare
+   * chat — so five separately labelled, separately iconed buttons produced one
+   * indistinguishable result, and the only way to find out what any of them
+   * did was to type the request yourself. They each seed the composer with the
+   * opening instruction instead, the way `launchPublication` below already
+   * does, so pressing one says what it is for.
+   */
+  const launchDerived = (kind: "fanfic" | "spinoff" | "imitation" | "continuation" | "translation") => {
+    setProjectChatExpanded(true);
+    const sessionId = createDraftSession(null, "chat");
+    setProjectChatSessionId(sessionId);
+    setInput(DERIVED_SEEDS[kind]());
+    nav.toChat();
+  };
+
+  /**
    * Start a publication.
    *
    * Deliberately the same path as every other item here: a real chat session,
@@ -351,11 +387,11 @@ export function Sidebar({ nav, activePage, sse, t }: {
             <CreateItem icon={<Clapperboard size={16} />} label={t("nav.createScript")} onClick={() => launchProjectMode("script")} />
             <CreateItem icon={<Rows3 size={16} />} label={t("nav.createStoryboard")} onClick={() => launchProjectMode("storyboard")} />
             <CreateItem icon={<Film size={16} />} label={t("nav.createInteractiveFilm")} onClick={() => launchProjectMode("interactive-film")} />
-            <CreateItem icon={<Feather size={16} />} label={t("nav.createFanfic")} onClick={handleCreateProjectChatSession} />
-            <CreateItem icon={<BookCopy size={16} />} label={t("nav.createSpinoff")} onClick={handleCreateProjectChatSession} />
-            <CreateItem icon={<Wand2 size={16} />} label={t("nav.createImitation")} onClick={handleCreateProjectChatSession} />
-            <CreateItem icon={<FileInput size={16} />} label={t("nav.createContinuation")} onClick={handleCreateProjectChatSession} />
-            <CreateItem icon={<Languages size={16} />} label={t("nav.createTranslation")} onClick={handleCreateProjectChatSession} />
+            <CreateItem icon={<Feather size={16} />} label={t("nav.createFanfic")} onClick={() => launchDerived("fanfic")} />
+            <CreateItem icon={<BookCopy size={16} />} label={t("nav.createSpinoff")} onClick={() => launchDerived("spinoff")} />
+            <CreateItem icon={<Wand2 size={16} />} label={t("nav.createImitation")} onClick={() => launchDerived("imitation")} />
+            <CreateItem icon={<FileInput size={16} />} label={t("nav.createContinuation")} onClick={() => launchDerived("continuation")} />
+            <CreateItem icon={<Languages size={16} />} label={t("nav.createTranslation")} onClick={() => launchDerived("translation")} />
             {(publicationTypes?.types ?? []).map((type) => (
               <CreateItem
                 key={type.id}
