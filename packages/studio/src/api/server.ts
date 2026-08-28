@@ -137,6 +137,7 @@ import {
   listIssues,
 } from "@actalk/quire-core";
 import { registerAuditRoutes } from "./audit.js";
+import { isApproved, readAuditState } from "./audit-state.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
@@ -4313,6 +4314,24 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       : undefined;
     if (typeof content !== "string") {
       throw new ApiError(400, "INVALID_PROJECT_ARTIFACT_BODY", "content must be a string");
+    }
+
+    /*
+     * A file someone has signed off is not written over by accident.
+     *
+     * The audit screen locks its editor when a file is approved, but a lock
+     * that lives only in one screen is a suggestion. `force` is how a caller
+     * says it knows what it is doing — which is what the screen sends after
+     * the person confirms they mean to reopen an approved file.
+     */
+    const forced = body && typeof body === "object" && "force" in body
+      && (body as { readonly force?: unknown }).force === true;
+    if (!forced && isApproved(await readAuditState(root), file.relPath)) {
+      throw new ApiError(
+        409,
+        "PROJECT_ARTIFACT_APPROVED",
+        "this file has been approved — reopen it before saving over it",
+      );
     }
 
     await mkdir(dirname(file.resolved), { recursive: true });

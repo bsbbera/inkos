@@ -26,6 +26,9 @@ import {
   storyAuditReport,
 } from "@actalk/quire-core";
 import { gateState, stageStates } from "./publications.js";
+import {
+  readAuditState, updateFileAudit, type FileAudit,
+} from "./audit-state.js";
 
 export interface AuditRouteDeps {
   readonly root: string;
@@ -212,6 +215,16 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
         ? await runStoryDeslop(options)
         : await runStoryAudit({ ...options, revise: body.revise === true });
       broadcast("audit:run", { path, state: "done" });
+      // What the tree needs to stop showing twenty-two identical rows: which
+      // of them have been through this, and which of them were rewritten.
+      const warnings = audit.findings.filter((f) => f.severity === "warning").length;
+      await updateFileAudit(root, path, {
+        checked: new Date().toISOString(),
+        findings: audit.findings.length,
+        warnings,
+        rewritten: audit.rounds && audit.rounds > 0 ? new Date().toISOString() : undefined,
+      });
+      broadcast("audit:state", { path });
       return c.json({ audit, report: storyAuditReport(audit) });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -262,8 +275,36 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     }
     await copyFile(backup, join(root, path));
     const content = await readFile(join(root, path), "utf-8");
+    // The file is the pre-rewrite text again, so the mark that says otherwise
+    // has to go with it.
+    await updateFileAudit(root, path, { rewritten: null });
     broadcast("audit:text", { path, markdown: content });
+    broadcast("audit:state", { path });
     return c.json({ restored: true, content });
+  });
+
+  /**
+   * Sign a file off, or take the sign-off back.
+   *
+   * Approval is the thing the screen had no way to say. A project of
+   * twenty-two files being read one at a time needs somewhere to put "this one
+   * is finished", or the reader is holding that list in their head. While it
+   * holds, saving over the file is refused unless the caller says explicitly
+   * that it meant to.
+   */
+  app.post("/api/v1/audit/approve", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as {
+      path?: string; approve?: boolean; by?: string;
+    };
+    const path = String(body.path ?? "").trim();
+    if (!path) return c.json({ error: "an artifact path is required" }, 400);
+
+    const approved = body.approve === false
+      ? null
+      : { at: new Date().toISOString(), by: String(body.by || "you") };
+    await updateFileAudit(root, path, { approved });
+    broadcast("audit:state", { path });
+    return c.json({ approved });
   });
 }
 
@@ -298,6 +339,8 @@ export interface AuditItem {
   readonly name: string;
   readonly words: number;
   readonly modified: string;
+  /** What has been done to this file, and whether it is signed off. */
+  readonly audit: FileAudit;
   /**
    * Whether a rewriting pass left `<name>.pre-audit.md` beside this file.
    *
@@ -379,11 +422,13 @@ export async function readAuditProject(
   const spec = PRODUCTIONS.find((p) => p.id === kind);
   if (!spec || !spec.auditable) return null;
 
+  const state = await readAuditState(root);
   const items: AuditItem[] = await Promise.all(
     (await listAuditTargets(root))
       .filter((t) => t.kind === kind && t.project === id)
       .map(async ({ path, name, words, modified }) => ({
         path, name, words, modified,
+        audit: state.files[path] ?? {},
         backup: await exists(join(root, backupPathOf(path))),
       })),
   );

@@ -55,8 +55,8 @@ import { useNewSSEMessages, type SSEMessage } from "../hooks/use-sse";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   AlertTriangle, Check, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
-  Loader2, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save, ShieldCheck,
-  Square, X,
+  Lock, Loader2, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save,
+  ShieldCheck, Square, Unlock, X,
 } from "lucide-react";
 
 interface Project {
@@ -68,11 +68,21 @@ interface Project {
   readonly modified: string;
 }
 
+interface FileAudit {
+  readonly checked?: string;
+  readonly findings?: number;
+  readonly warnings?: number;
+  readonly rewritten?: string;
+  readonly approved?: { readonly at: string; readonly by: string };
+}
+
 interface Item {
   readonly path: string;
   readonly name: string;
   readonly words: number;
   readonly modified: string;
+  /** What has been done to this file, and whether it is signed off. */
+  readonly audit?: FileAudit;
   /** A `.pre-audit` copy exists, so the last rewrite can be undone. */
   readonly backup?: boolean;
 }
@@ -276,6 +286,23 @@ export function AuditPage({
    * only way to tell was to remember.
    */
   const [ran, setRan] = useState<{ mode: string; findings: number } | null>(null);
+  /**
+   * How much rewritten text has landed in the editor, and when the last piece
+   * did.
+   *
+   * The rewrite has streamed each finished section into the panel since it was
+   * written, and the panel gave no sign of it: the text simply differed at some
+   * point, which from the reader's chair is indistinguishable from nothing
+   * happening for four minutes and then a reload.
+   */
+  const [streamed, setStreamed] = useState<{ count: number; at: number } | null>(null);
+  /**
+   * Approved files the reader has deliberately reopened, this visit.
+   *
+   * Not persisted: reopening is a decision about the next few minutes, not a
+   * property of the file, and it should not outlive the screen.
+   */
+  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(new Set());
   const [, setTick] = useState(0);
 
   useEffect(() => { remembered.shutKinds = shutKinds; }, [shutKinds]);
@@ -361,7 +388,11 @@ export function AuditPage({
     if (message.event === "audit:text" && typeof data.markdown === "string" && !stateRef.current.dirty) {
       setText(data.markdown);
       setSaved(data.markdown);
+      setStreamed((s) => ({ count: (s?.count ?? 0) + 1, at: Date.now() }));
     }
+    // The tree's marks live in a file the server writes, so a run that changes
+    // them has to say so.
+    if (message.event === "audit:state") reload.current();
   }, []));
 
   const loadProjects = useCallback(async () => {
@@ -410,6 +441,7 @@ export function AuditPage({
     setFile(null);
     setAudit(null);
     setRan(null);
+    setStreamed(null);
     setScope("project");
     setText("");
     setSaved("");
@@ -424,6 +456,7 @@ export function AuditPage({
     setFile(item);
     setAudit(null);
     setRan(null);
+    setStreamed(null);
     setScope("project");
     setLoadingText(true);
     setLoadFailed(false);
@@ -455,7 +488,9 @@ export function AuditPage({
       const res = await fetch(artifact(file.path), {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ content: text }),
+        // The server refuses to write over an approved file unless it is told
+        // the caller means it. Reopening the file here is that.
+        body: JSON.stringify({ content: text, force: unlocked.has(file.path) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
@@ -523,6 +558,7 @@ export function AuditPage({
     if (!file || loadFailed) return;
     setBusy(mode);
     setRan(null);
+    setStreamed(null);
     clearError();
     setInflight({ key: mode, label: RUN_LABEL[mode] ?? mode, at: Date.now() });
     try {
@@ -596,10 +632,59 @@ export function AuditPage({
     }
   };
 
+  /** Sign the open file off, or take the sign-off back. */
+  const approve = async (yes: boolean) => {
+    if (!file) return;
+    setBusy("approve");
+    clearError();
+    try {
+      const res = await fetch("/api/v1/audit/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: file.path, approve: yes }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      // Approving locks the editor again, so a reopen from before it should
+      // not survive.
+      setUnlocked((set) => {
+        const next = new Set(set);
+        next.delete(file.path);
+        return next;
+      });
+      setNote(yes ? "Signed off." : "Sign-off withdrawn.");
+      if (picked) await loadProject(picked.kind, picked.id);
+    } catch (e) {
+      fail(e, () => void approve(yes));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const dirty = text !== saved;
   const page = file ? pageNumberOf(file.name) : null;
   const running = inflight !== null;
   const runBusy = busy === "report" || busy === "revise" || busy === "deslop";
+
+  /*
+   * The open file as the project currently reports it, rather than as it was
+   * when it was clicked. `file` is a snapshot from the tree; the marks on it
+   * change under a run, and reading them off `detail` keeps them true.
+   */
+  const current = detail?.items.find((i) => i.path === file?.path);
+  const approved = current?.audit?.approved ?? null;
+  const locked = approved !== null && !unlocked.has(file?.path ?? "");
+
+  /** How far through the project the reader is, in one line. */
+  const tally = useMemo(() => {
+    const items = detail?.items ?? [];
+    return {
+      total: items.length,
+      checked: items.filter((i) => i.audit?.checked).length,
+      rewritten: items.filter((i) => i.audit?.rewritten).length,
+      approved: items.filter((i) => i.audit?.approved).length,
+    };
+  }, [detail]);
 
   /** Ask, then run `act` — or run it now if there is nothing to warn about. */
   const guarded = (act: () => void, ask?: Partial<Pending>) => {
@@ -730,6 +815,16 @@ export function AuditPage({
                                           </span>
                                         ) : null}
                                       </span>
+                                      {/*
+                                        * Where each file has got to.
+                                        *
+                                        * Twenty-two rows that looked identical
+                                        * whether they had been checked, rewritten
+                                        * and signed off or never opened — so the
+                                        * only record of how far you were through a
+                                        * project was your own memory of it.
+                                        */}
+                                      <FileMarks item={item} c={c} />
                                     </button>
                                   ))}
                                 </div>
@@ -795,6 +890,23 @@ export function AuditPage({
               <div className="min-w-0">
                 <h2 className="font-serif text-3xl truncate">{detail.title}</h2>
                 <p className={`mt-1 text-xs ${c.muted}`}>{detail.subtitle}</p>
+                <p className="mt-1 text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className={c.muted}>{tally.total} files</span>
+                  <span className={tally.checked ? "text-success" : c.muted}>
+                    {tally.checked} checked
+                  </span>
+                  <span className={tally.rewritten ? "text-warning" : c.muted}>
+                    {tally.rewritten} rewritten
+                  </span>
+                  <span className={tally.approved ? "text-primary" : c.muted}>
+                    {tally.approved} signed off
+                  </span>
+                  {tally.total - tally.approved > 0 ? (
+                    <span className={c.muted}>
+                      {tally.total - tally.approved} still waiting
+                    </span>
+                  ) : null}
+                </p>
               </div>
               <button
                 onClick={() => setShowEditor((v) => !v)}
@@ -1008,7 +1120,7 @@ export function AuditPage({
                           ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Cleaned</>
                           : "Remove AI phrasing"}
                     </button>
-                    {file.backup ? (
+                    {current?.backup ? (
                       <button
                         disabled={busy !== null}
                         onClick={() => void restore()}
@@ -1019,7 +1131,31 @@ export function AuditPage({
                         {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
                       </button>
                     ) : null}
+                    <button
+                      disabled={busy !== null}
+                      onClick={() => void approve(approved === null)}
+                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
+                        approved ? c.btnSecondary : c.btnSuccess
+                      }`}
+                    >
+                      {approved
+                        ? <><Unlock size={14} className="inline mr-1.5 -mt-0.5" />Withdraw sign-off</>
+                        : <><Check size={14} className="inline mr-1.5 -mt-0.5" />{busy === "approve" ? "Signing off…" : "Sign this off"}</>}
+                    </button>
                   </div>
+
+                  {current?.audit?.checked ? (
+                    <p className={`text-xs ${c.muted}`}>
+                      Last checked {new Date(current.audit.checked).toLocaleString()}
+                      {typeof current.audit.findings === "number"
+                        ? ` · ${current.audit.findings} findings`
+                        : ""}
+                      {current.audit.rewritten
+                        ? ` · rewritten ${new Date(current.audit.rewritten).toLocaleString()}`
+                        : ""}
+                    </p>
+                  ) : null}
+
                   {/*
                     * What the three of them actually do. The difference between
                     * the last two was written down once, in a comment in
@@ -1052,7 +1188,7 @@ export function AuditPage({
                     aria-pressed={scope === "project"}
                     className={`px-2.5 py-1 rounded-md ${scope === "project" ? SELECTED : c.muted}`}
                   >
-                    This project ({detail.findings.length})
+                    {detail.title} ({detail.findings.length})
                   </button>
                   <button
                     onClick={() => setScope("file")}
@@ -1097,7 +1233,7 @@ export function AuditPage({
           <div className="flex items-center justify-between gap-3">
             <h3 className="font-serif text-xl">Edit</h3>
             <button
-              disabled={!file || !dirty || loadFailed || busy !== null}
+              disabled={!file || !dirty || loadFailed || locked || busy !== null}
               onClick={() => void save()}
               className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
             >
@@ -1123,6 +1259,57 @@ export function AuditPage({
           ) : (
             <>
               <p className={`text-xs truncate ${c.muted}`}>{file.name}</p>
+
+              {/*
+                * A signed-off file is not typed into by accident.
+                *
+                * "Approved" meant nothing to the editor before: the textarea
+                * was as writable as any other, so the sign-off was a note to
+                * self rather than a state of the work. Reopening is one click
+                * and a confirmation, and it lasts only as long as this visit.
+                */}
+              {approved ? (
+                <div className={`border rounded-lg p-3 text-xs space-y-2 ${locked ? c.info : c.error}`}>
+                  <p className="flex items-center gap-1.5">
+                    {locked ? <Lock size={12} /> : <Unlock size={12} />}
+                    {locked
+                      ? `Signed off ${new Date(approved.at).toLocaleString()}${approved.by ? ` by ${approved.by}` : ""}. Read-only.`
+                      : `Reopened. This file was signed off ${new Date(approved.at).toLocaleString()} — saving replaces the approved text.`}
+                  </p>
+                  {locked ? (
+                    <button
+                      onClick={() => setPending({
+                        act: () => setUnlocked((set) => new Set(set).add(file.path)),
+                        title: "Reopen an approved file?",
+                        message: `${file.name} was signed off ${new Date(approved.at).toLocaleString()}${approved.by ? ` by ${approved.by}` : ""}. Editing it replaces the text that was approved.`,
+                        confirmLabel: "Reopen for editing",
+                        cancelLabel: "Leave it closed",
+                      })}
+                      className={`px-2.5 py-1 rounded-lg ${c.btnSecondary}`}
+                    >
+                      Reopen for editing
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/*
+                * Proof the rewrite is landing here.
+                *
+                * The pass has streamed each finished section into this panel
+                * since it was written, and nothing said so — the text just
+                * differed at some point, which reads as a reload rather than as
+                * work arriving.
+                */}
+              {streamed ? (
+                <p role="status" aria-live="polite" className="text-xs text-success flex items-center gap-1.5">
+                  <Check size={12} />
+                  {streamed.count === 1
+                    ? "1 rewritten section has landed here"
+                    : `${streamed.count} rewritten sections have landed here`}
+                </p>
+              ) : null}
+
               {progress ? (
                 <p role="status" aria-live="polite" className="text-xs text-warning flex items-center gap-1.5">
                   <Loader2 size={12} className="animate-spin" />{progress}
@@ -1143,8 +1330,11 @@ export function AuditPage({
                   }
                 }}
                 spellCheck
+                readOnly={locked}
                 aria-label={file ? `Edit ${file.name}` : "Edit the selected file"}
-                className={`w-full h-[36rem] px-3 py-2 text-sm leading-7 rounded resize-y ${c.input}`}
+                className={`w-full h-[36rem] px-3 py-2 text-sm leading-7 rounded resize-y ${c.input} ${
+                  locked ? "opacity-70 cursor-not-allowed" : ""
+                }`}
               />
               <p className={`text-xs ${c.muted}`}>
                 {text.trim() ? `${text.trim().split(/\s+/).length.toLocaleString()} words` : "empty"}
@@ -1166,6 +1356,31 @@ export function AuditPage({
         onCancel={() => setPending(null)}
       />
     </div>
+  );
+}
+
+/**
+ * How far one file has got, in the width of three characters.
+ *
+ * Checked, rewritten, signed off — the three facts the tree had no room for
+ * and no way to know, so every row looked like every other row.
+ */
+function FileMarks({ item, c }: { item: Item; c: Record<string, string> }) {
+  const a = item.audit;
+  if (!a?.checked && !a?.rewritten && !a?.approved) return null;
+  const said = [
+    a.checked ? `checked ${new Date(a.checked).toLocaleDateString()}` : "",
+    a.rewritten ? "rewritten" : "",
+    a.approved ? "signed off" : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <span className="shrink-0 flex items-center gap-0.5" title={said} aria-label={said}>
+      {a.approved
+        ? <Lock size={10} className="text-primary" />
+        : a.checked ? <Check size={10} className="text-success" /> : null}
+      {a.rewritten ? <RotateCcw size={10} className="text-warning" /> : null}
+      {!a.approved && !a.checked ? <span className={`text-[10px] ${c.muted}`}>·</span> : null}
+    </span>
   );
 }
 
