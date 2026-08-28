@@ -162,17 +162,27 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
 
   if (!data?.books.length) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center fade-in">
-        <div className="w-20 h-20 rounded-full bg-primary/5 flex items-center justify-center mb-8">
-          <BookOpen size={40} className="text-primary/20" />
-        </div>
-        <h2 className="font-serif text-3xl italic text-foreground/80 mb-3">{t("dash.noBooks")}</h2>
-        <p className="text-sm text-muted-foreground max-w-xs leading-relaxed mb-10">
+      /*
+        This screen is mostly empty by definition, so what fills it is the
+        aurora rather than an ornament. There used to be a decorative disc here
+        with the icon inside it at 20% opacity on a 5% ground - invisible, and
+        standing in for content it did not have. Removing it lets the serif
+        line be the largest thing on the screen, which is what it is for.
+
+        The button keeps its own hover scale but drops `transition-all`, which
+        animated every property including colour on its own timing and fought
+        the 120ms the rest of the app moves at.
+      */
+      <div className="flex flex-col items-center justify-center min-h-[70vh] text-center fade-in">
+        <h2 className="font-serif text-5xl italic tracking-tight text-foreground mb-4">
+          {t("dash.noBooks")}
+        </h2>
+        <p className="text-base text-muted-foreground max-w-sm leading-relaxed mb-10">
           {t("dash.createFirst")}
         </p>
         <button
           onClick={nav.toBookCreate}
-          className="group flex items-center gap-2 px-8 py-3.5 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
+          className="group flex items-center gap-2 rounded-xl bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-[1.03] active:scale-95"
         >
           <Plus size={18} />
           {t("nav.newBook")}
