@@ -51,11 +51,10 @@
 import { useResizable } from "../hooks/use-resizable";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
-import { useColors } from "../hooks/use-colors";
 import { useNewSSEMessages, type SSEMessage } from "../hooks/use-sse";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, FileText, Image as ImageIcon,
+  AlertTriangle, Check, ChevronDown, ChevronRight, Image as ImageIcon,
   Lock, Loader2, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save,
   ShieldCheck, Square, Unlock, X,
 } from "lucide-react";
@@ -129,7 +128,7 @@ interface Audit {
 /**
  * Severity, through the theme rather than around it.
  *
- * These were `text-emerald-500`, `text-amber-500` and `text-red-500` — raw
+ * These were `text-success`, `text-warning` and `text-destructive` — raw
  * palette that does not move between parchment and obsidian, and amber on the
  * light card measures about 1.9:1, which is not a severity indicator so much as
  * a rumour of one. `--success` and `--warning` are new; `--destructive` was
@@ -143,11 +142,6 @@ const STATE_TONE: Record<string, string> = {
   "needs-review": "text-warning",
   failed: "text-destructive",
   error: "text-destructive",
-};
-
-const SEVERITY_TONE: Record<string, string> = {
-  warning: "text-warning",
-  blocking: "text-destructive",
 };
 
 /** Run-state words as a person would say them. `s.state` is an enum off disk. */
@@ -179,6 +173,12 @@ const STAGE_LABEL: Record<string, string> = {
 const say = (map: Record<string, string>, key: string) =>
   map[key] ?? key.replace(/[-_]/g, " ");
 
+/** A stage name, sentence case. An unmapped stage arrived as `fact-check`. */
+const stageName = (stage: string) => {
+  const said = say(STAGE_LABEL, stage);
+  return said.charAt(0).toUpperCase() + said.slice(1);
+};
+
 const SELECTED = "bg-primary/10 text-primary";
 
 /**
@@ -196,6 +196,22 @@ const artifact = (path: string) =>
 function pageNumberOf(name: string): number | null {
   const m = /^(\d+)[-_]/.exec(name);
   return m ? Number(m[1]) : null;
+}
+
+/** A file name as a title, for the flatplan tile — `04-inside-this-issue.md`
+ *  reads as "Inside this issue". */
+function titleOf(name: string): string {
+  const bare = name.replace(/\.[^.]+$/, "").replace(/^\d+[-_]/, "").replace(/[-_]+/g, " ").trim();
+  return bare ? bare[0].toUpperCase() + bare.slice(1) : name;
+}
+
+/** Which of the flatplan's four states a file is in, for its bottom edge. */
+function pgStateOf(item: Item): "checked" | "rewritten" | "signed" | "" {
+  const a = item.audit;
+  if (a?.approved) return "signed";
+  if (a?.rewritten) return "rewritten";
+  if (a?.checked) return "checked";
+  return "";
 }
 
 /**
@@ -241,7 +257,6 @@ interface Pending {
 export function AuditPage({
   theme, sse,
 }: { theme: Theme; sse: { messages: ReadonlyArray<SSEMessage> } }) {
-  const c = useColors(theme);
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -314,6 +329,15 @@ export function AuditPage({
    */
   const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(new Set());
   const [, setTick] = useState(0);
+
+  // Purely how the screen presents itself — none of these three touch a
+  // route or a handler, so they default to whatever reads best and are free
+  // to add without risking the logic above.
+  const [fileView, setFileView] = useState<"tiles" | "list">("tiles");
+  const [textSize, setTextSize] = useState<"sm" | "md" | "lg">("md");
+  const [wide, setWide] = useState(false);
+  /** Severity, as a filter. Empty means every severity, which is the default. */
+  const [sevs, setSevs] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => { remembered.shutKinds = shutKinds; }, [shutKinds]);
   useEffect(() => { remembered.openProjects = openProjects; }, [openProjects]);
@@ -751,51 +775,72 @@ export function AuditPage({
   const nav = useResizable({ key: "quire-audit-nav", initial: 256, min: 200, max: 420, side: "end" });
   const editor = useResizable({ key: "quire-audit-editor", initial: 416, min: 320, max: 900, side: "start" });
 
+  const sevOf = (s: string) =>
+    s === "blocking" ? "blocking" : s === "warning" ? "warning" : "info";
+  const counts = {
+    blocking: shown.filter((f) => sevOf(f.severity) === "blocking").length,
+    warning: shown.filter((f) => sevOf(f.severity) === "warning").length,
+    info: shown.filter((f) => sevOf(f.severity) === "info").length,
+  };
+  const listed = sevs.size === 0 ? shown : shown.filter((f) => sevs.has(sevOf(f.severity)));
+  const toggleSev = (s: string) =>
+    setSevs((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(s)) next.add(s);
+      return next;
+    });
+
+  const doneStages = detail?.stages.filter(
+    (s) => s.state === "done" || s.state === "complete",
+  ).length ?? 0;
+
   return (
-    <div className="flex-1 min-w-0 flex gap-6 h-full min-h-0 px-6 py-8 md:px-10">
-      {/* ---------------------------------------------- kind, project, file */}
-      <aside
-        className="relative shrink-0 h-full overflow-y-auto pr-1 space-y-4"
+    <div className="aud flex-1 min-w-0 flex h-full min-h-0">
+      {/* ═════════════════════════════════════════════════════ the tree ══ */}
+      <nav
+        className="aud-tree shrink-0 h-full overflow-y-auto"
         style={{ width: nav.width }}
+        aria-label="Everything finished"
       >
         <div
           {...nav.gripProps}
           role="separator"
           aria-orientation="vertical"
-          aria-label="Resize panel"
-          className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/20 active:bg-primary/30"
+          aria-label="Resize the page list"
+          className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/40 active:bg-primary"
         />
-        <h1 className="font-serif text-2xl flex items-center gap-2">
-          <ShieldCheck size={20} className="text-primary" />Audit
-        </h1>
+
+        <div className="tree-head">
+          <span className="ring" aria-hidden="true"><ShieldCheck size={16} /></span>
+          <h1>Audit</h1>
+        </div>
 
         {loading ? (
           <Spinner label="Loading your work" />
         ) : error && groups.length === 0 ? (
           // Error and empty used to render together: a red box saying something
           // broke, beside a cheerful note saying you have finished nothing.
-          <p className={`text-sm ${c.muted}`}>Could not read your work — see the message beside this.</p>
+          <p className="quiet">Could not read your work — see the message beside this.</p>
         ) : groups.length === 0 ? (
-          <p className={`text-sm ${c.muted}`}>Nothing finished yet.</p>
+          <p className="quiet">Nothing finished yet.</p>
         ) : (
-          <div className="space-y-3" ref={treeRef} onKeyDown={onTreeKey}>
+          <div ref={treeRef} onKeyDown={onTreeKey}>
             {groups.map((g) => {
               const shut = shutKinds[g.kind] === true;
               return (
-                <div key={g.kind}>
+                <div className="grp" data-shut={shut ? "true" : "false"} key={g.kind}>
                   <button
                     data-row
                     aria-expanded={!shut}
                     onClick={() => setShutKinds((p) => ({ ...p, [g.kind]: !shut }))}
-                    className={`w-full flex items-center gap-1.5 text-xs uppercase tracking-wide ${c.muted}`}
                   >
-                    {shut ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                    <span className="flex-1 text-left">{g.label}</span>
-                    <span>{g.rows.length}</span>
+                    <ChevronDown className="chev" size={12} />
+                    <span>{g.label}</span>
+                    <span className="n mono">{g.rows.length}</span>
                   </button>
 
-                  {!shut && (
-                    <div className="mt-1 space-y-0.5">
+                  {shut ? null : (
+                    <div className="kids">
                       {g.rows.map((p) => {
                         const key = `${p.kind}/${p.id}`;
                         const on = picked?.kind === p.kind && picked.id === p.id;
@@ -809,61 +854,104 @@ export function AuditPage({
                           <div key={p.id}>
                             <button
                               data-row
+                              className="proj"
                               aria-expanded={open}
+                              aria-current={on ? "true" : "false"}
                               onClick={() => guarded(() => void openProject(p.kind, p.id))}
-                              className={`w-full flex items-center gap-1 px-1.5 py-1.5 rounded text-sm ${
-                                on ? `${SELECTED} hover:bg-primary/15` : c.tableHover
-                              }`}
                               title={p.id}
                             >
-                              {open ? <ChevronDown size={12} className="shrink-0" />
-                                : <ChevronRight size={12} className="shrink-0" />}
-                              <span className="flex-1 text-left truncate">{p.id}</span>
-                              <span className={`text-xs shrink-0 ${c.muted}`}>{p.files}</span>
+                              {open
+                                ? <ChevronDown className="chev" size={12} />
+                                : <ChevronRight className="chev" size={12} />}
+                              <span className="t">{p.id}</span>
+                              <span className="n mono">{p.files}</span>
                             </button>
 
                             {/* The files live here rather than in a section of
                                 their own beside the project. One navigator. */}
                             {open ? (
                               detail ? (
-                                <div className="ml-3 pl-2 border-l border-border space-y-0.5 mt-0.5">
-                                  {detail.items.map((item) => (
+                                <>
+                                  <div className="view" role="group" aria-label="How to show the pages">
                                     <button
-                                      key={item.path}
-                                      data-row
-                                      onClick={() => guarded(() => void openFile(item))}
-                                      className={`w-full flex items-center gap-1.5 px-1.5 py-1 rounded text-xs ${
-                                        file?.path === item.path
-                                          ? `${SELECTED} hover:bg-primary/15`
-                                          : c.tableHover
-                                      }`}
-                                      title={item.path}
+                                      type="button"
+                                      onClick={() => setFileView("tiles")}
+                                      aria-pressed={fileView === "tiles"}
                                     >
-                                      <FileText size={11} className="shrink-0 opacity-60" />
-                                      <span className="flex-1 min-w-0 text-left">
-                                        <span className="block truncate">{item.name}</span>
-                                        {/* Which folder it came from. Without this,
-                                            final/chapters/0001.md and outline/0001.md
-                                            are the same row printed twice. */}
-                                        {folderOf(item.path) ? (
-                                          <span className={`block truncate text-[11px] ${c.muted}`}>
-                                            {folderOf(item.path)}
-                                          </span>
-                                        ) : null}
-                                      </span>
-                                      {/*
-                                        * Where each file has got to.
-                                        *
-                                        * Twenty-two rows that looked identical
-                                        * whether they had been checked, rewritten
-                                        * and signed off or never opened — so the
-                                        * only record of how far you were through a
-                                        * project was your own memory of it.
-                                        */}
-                                      <FileMarks item={item} c={c} />
+                                      Flatplan
                                     </button>
-                                  ))}
-                                </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setFileView("list")}
+                                      aria-pressed={fileView === "list"}
+                                    >
+                                      List
+                                    </button>
+                                  </div>
+
+                                  {fileView === "tiles" ? (
+                                    <>
+                                      <div className="plan">
+                                        {detail.items.map((item) => {
+                                          const n = pageNumberOf(item.name);
+                                          return (
+                                            <button
+                                              key={item.path}
+                                              type="button"
+                                              className="pg"
+                                              data-s={pgStateOf(item)}
+                                              aria-current={file?.path === item.path ? "true" : "false"}
+                                              onClick={() => guarded(() => void openFile(item))}
+                                              title={`${item.name}${folderOf(item.path) ? ` · ${folderOf(item.path)}` : ""}`}
+                                            >
+                                              <span className="no">
+                                                {n !== null ? String(n).padStart(2, "0") : "—"}
+                                              </span>
+                                              <span className="sl">{titleOf(item.name)}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                      <div className="plan-key">
+                                        <span><i style={{ background: "var(--ok)" }} />checked</span>
+                                        <span><i style={{ background: "var(--warn)" }} />rewritten</span>
+                                        <span><i style={{ background: "var(--vermilion)" }} />signed off</span>
+                                        <span><i style={{ background: "var(--line-soft)" }} />waiting</span>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <div>
+                                      {detail.items.map((item) => (
+                                        <button
+                                          key={item.path}
+                                          data-row
+                                          className="file"
+                                          aria-current={file?.path === item.path ? "true" : "false"}
+                                          onClick={() => guarded(() => void openFile(item))}
+                                          title={item.path}
+                                        >
+                                          {/*
+                                            * Where each file has got to.
+                                            *
+                                            * Twenty-two rows that looked identical
+                                            * whether they had been checked, rewritten
+                                            * and signed off or never opened — so the
+                                            * only record of how far you were through a
+                                            * project was your own memory of it.
+                                            */}
+                                          <span className="fn">
+                                            <span className={`dot dot-${pgStateOf(item) || "waiting"}`} />
+                                            {item.name}
+                                          </span>
+                                          {/* Which folder it came from. Without this,
+                                              final/chapters/0001.md and outline/0001.md
+                                              are the same row printed twice. */}
+                                          <span className="fp mono">{folderOf(item.path) || detail.id}</span>
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </>
                               ) : (
                                 <Spinner label="Loading files" className="ml-5 my-1" size={12} />
                               )
@@ -878,13 +966,26 @@ export function AuditPage({
             })}
           </div>
         )}
-      </aside>
+      </nav>
 
-      {/* --------------------------------------------- the project itself */}
-      <div className="flex-1 min-w-0 h-full overflow-y-auto pr-1 space-y-6">
+      {/* ═════════════════════════════════════════════════════ the work ══ */}
+      <main className="aud-work flex-1 min-w-0 h-full overflow-y-auto">
+        <div className="topbar">
+          <span className="sp" />
+          <button
+            type="button"
+            className="btn btn-line btn-sm"
+            onClick={() => setShowEditor((v) => !v)}
+            aria-label={showEditor ? "Hide the editor" : "Show the editor"}
+          >
+            {showEditor ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+            <span>{showEditor ? "Hide manuscript" : "Show manuscript"}</span>
+          </button>
+        </div>
+
         {error && (
-          <div role="alert" className={`flex items-start gap-3 border rounded-lg p-4 text-sm ${c.error}`}>
-            <AlertTriangle size={18} className="shrink-0 mt-0.5" />
+          <div role="alert" className="alarm">
+            <AlertTriangle size={18} className="ico" />
             {/*
               * This was `font-mono text-xs break-all` — the visual grammar of a
               * stack trace, applied to sentences the server writes for people
@@ -896,25 +997,20 @@ export function AuditPage({
               <div className="flex items-center gap-2">
                 {retry ? (
                   <button
+                    className="btn btn-line btn-sm"
                     onClick={() => { const again = retry.act; clearError(); again(); }}
-                    className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
                   >
                     Try again
                   </button>
                 ) : null}
-                <button
-                  onClick={clearError}
-                  className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
-                >
-                  Dismiss
-                </button>
+                <button className="btn btn-quiet btn-sm" onClick={clearError}>Dismiss</button>
               </div>
             </div>
           </div>
         )}
 
         {!picked ? (
-          <p className={`text-sm ${c.muted}`}>
+          <p className="quiet">
             Pick something on the left. Everything this app has finished is there,
             filed under what made it.
           </p>
@@ -922,93 +1018,50 @@ export function AuditPage({
           <Spinner label="Loading this project" size={20} />
         ) : (
           <>
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <h2 className="font-serif text-3xl truncate">{detail.title}</h2>
-                <p className={`mt-1 text-xs ${c.muted}`}>{detail.subtitle}</p>
-                <p className="mt-1 text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <span className={c.muted}>{tally.total} files</span>
-                  <span className={tally.checked ? "text-success" : c.muted}>
-                    {tally.checked} checked
-                  </span>
-                  <span className={tally.rewritten ? "text-warning" : c.muted}>
-                    {tally.rewritten} rewritten
-                  </span>
-                  <span className={tally.approved ? "text-primary" : c.muted}>
-                    {tally.approved} signed off
-                  </span>
-                  {tally.total - tally.approved > 0 ? (
-                    <span className={c.muted}>
-                      {tally.total - tally.approved} still waiting
-                    </span>
-                  ) : null}
-                </p>
-              </div>
-              <button
-                onClick={() => setShowEditor((v) => !v)}
-                aria-label={showEditor ? "Hide the editor" : "Show the editor"}
-                className={`px-3 py-1.5 text-sm rounded-lg shrink-0 ${c.btnSecondary}`}
-              >
-                {showEditor
-                  ? <><PanelRightClose size={14} className="inline mr-1.5 -mt-0.5" />Hide editor</>
-                  : <><PanelRightOpen size={14} className="inline mr-1.5 -mt-0.5" />Show editor</>}
-              </button>
-            </div>
-
-            {/*
-              * Everything this page says about work in progress, in one place a
-              * screen reader is watching. There was no live region anywhere on
-              * this screen, so a pass that took four minutes announced its
-              * start, its progress, its finish and its failure to nobody.
-              */}
-            {/*
-              * Sticky, because it was not.
-              *
-              * This column scrolls, and a pass that runs for minutes reported
-              * itself at the top of it — so the moment the reader scrolled down
-              * to the findings, the only proof the pass was alive scrolled away
-              * with it, and the screen looked exactly as idle as before.
-              */}
-            <div
-              role="status"
-              aria-live="polite"
-              className="sticky top-0 z-20 -mx-1 px-1 py-1 space-y-2 empty:hidden bg-background/85 backdrop-blur-sm"
-            >
-              {inflight ? (
-                <div className={`flex items-center gap-3 border rounded-lg px-4 py-3 text-sm ${c.cardStatic}`}>
-                  <Loader2 size={16} className="animate-spin text-primary shrink-0" />
-                  <span className="flex-1 min-w-0 truncate">
-                    {progress ?? `${inflight.label}…`}
-                  </span>
-                  <span className={`text-xs tabular-nums ${c.muted}`}>{elapsed(inflight.at)}</span>
-                  {runBusy ? (
-                    <button
-                      onClick={() => void cancel()}
-                      className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
-                    >
-                      <Square size={11} className="inline mr-1 -mt-0.5" fill="currentColor" />
-                      Stop
-                    </button>
+            {/* ── 1. Readiness ──────────────────────────────────────────
+                One block answering the page's actual question, instead of a
+                12px tally line, two approval boxes and a red banner that each
+                held a third of the answer. */}
+            <section className="ready" aria-labelledby="ready-h">
+              <div className="ready-top">
+                <div className="anchor">
+                  <p className="frac">
+                    <b>{tally.approved}</b><i>/</i><span className="of">{tally.total}</span>
+                  </p>
+                  <p className="lb">files signed off</p>
+                  {detail.gates ? (
+                    <p className="why">Copy cannot be approved until every file carries one.</p>
                   ) : null}
                 </div>
-              ) : null}
-              {note ? <p className="text-sm text-success">{note}</p> : null}
-              {image ? (
-                // A render produced a picture and the reward for it was the path
-                // it was written to, in green text.
-                <img
-                  src={image}
-                  alt="The spread that was just rendered"
-                  className="max-h-64 rounded-lg border border-border"
-                />
-              ) : null}
-            </div>
 
-            {detail.gates ? (
-              <>
-                <section className="grid gap-4 md:grid-cols-2">
+                <div className="ready-id">
+                  <h2 id="ready-h">{detail.title}</h2>
+                  <p className="sub mono">{detail.subtitle}</p>
+
+                  <div className="tally">
+                    <div><b className="tnum">{tally.total}</b><span>files</span></div>
+                    <div className={tally.checked ? "is-ok" : "is-idle"}>
+                      <b className="tnum">{tally.checked}</b><span>checked</span>
+                    </div>
+                    <div className={tally.rewritten ? "is-warn" : "is-idle"}>
+                      <b className="tnum">{tally.rewritten}</b><span>rewritten</span>
+                    </div>
+                    <div className={tally.approved ? "is-acc" : "is-idle"}>
+                      <b className="tnum">{tally.approved}</b><span>signed off</span>
+                    </div>
+                    <div className="is-idle">
+                      <b className="tnum">{tally.total - tally.approved}</b><span>waiting</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Copy and Design are not independent checkboxes; they are what
+                  Build is waiting on, so the chain draws that link rather than
+                  leaving it to a red banner underneath. */}
+              {detail.gates ? (
+                <div className="chain">
                   <Gate
-                    c={c}
                     title="Copy"
                     approved={detail.gates.copy.approved}
                     notes={detail.gates.copy.warnings}
@@ -1019,7 +1072,6 @@ export function AuditPage({
                     onToggle={(yes) => void publication("copy", "Approving", "/approve", { what: "copy", approve: yes })}
                   />
                   <Gate
-                    c={c}
                     title="Design"
                     approved={detail.gates.design.approved}
                     notes={detail.gates.design.blockers}
@@ -1029,306 +1081,449 @@ export function AuditPage({
                     busy={busy === "design"}
                     onToggle={(yes) => void publication("design", "Approving", "/approve", { what: "design", approve: yes })}
                   />
-                </section>
-                <div className={`border rounded-lg p-4 text-sm ${detail.gates.build.canBuild ? c.info : c.error}`}>
-                  {detail.gates.build.canBuild
-                    ? "Both gates are open — this issue can be built."
-                    : `Build is held: ${detail.gates.build.blockers.join("; ")}.`}
+                  <div className="gate is-final">
+                    <h3>Build</h3>
+                    <div className="st">
+                      <span className={`pill ${detail.gates.build.canBuild ? "pill-ok" : "pill-bad"}`}>
+                        {detail.gates.build.canBuild
+                          ? <><Check size={11} />Open</>
+                          : <><Lock size={11} />Held</>}
+                      </span>
+                    </div>
+                    {detail.gates.build.canBuild ? null : (
+                      <ul className="blockers">
+                        {detail.gates.build.blockers.map((b) => <li key={b}>{b}</li>)}
+                      </ul>
+                    )}
+                  </div>
                 </div>
+              ) : null}
+            </section>
+
+            {/*
+              * Everything this page says about work in progress, in one place a
+              * screen reader is watching. There was no live region anywhere on
+              * this screen, so a pass that took four minutes announced its
+              * start, its progress, its finish and its failure to nobody.
+              *
+              * Sticky, because this column scrolls and a pass that runs for
+              * minutes reported itself at the top of it — so the moment the
+              * reader scrolled to the findings, the only proof the pass was
+              * alive scrolled away with it.
+              */}
+            <div
+              role="status"
+              aria-live="polite"
+              className="sticky top-0 z-20 space-y-2 empty:hidden"
+              style={{ background: "color-mix(in oklab, var(--putty) 88%, transparent)" }}
+            >
+              {inflight ? (
+                <div className="arrive">
+                  <p className="hd">
+                    <Loader2 size={13} className="animate-spin" style={{ color: "var(--vermilion)" }} />
+                    <span className="flex-1 min-w-0 truncate">{progress ?? `${inflight.label}…`}</span>
+                    <span className="mono" style={{ color: "var(--ink-3)" }}>{elapsed(inflight.at)}</span>
+                    {runBusy ? (
+                      <button className="btn btn-line btn-sm" onClick={() => void cancel()}>
+                        <Square size={10} fill="currentColor" />Stop
+                      </button>
+                    ) : null}
+                  </p>
+                </div>
+              ) : null}
+              {note ? <p className="quiet" style={{ color: "var(--ok)" }}>{note}</p> : null}
+              {image ? (
+                // A render produced a picture and the reward for it was the path
+                // it was written to, in green text.
+                <img
+                  src={image}
+                  alt="The spread that was just rendered"
+                  style={{ maxHeight: 260, borderRadius: "var(--r-card)", border: "1px solid var(--line)" }}
+                />
+              ) : null}
+            </div>
+
+            {/* ── 2. The run ────────────────────────────────────────────
+                Seven stages were a three-column text table where the only
+                thing separating "finished" from "not started" was the word.
+                A run is a line; this draws the line. */}
+            {detail.stages.length > 0 || detail.gates ? (
+              <section className="run" aria-labelledby="run-h">
+                <div className="run-head">
+                  <h3 id="run-h">The run</h3>
+                  {detail.stages.length > 0 ? (
+                    <span className="label">{doneStages} of {detail.stages.length} finished</span>
+                  ) : null}
+                </div>
+
+                {detail.stages.length > 0 ? (
+                  <div className="track">
+                    {detail.stages.map((s) => {
+                      const tone = s.state === "running" ? "now"
+                        : s.state === "failed" || s.state === "error" ? "bad"
+                          : (s.state === "done" || s.state === "complete") ? "done" : "idle";
+                      return (
+                        <div key={s.stage} className={`stage ${tone}`}>
+                          <span className="node" />
+                          <span className="nm">{stageName(s.stage)}</span>
+                          {/* The failure reason, when there is one, is the one
+                              string anyone reading this wants. */}
+                          <span className="dt" title={s.detail}>
+                            {say(STATE_LABEL, s.state)}{s.detail ? ` · ${s.detail}` : ""}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
 
                 {/* The pictures and the document. Both are stages of the run
                     already, reached through `/resume` with a one-stage range,
                     so this is the same path the publication screen takes. */}
-                <section className="space-y-3">
-                  <h3 className="font-serif text-xl">Make</h3>
-                  <div className={`border ${c.cardStatic} rounded-lg p-4 flex flex-wrap items-center gap-2`}>
+                {detail.gates ? (
+                  <div className="make">
                     <button
+                      className="btn"
                       disabled={running}
                       onClick={() => void publication("art", "Drawing", "/resume", { from: "art", stopAt: "art" })}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
                     >
-                      <ImageIcon size={14} className="inline mr-1.5 -mt-0.5" />
-                      {busy === "art" ? "Drawing…" : "Generate images (ComfyUI)"}
+                      <ImageIcon size={14} />
+                      {busy === "art" ? "Drawing…" : "Generate images"}
                     </button>
                     <button
+                      className="btn btn-line"
                       disabled={running || page === null}
                       onClick={() => void publication("render", "Rendering", "/render", { page })}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
                       title={page === null ? "Pick a numbered page on the left first" : `Render page ${page}`}
                     >
-                      {busy === "render" ? "Rendering…" : `Render spread (Affinity)${page ? ` — p${page}` : ""}`}
+                      {busy === "render" ? "Rendering…" : `Render spread${page ? ` — p${page}` : ""}`}
                     </button>
                     <button
+                      className="btn btn-line"
                       disabled={running || !detail.gates.build.canBuild}
                       onClick={() => void publication("build", "Building", "/resume", { from: "build", stopAt: "build" })}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
                       title={detail.gates.build.canBuild ? "Build the PDF" : detail.gates.build.blockers.join("; ")}
                     >
-                      <Play size={14} className="inline mr-1.5 -mt-0.5" />
-                      {busy === "build" ? "Building…" : "Build document (Affinity)"}
+                      <Play size={14} />
+                      {busy === "build" ? "Building…" : "Build document"}
                     </button>
-                    {page === null ? (
-                      <p className={`w-full text-xs ${c.muted}`}>
-                        Rendering a spread needs a numbered page — pick one like
-                        <code className="mx-1">03-feature.md</code> on the left.
-                      </p>
-                    ) : null}
+                    <p className="hint">
+                      Building needs both gates open. Rendering a spread needs a numbered page
+                      picked on the left.
+                    </p>
                   </div>
-                </section>
-              </>
+                ) : null}
+              </section>
             ) : null}
 
-            {detail.stages.length > 0 && (
-              <section className="space-y-3">
-                <h3 className="font-serif text-xl">Stages</h3>
-                <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
-                  {detail.stages.map((s) => (
-                    <div key={s.stage} className="flex items-center gap-3 p-3 text-sm">
-                      <span className="w-24 font-medium truncate">{say(STAGE_LABEL, s.stage)}</span>
-                      <span className={`w-28 text-xs ${STATE_TONE[s.state] ?? c.muted}`}>
-                        {say(STATE_LABEL, s.state)}
-                      </span>
-                      {/* The clipped half of this is usually the failure reason,
-                          which is the one string anyone reading it wants. */}
-                      <span className={`flex-1 text-xs truncate ${c.muted}`} title={s.detail}>
-                        {s.detail}
-                      </span>
-                    </div>
-                  ))}
+            {/* ── 3. The bench ──────────────────────────────────────────
+                The one dark surface on the page, because the picked file is
+                the one thing being worked on. Safe and destructive actions are
+                separated by a rule, and each group says what it does to disk. */}
+            {!file ? (
+              <p className="quiet">Pick a file on the left to check it.</p>
+            ) : (
+              <section className="bench" aria-labelledby="bench-h">
+                <span
+                  className="disc disc-fill"
+                  aria-hidden="true"
+                  style={{ width: 240, height: 240, right: -96, top: -118 }}
+                />
+                <span
+                  className="disc disc-dots"
+                  aria-hidden="true"
+                  style={{ width: 96, height: 96, right: 34, bottom: -42, opacity: 0.3 }}
+                />
+
+                <div className="bench-head">
+                  <div style={{ minWidth: 0 }}>
+                    <h3 id="bench-h">{file.name}</h3>
+                    <p className="path mono" title={file.path}>
+                      {folderOf(file.path) || detail.id}
+                      {current?.words ? ` · ${current.words.toLocaleString()} words` : ""}
+                    </p>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <span className={`pill ${current?.audit?.checked ? "pill-ok" : ""}`}>
+                      {current?.audit?.checked ? "Checked" : "Not checked"}
+                    </span>
+                    <span className={`pill ${approved ? "pill-ok" : ""}`}>
+                      {approved ? "Signed off" : "Not signed off"}
+                    </span>
+                  </div>
                 </div>
+
+                <div className="acts">
+                  <div className="act-grp">
+                    <p className="label">Reports only · nothing on disk changes</p>
+                    <div className="act-row">
+                      <button
+                        className={`btn${ran?.mode === "report" ? " btn-line" : ""}`}
+                        disabled={runBusy || loadFailed}
+                        onClick={() => guarded(() => void run("report"))}
+                      >
+                        {busy === "report"
+                          ? "Checking…"
+                          : ran?.mode === "report"
+                            ? <><Check size={14} />Checked</>
+                            : "Check it"}
+                      </button>
+                      <button
+                        className={`btn ${approved ? "btn-line" : "btn-ok"}`}
+                        disabled={busy !== null}
+                        onClick={() => void approve(approved === null)}
+                      >
+                        {approved
+                          ? <><Unlock size={14} />Withdraw sign-off</>
+                          : <><Check size={14} />{busy === "approve" ? "Signing off…" : "Sign this off"}</>}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/*
+                    * These two write over the manuscript on disk, and they were
+                    * the quiet secondary buttons while the harmless action above
+                    * was the loud primary one. A ruled-off group with its own
+                    * label fixes both the emphasis and the honesty.
+                    */}
+                  <div className="act-grp danger">
+                    <p className="label">Rewrites the file · a copy is kept first</p>
+                    <div className="act-row">
+                      <button
+                        className={`btn ${ran?.mode === "revise" ? "btn-line" : "btn-danger"}`}
+                        disabled={runBusy || loadFailed || locked}
+                        title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
+                        onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
+                      >
+                        {busy === "revise"
+                          ? "Rewriting…"
+                          : ran?.mode === "revise"
+                            ? <><Check size={14} />Rewritten</>
+                            : "Check and rewrite"}
+                      </button>
+                      <button
+                        className={`btn ${ran?.mode === "deslop" ? "btn-line" : "btn-danger"}`}
+                        disabled={runBusy || loadFailed || locked}
+                        title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
+                        onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
+                      >
+                        {busy === "deslop"
+                          ? "Rewriting…"
+                          : ran?.mode === "deslop"
+                            ? <><Check size={14} />Cleaned</>
+                            : "Remove AI phrasing"}
+                      </button>
+                      {current?.backup ? (
+                        <button
+                          className="btn btn-line"
+                          disabled={busy !== null || locked}
+                          onClick={() => void restore()}
+                          title={locked
+                            ? "This file is signed off. Withdraw the sign-off to put an older copy back."
+                            : "Put back the text from before the last rewrite"}
+                        >
+                          <RotateCcw size={13} />
+                          {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
+                        </button>
+                      ) : null}
+                    </div>
+                    {/*
+                      * What the two of them actually do. The difference was
+                      * written down once, in a comment in `api/audit.ts`, where
+                      * nobody using this could read it.
+                      */}
+                    <p className="small">
+                      Rewriting acts on everything it finds. Removing AI phrasing acts only on prose
+                      that reads machine-made and leaves a plot hole reported but untouched. Both
+                      keep a copy of the file as it stands before they start.
+                    </p>
+                  </div>
+                </div>
+
+                {locked ? (
+                  <p className="note lock">
+                    <Lock size={12} />
+                    Signed off — rewriting and undo are off for this file. Checking still works;
+                    it changes nothing.
+                  </p>
+                ) : null}
+
+                {current?.audit?.checked ? (
+                  <p className="note">
+                    Last checked {new Date(current.audit.checked).toLocaleString()}
+                    {typeof current.audit.findings === "number"
+                      ? ` · ${current.audit.findings} findings`
+                      : ""}
+                    {current.audit.rewritten
+                      ? ` · rewritten ${new Date(current.audit.rewritten).toLocaleString()}`
+                      : ""}
+                  </p>
+                ) : null}
               </section>
             )}
 
-            {/* The checks act on one file, which is what runStoryAudit takes. */}
-            <section className="space-y-3">
-              <h3 className="font-serif text-xl">Checks</h3>
-              {!file ? (
-                <p className={`text-sm ${c.muted}`}>Pick a file on the left to check it.</p>
-              ) : (
-                <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-3`}>
-                  <p className={`text-xs truncate ${c.muted}`} title={file.path}>
-                    {file.name}
-                    {folderOf(file.path) ? ` · ${folderOf(file.path)}` : ""}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      disabled={runBusy || loadFailed}
-                      onClick={() => guarded(() => void run("report"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
-                        ran?.mode === "report" ? DONE : c.btnPrimary
-                      }`}
-                    >
-                      {busy === "report"
-                        ? "Checking…"
-                        : ran?.mode === "report"
-                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Checked</>
-                          : "Check it — change nothing"}
-                    </button>
-                    {/*
-                      * These two write over the manuscript on disk, and they
-                      * were `btnSecondary` while the harmless one above was
-                      * `btnPrimary` — the safe action shouting and the two
-                      * destructive ones whispering.
-                      */}
-                    <button
-                      disabled={runBusy || loadFailed || locked}
-                      title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
-                      onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
-                        ran?.mode === "revise" ? DONE : c.btnDanger
-                      }`}
-                    >
-                      {busy === "revise"
-                        ? "Rewriting…"
-                        : ran?.mode === "revise"
-                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Rewritten</>
-                          : "Check and rewrite"}
-                    </button>
-                    <button
-                      disabled={runBusy || loadFailed || locked}
-                      title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
-                      onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
-                        ran?.mode === "deslop" ? DONE : c.btnDanger
-                      }`}
-                    >
-                      {busy === "deslop"
-                        ? "Rewriting…"
-                        : ran?.mode === "deslop"
-                          ? <><Check size={14} className="inline mr-1.5 -mt-0.5" />Cleaned</>
-                          : "Remove AI phrasing"}
-                    </button>
-                    {current?.backup ? (
-                      <button
-                        disabled={busy !== null || locked}
-                        onClick={() => void restore()}
-                        className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
-                        title={locked
-                          ? "This file is signed off. Withdraw the sign-off to put an older copy back."
-                          : "Put back the text from before the last rewrite"}
-                      >
-                        <RotateCcw size={14} className="inline mr-1.5 -mt-0.5" />
-                        {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
-                      </button>
-                    ) : null}
-                    <button
-                      disabled={busy !== null}
-                      onClick={() => void approve(approved === null)}
-                      className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
-                        approved ? c.btnSecondary : c.btnSuccess
-                      }`}
-                    >
-                      {approved
-                        ? <><Unlock size={14} className="inline mr-1.5 -mt-0.5" />Withdraw sign-off</>
-                        : <><Check size={14} className="inline mr-1.5 -mt-0.5" />{busy === "approve" ? "Signing off…" : "Sign this off"}</>}
-                    </button>
-                  </div>
-
-                  {locked ? (
-                    <p className="text-xs flex items-center gap-1.5 text-primary">
-                      <Lock size={12} className="shrink-0" />
-                      Signed off — rewriting and undo are off for this file. Checking still works;
-                      it changes nothing.
-                    </p>
-                  ) : null}
-
-                  {current?.audit?.checked ? (
-                    <p className={`text-xs ${c.muted}`}>
-                      Last checked {new Date(current.audit.checked).toLocaleString()}
-                      {typeof current.audit.findings === "number"
-                        ? ` · ${current.audit.findings} findings`
-                        : ""}
-                      {current.audit.rewritten
-                        ? ` · rewritten ${new Date(current.audit.rewritten).toLocaleString()}`
-                        : ""}
-                    </p>
-                  ) : null}
-
-                  {/*
-                    * What the three of them actually do. The difference between
-                    * the last two was written down once, in a comment in
-                    * `api/audit.ts`, where nobody using this could read it.
-                    */}
-                  <p className={`text-xs ${c.muted}`}>
-                    Checking reports and changes nothing. Rewriting acts on everything
-                    it finds; removing AI phrasing acts only on prose that reads
-                    machine-made and leaves a plot hole reported but untouched. Both
-                    keep a copy of the file as it stands before they start.
-                  </p>
-                </div>
-              )}
-            </section>
-
-            {/*
-              * One findings list, not two.
-              *
-              * There were two, in the same card, with the same divider, chip and
-              * arrow, one holding this run's findings for one file and the other
-              * the project's findings on record — and nothing but a heading to
-              * tell them apart once you had scrolled past it.
-              */}
-            <section className="space-y-3">
-              <div className="flex items-center gap-3">
-                <h3 className="font-serif text-xl">Findings</h3>
-                <div className={`flex rounded-lg border ${c.cardStatic} p-0.5 text-xs`}>
+            {/* ── 4. Findings ───────────────────────────────────────────
+                One list, not two. There were two, in the same card, with the
+                same divider, chip and arrow — one holding this run's findings
+                for one file and the other the project's findings on record —
+                and nothing but a heading to tell them apart once you had
+                scrolled past it. */}
+            <section className="find" aria-labelledby="find-h">
+              <div className="find-head">
+                <h3 id="find-h">Findings</h3>
+                <div className="seg">
                   <button
                     onClick={() => setScope("project")}
                     aria-pressed={scope === "project"}
-                    className={`px-2.5 py-1 rounded-md ${scope === "project" ? SELECTED : c.muted}`}
                   >
-                    {detail.title} ({detail.findings.length})
+                    This issue <span className="mono">{detail.findings.length}</span>
                   </button>
                   <button
                     onClick={() => setScope("file")}
                     disabled={!audit}
                     aria-pressed={scope === "file"}
-                    className={`px-2.5 py-1 rounded-md disabled:opacity-40 ${scope === "file" ? SELECTED : c.muted}`}
                   >
-                    {audit ? `Last check (${audit.findings.length})` : "Last check"}
+                    Last check <span className="mono">{audit ? audit.findings.length : 0}</span>
+                  </button>
+                </div>
+
+                {/* Severity, as a filter rather than a legend: thirty-six
+                    findings are read by triaging them, and the two that block
+                    the issue are the two worth seeing alone. */}
+                <div className="filters">
+                  <button
+                    className="pill pill-bad"
+                    aria-pressed={sevs.has("blocking")}
+                    onClick={() => toggleSev("blocking")}
+                  >
+                    Blocking <span className="mono">{counts.blocking}</span>
+                  </button>
+                  <button
+                    className="pill pill-warn"
+                    aria-pressed={sevs.has("warning")}
+                    onClick={() => toggleSev("warning")}
+                  >
+                    Warning <span className="mono">{counts.warning}</span>
+                  </button>
+                  <button
+                    className="pill"
+                    aria-pressed={sevs.has("info")}
+                    onClick={() => toggleSev("info")}
+                  >
+                    Info <span className="mono">{counts.info}</span>
                   </button>
                 </div>
               </div>
 
-              {shown.length === 0 ? (
-                <p className={`text-sm ${scope === "file" ? "text-success" : c.muted}`}>
-                  {scope === "file"
-                    ? `Nothing to fix in ${file?.name ?? "this file"}.`
-                    : "Nothing on record for this project."}
+              {listed.length === 0 ? (
+                <p className="f-empty">
+                  {shown.length > 0
+                    ? "Nothing at that severity — the filters above are narrowing this list."
+                    : scope === "file"
+                      ? `Nothing to fix in ${file?.name ?? "this file"}.`
+                      : "Nothing on record for this project."}
                 </p>
               ) : (
-                <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
-                  {shown.map((f, i) => (
-                    <div key={`${f.category}-${i}`} className="p-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${c.code}`}>{f.category}</span>
-                        <span className={`text-xs ${SEVERITY_TONE[f.severity] ?? c.muted}`}>{f.severity}</span>
-                        {f.page !== null ? <span className={`text-xs ${c.muted}`}>p{f.page}</span> : null}
-                      </div>
-                      <p className="mt-1.5">{f.description}</p>
-                      {f.suggestion ? <p className={`mt-1 text-xs ${c.muted}`}>→ {f.suggestion}</p> : null}
+                listed.map((f, i) => (
+                  // A colour stripe down the row's edge is the category's
+                  // default for severity; a marker in its own gutter reads as
+                  // fast and keeps the left edge straight across thirty rows.
+                  <div key={`${f.category}-${i}`} className={`f-row sev-${sevOf(f.severity)}`}>
+                    <span className="f-mark" aria-hidden="true" />
+                    <div className="f-meta">
+                      <span className="sev-word">{f.severity}</span>
+                      <span className="f-cat">{f.category}</span>
+                      {f.page !== null ? <span className="f-pg">p{f.page}</span> : null}
                     </div>
-                  ))}
-                </div>
+                    <p>{f.description}</p>
+                    {f.suggestion ? (
+                      /* The fix is the useful half, so it is set apart by a
+                         rule in the accent rather than by an arrow glyph. */
+                      <p className="f-fix">{f.suggestion}</p>
+                    ) : null}
+                  </div>
+                ))
               )}
             </section>
           </>
         )}
-      </div>
+      </main>
 
-      {/* -------------------------------------------------------- the edit */}
+      {/* ═══════════════════════════════════════════════════ the editor ══ */}
       {showEditor && (
         <aside
-          className="relative shrink-0 h-full overflow-y-auto pl-2 pr-1 space-y-3"
+          className="aud-edit shrink-0 h-full overflow-y-auto"
           style={{ width: editor.width }}
+          aria-label="Read and edit this file"
         >
           <div
             {...editor.gripProps}
             role="separator"
             aria-orientation="vertical"
-            aria-label="Resize editor"
-            className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/20 active:bg-primary/30"
+            aria-label="Resize the reading panel"
+            className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/40 active:bg-primary"
           />
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="font-serif text-xl">Edit</h3>
+
+          <div className="edit-head">
+            <h3>Manuscript</h3>
             <button
+              className={`btn btn-sm${dirty ? "" : " btn-line"}`}
               disabled={!file || !dirty || loadFailed || locked || busy !== null}
               onClick={() => void save()}
-              className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${c.btnPrimary}`}
             >
-              <Save size={14} className="inline mr-1.5 -mt-0.5" />
+              <Save size={13} />
               {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
             </button>
           </div>
 
           {!file ? (
-            <p className={`text-sm ${c.muted}`}>Pick a file to edit it here.</p>
+            <p className="quiet">Pick a file to edit it here.</p>
           ) : loadingText ? (
             <Spinner label="Opening the file" />
           ) : loadFailed ? (
-            <div className={`border rounded-lg p-4 text-sm space-y-2 ${c.error}`}>
-              <p>This file would not open, so there is nothing here to edit.</p>
-              <button
-                onClick={() => void openFile(file)}
-                className={`px-2.5 py-1 text-xs rounded-lg ${c.btnSecondary}`}
-              >
-                Try again
-              </button>
+            <div className="alarm">
+              <AlertTriangle size={16} className="ico" />
+              <div className="space-y-2">
+                <p>This file would not open, so there is nothing here to edit.</p>
+                <button className="btn btn-line btn-sm" onClick={() => void openFile(file)}>
+                  Try again
+                </button>
+              </div>
             </div>
           ) : (
             <>
-              <p className={`text-xs truncate ${c.muted}`}>{file.name}</p>
+              <p className="fname mono">{file.name}</p>
+
+              {/* How the manuscript is set — three sizes and a measure, because
+                  this panel is read for hours and a fixed size is somebody
+                  else's eyesight. */}
+              <div className="setting">
+                <div className="steps" role="group" aria-label="Text size">
+                  <button type="button" className="s1" aria-pressed={textSize === "sm"} aria-label="Small" onClick={() => setTextSize("sm")}>A</button>
+                  <button type="button" className="s2" aria-pressed={textSize === "md"} aria-label="Medium" onClick={() => setTextSize("md")}>A</button>
+                  <button type="button" className="s3" aria-pressed={textSize === "lg"} aria-label="Large" onClick={() => setTextSize("lg")}>A</button>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-quiet btn-sm wide"
+                  aria-pressed={wide}
+                  onClick={() => setWide((w) => !w)}
+                >
+                  {wide ? "Standard width" : "Full width"}
+                </button>
+              </div>
 
               {/*
                 * A signed-off file is not typed into by accident.
                 *
-                * "Approved" meant nothing to the editor before: the textarea
-                * was as writable as any other, so the sign-off was a note to
-                * self rather than a state of the work. Reopening is one click
-                * and a confirmation, and it lasts only as long as this visit.
+                * "Approved" meant nothing to the editor before: the textarea was
+                * as writable as any other, so the sign-off was a note to self
+                * rather than a state of the work. Reopening is one click and a
+                * confirmation, and it lasts only as long as this visit.
                 */}
               {approved ? (
-                <div className={`border rounded-lg p-3 text-xs space-y-2 ${locked ? c.info : c.error}`}>
-                  <p className="flex items-center gap-1.5">
+                <div className={locked ? "arrive" : "alarm"}>
+                  <p className="hd">
                     {locked ? <Lock size={12} /> : <Unlock size={12} />}
                     {locked
                       ? `Signed off ${new Date(approved.at).toLocaleString()}${approved.by ? ` by ${approved.by}` : ""}. Read-only.`
@@ -1336,6 +1531,7 @@ export function AuditPage({
                   </p>
                   {locked ? (
                     <button
+                      className="btn btn-line btn-sm"
                       onClick={() => setPending({
                         act: () => setUnlocked((set) => new Set(set).add(file.path)),
                         title: "Reopen an approved file?",
@@ -1343,7 +1539,6 @@ export function AuditPage({
                         confirmLabel: "Reopen for editing",
                         cancelLabel: "Leave it closed",
                       })}
-                      className={`px-2.5 py-1 rounded-lg ${c.btnSecondary}`}
                     >
                       Reopen for editing
                     </button>
@@ -1351,14 +1546,6 @@ export function AuditPage({
                 </div>
               ) : null}
 
-              {/*
-                * Proof the rewrite is landing here.
-                *
-                * The pass has streamed each finished section into this panel
-                * since it was written, and nothing said so — the text just
-                * differed at some point, which reads as a reload rather than as
-                * work arriving.
-                */}
               {/*
                 * The rewrite as it arrives.
                 *
@@ -1369,51 +1556,52 @@ export function AuditPage({
                 * scrolled box. A section landing is an event; this says so.
                 */}
               {runBusy || sections.length > 0 ? (
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className={`border rounded-lg p-3 text-xs space-y-2 ${c.cardStatic}`}
-                >
-                  <p className="flex items-center gap-1.5 font-medium">
-                    {runBusy ? <Loader2 size={12} className="animate-spin text-primary" /> : <Check size={12} className="text-success" />}
+                <div role="status" aria-live="polite" className="arrive">
+                  <p className="hd">
+                    {runBusy
+                      ? <Loader2 size={12} className="animate-spin" style={{ color: "var(--vermilion)" }} />
+                      : <Check size={12} style={{ color: "var(--ok)" }} />}
                     {runBusy
                       ? busy === "report" ? "Checking — nothing is being rewritten" : "Rewriting, section by section"
                       : `${sections.length} section${sections.length === 1 ? "" : "s"} rewritten`}
                   </p>
                   {sections.length > 0 ? (
-                    <ul className="space-y-1">
+                    <ul>
                       {sections.map((heading, i) => (
-                        <li key={`${heading}-${i}`} className="flex items-start gap-1.5">
-                          <Check size={11} className="text-success shrink-0 mt-0.5" />
+                        <li key={`${heading}-${i}`}>
+                          <Check size={11} />
                           <span className="min-w-0 break-words">{heading}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className={c.muted}>
+                    <p>
                       {busy === "report"
                         ? "A report pass never changes the text, so nothing will land here."
                         : "Nothing has landed yet — the first section takes the longest."}
                     </p>
                   )}
                   {streamed ? (
-                    <p className={c.muted}>
+                    <p>
                       The text beside this was replaced {streamed.count === 1 ? "once" : `${streamed.count} times`}.
                     </p>
                   ) : null}
                 </div>
               ) : null}
 
-              {progress ? (
-                <p role="status" aria-live="polite" className="text-xs text-warning flex items-center gap-1.5">
-                  <Loader2 size={12} className="animate-spin" />{progress}
-                </p>
-              ) : null}
               {/*
                 * Prose, not configuration. This is where a novelist reads what
                 * the model just rewrote, and it was 12px monospace with the
                 * spellchecker off and no way to save from the keyboard.
                 */}
+              <div
+                className="sheet"
+                data-wide={wide ? "true" : "false"}
+                style={{
+                  "--size": textSize === "sm" ? "13.5px" : textSize === "lg" ? "17.5px" : "15px",
+                  "--lead": textSize === "lg" ? "1.7" : "1.76",
+                } as unknown as React.CSSProperties}
+              >
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
@@ -1425,15 +1613,19 @@ export function AuditPage({
                 }}
                 spellCheck
                 readOnly={locked}
-                aria-label={file ? `Edit ${file.name}` : "Edit the selected file"}
-                className={`w-full h-[36rem] px-3 py-2 text-sm leading-7 rounded resize-y ${c.input} ${
-                  locked ? "opacity-70 cursor-not-allowed" : ""
-                }`}
+                aria-label={`Edit ${file.name}`}
               />
-              <p className={`text-xs ${c.muted}`}>
-                {text.trim() ? `${text.trim().split(/\s+/).length.toLocaleString()} words` : "empty"}
-                {dirty ? " · unsaved — Ctrl+S to save" : " · saved"}
-              </p>
+              </div>
+
+              <div className="foot">
+                <span className="mono">
+                  {text.trim() ? `${text.trim().split(/\s+/).length.toLocaleString()} words` : "empty"}
+                  {page !== null ? ` · p${page}` : ""}
+                </span>
+                <span className="dirty mono" data-unsaved={dirty ? "true" : "false"}>
+                  {dirty ? "unsaved — Ctrl+S" : "saved"}
+                </span>
+              </div>
             </>
           )}
         </aside>
@@ -1454,31 +1646,6 @@ export function AuditPage({
 }
 
 /**
- * How far one file has got, in the width of three characters.
- *
- * Checked, rewritten, signed off — the three facts the tree had no room for
- * and no way to know, so every row looked like every other row.
- */
-function FileMarks({ item, c }: { item: Item; c: Record<string, string> }) {
-  const a = item.audit;
-  if (!a?.checked && !a?.rewritten && !a?.approved) return null;
-  const said = [
-    a.checked ? `checked ${new Date(a.checked).toLocaleDateString()}` : "",
-    a.rewritten ? "rewritten" : "",
-    a.approved ? "signed off" : "",
-  ].filter(Boolean).join(" · ");
-  return (
-    <span className="shrink-0 flex items-center gap-0.5" title={said} aria-label={said}>
-      {a.approved
-        ? <Lock size={10} className="text-primary" />
-        : a.checked ? <Check size={10} className="text-success" /> : null}
-      {a.rewritten ? <RotateCcw size={10} className="text-warning" /> : null}
-      {!a.approved && !a.checked ? <span className={`text-[10px] ${c.muted}`}>·</span> : null}
-    </span>
-  );
-}
-
-/**
  * A spinner that says what it is waiting for.
  *
  * Five bare `Loader2`s on this page announced nothing at all, on a screen whose
@@ -1489,21 +1656,22 @@ function Spinner({
 }: { label: string; size?: number; className?: string }) {
   return (
     <span role="status" className={`inline-flex items-center ${className}`}>
-      <Loader2 size={size} className="animate-spin text-primary" />
+      <Loader2 size={size} className="animate-spin" style={{ color: "var(--vermilion)" }} />
       <span className="sr-only">{label}</span>
     </span>
   );
 }
 
 /**
- * One approval. Lifted from PublicationDetail's GateCard rather than imported,
- * because that one is not exported and this file should not be the reason it
- * becomes part of that screen's public surface.
+ * One approval, as a link in the chain rather than a card of its own.
+ *
+ * Lifted from PublicationDetail's GateCard rather than imported, because that
+ * one is not exported and this file should not be the reason it becomes part
+ * of that screen's public surface.
  */
 function Gate({
-  c, title, approved, notes, notesLabel, approvedLabel, canApprove, busy, onToggle,
+  title, approved, notes, notesLabel, approvedLabel, canApprove, busy, onToggle,
 }: {
-  c: Record<string, string>;
   title: string;
   approved: Approval | null;
   notes: readonly string[];
@@ -1514,20 +1682,32 @@ function Gate({
   onToggle: (approve: boolean) => void;
 }) {
   return (
-    <div className={`border ${c.cardStatic} rounded-lg p-4 space-y-3`}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-serif text-lg">{title}</h3>
-        <span className={`text-xs text-right ${approved ? "text-success" : c.muted}`}>
-          {approved ? (
-            <>
-              approved {new Date(approved.at).toLocaleString()}
-              {/* Who signed this off was carried in the type and rendered
-                  nowhere, which made an approval unattributable. */}
-              {approved.by ? <span className={`block ${c.muted}`}>by {approved.by}</span> : null}
-            </>
-          ) : "not approved"}
+    <div className={`gate${approved ? " is-open" : ""}`}>
+      <h3>{title}</h3>
+      <div className="st">
+        <span className={`pill ${approved ? "pill-ok" : "pill-warn"}`}>
+          {approved ? "Approved" : "Not approved"}
         </span>
+        <button
+          className={`btn btn-sm ${approved ? "btn-line" : "btn-ok"}`}
+          style={{ marginLeft: "auto" }}
+          disabled={busy || (!approved && !canApprove)}
+          onClick={() => onToggle(!approved)}
+        >
+          {approved
+            ? <><X size={13} />Withdraw</>
+            : <><Check size={13} />{busy ? "Approving…" : "Approve"}</>}
+        </button>
       </div>
+
+      {approved ? (
+        <p className="when">
+          {new Date(approved.at).toLocaleString()}
+          {/* Who signed this off was carried in the type and rendered nowhere,
+              which made an approval unattributable. */}
+          {approved.by ? ` · by ${approved.by}` : ""}
+        </p>
+      ) : null}
 
       {/*
         * Warnings stay after the sign-off.
@@ -1537,23 +1717,11 @@ function Gate({
         * someone does destroys the record of what they chose to overrule.
         */}
       {notes.length > 0 ? (
-        <div className={`text-xs ${c.muted} space-y-1`}>
-          <p>{approved ? approvedLabel : notesLabel}</p>
-          <ul className="list-disc pl-4">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
-        </div>
+        <>
+          <p className="when">{approved ? approvedLabel : notesLabel}</p>
+          <ul className="blockers">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
+        </>
       ) : null}
-
-      <button
-        disabled={busy || (!approved && !canApprove)}
-        onClick={() => onToggle(!approved)}
-        className={`px-3 py-1.5 text-sm rounded-lg disabled:opacity-50 ${
-          approved ? c.btnSecondary : c.btnSuccess
-        }`}
-      >
-        {approved
-          ? <><X size={14} className="inline mr-1.5 -mt-0.5" />Withdraw</>
-          : <><Check size={14} className="inline mr-1.5 -mt-0.5" />{busy ? "Approving…" : `Approve ${title.toLowerCase()}`}</>}
-      </button>
     </div>
   );
 }

@@ -114,23 +114,20 @@ export function ProgressPanel({ sse }: { sse: { messages: ReadonlyArray<SSEMessa
 
   if (hidden || !run) return null;
 
-  const dot: Record<StageState, string> = {
-    idle: "bg-muted-foreground/30",
-    run: "bg-primary animate-pulse",
-    done: "bg-success",
-    fail: "bg-destructive",
-  };
-
   return (
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-4 right-4 z-50 w-72 animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both] rounded-lg border bg-card/95 p-3 shadow-xl backdrop-blur ${
-        failed ? "border-destructive/60" : "border-border/60"
+      className={`q-crop q-dark fixed bottom-4 right-4 z-50 w-72 animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both] rounded-2xl border p-4 shadow-lg ${
+        failed ? "border-destructive/60" : "border-transparent"
       }`}
     >
-      <div className="mb-2 flex items-center justify-between">
-        <b className="text-[13px] font-medium">{run.title}</b>
+      {/* One disc, cropped by the card. Decoration, so it stays out of the
+          accessibility tree and never sits under the text. */}
+      <span className="q-disc q-disc-fill" aria-hidden="true"
+            style={{ width: 96, height: 96, right: -34, top: -40, opacity: .22 }} />
+      <div className="relative mb-3 flex items-center justify-between">
+        <b className="text-[13px] font-semibold">{run.title}</b>
         <button
           onClick={() => setHidden(true)}
           aria-label={tr("隐藏", "Hide")}
@@ -139,15 +136,18 @@ export function ProgressPanel({ sse }: { sse: { messages: ReadonlyArray<SSEMessa
           <X size={14} />
         </button>
       </div>
-      <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
-        {run.stages.map((s) => (
-          <span key={s} className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
-            <i className={`h-1.5 w-1.5 rounded-full ${dot[stageState[s] ?? "idle"]}`} />
-            {s}
-          </span>
-        ))}
+      <div className="relative mb-2 flex flex-wrap gap-x-4 gap-y-1">
+        {run.stages.map((s) => {
+          const state = stageState[s] ?? "idle";
+          return (
+            <span key={s} className={`q-stage text-[12px] ${state === "done" ? "is-done" : state === "run" ? "is-now" : ""}`}>
+              <i />
+              {s}
+            </span>
+          );
+        })}
       </div>
-      <div className="text-[12px] tabular-nums text-muted-foreground">
+      <div className="q-dim relative text-[12px] tabular-nums">
         {startedAt ? `${meta} · ${elapsed(startedAt)}` : meta}
       </div>
     </div>

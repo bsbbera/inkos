@@ -801,90 +801,92 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         <span>{t("bread.newBook")}</span>
       </div>
 
-      <div className="space-y-3">
-        <h1 className="font-serif text-4xl">{t("create.title")}</h1>
-        <p className="text-sm text-muted-foreground leading-7 max-w-2xl">{copy.idleBody}</p>
-      </div>
+      <header className="q-head">
+        <p className="q-label">{t("bread.newBook")}</p>
+        <h1 className="mt-3">{t("create.title")}</h1>
+        <p className="leading-7">{copy.idleBody}</p>
+      </header>
 
       {error && (
-        <div className={`border ${c.error} rounded-md px-4 py-3`}>
+        <div role="alert" className={`border ${c.error} rounded-xl px-4 py-3 text-sm animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both]`}>
           {error}
         </div>
       )}
 
       {status && (
-        <div className="border border-primary/20 bg-primary/5 rounded-md px-4 py-3 text-sm text-primary">
+        <div role="status" className="flex items-center gap-2.5 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm text-primary animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both]">
+          <span className="q-thinking" aria-hidden="true"><i /><i /><i /></span>
           {status}
         </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
-        <section className="rounded-lg border border-border/60 bg-card/80 p-5 space-y-5">
-          <div className="space-y-1">
-            <div className="text-[11px] uppercase text-muted-foreground font-bold">
-              {copy.formHeading}
-            </div>
-            <p className="text-xs text-muted-foreground leading-6">{copy.formHint}</p>
+        <section className="q-crop space-y-5 rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+          <span className="q-disc q-disc-fill" aria-hidden="true"
+                style={{ width: 180, height: 180, right: -78, top: -84, opacity: .1 }} />
+          <div className="relative space-y-1.5">
+            <div className="q-label">{copy.formHeading}</div>
+            <p className="q-note text-xs leading-6">{copy.formHint}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground">{copy.titleLabel}</span>
+            <label className="q-field">
+              <span className="q-label">{copy.titleLabel}</span>
               <input
                 value={form.title}
                 onChange={(event) => updateForm({ title: event.target.value })}
-                className={`w-full ${c.input} rounded-md px-3 py-2.5 focus:outline-none text-sm`}
+                className="w-full text-sm"
                 placeholder={copy.titlePlaceholder}
               />
             </label>
-            <label className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground">{copy.genreLabel}</span>
+            <label className="q-field">
+              <span className="q-label">{copy.genreLabel}</span>
               <input
                 value={form.genre}
                 onChange={(event) => updateForm({ genre: event.target.value })}
-                className={`w-full ${c.input} rounded-md px-3 py-2.5 focus:outline-none text-sm`}
+                className="w-full text-sm"
                 placeholder={copy.genrePlaceholder}
               />
             </label>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <label className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground">{copy.platformLabel}</span>
+            <label className="q-field">
+              <span className="q-label">{copy.platformLabel}</span>
               <select
                 value={form.platform}
                 onChange={(event) => updateForm({ platform: event.target.value })}
-                className={`w-full ${c.input} rounded-md px-3 py-2.5 focus:outline-none text-sm bg-background`}
+                className="w-full text-sm"
               >
                 {platformChoices.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
             </label>
-            <label className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground">{copy.targetChaptersLabel}</span>
+            <label className="q-field">
+              <span className="q-label">{copy.targetChaptersLabel}</span>
               <input
                 type="number"
                 min={1}
                 value={form.targetChapters}
                 onChange={(event) => updateForm({ targetChapters: event.target.value })}
-                className={`w-full ${c.input} rounded-md px-3 py-2.5 focus:outline-none text-sm`}
+                className="w-full text-sm"
               />
             </label>
-            <label className="space-y-2">
-              <span className="text-xs font-medium text-muted-foreground">{copy.chapterWordCountLabel}</span>
+            <label className="q-field">
+              <span className="q-label">{copy.chapterWordCountLabel}</span>
               <input
                 type="number"
                 min={1000}
                 value={form.chapterWordCount}
                 onChange={(event) => updateForm({ chapterWordCount: event.target.value })}
-                className={`w-full ${c.input} rounded-md px-3 py-2.5 focus:outline-none text-sm`}
+                className="w-full text-sm"
               />
             </label>
           </div>
 
           <label className="space-y-2 block">
-            <span className="text-xs font-medium text-muted-foreground">{copy.briefLabel}</span>
+            <span className="q-label">{copy.briefLabel}</span>
             <textarea
               value={form.brief}
               onChange={(event) => updateForm({ brief: event.target.value })}

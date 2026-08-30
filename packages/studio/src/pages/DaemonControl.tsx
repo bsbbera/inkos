@@ -60,9 +60,9 @@ export function DaemonControl({ nav, theme, t, sse }: { nav: Nav; theme: Theme; 
       </div>
 
       <div className="flex items-baseline justify-between">
-        <h1 className="font-serif text-3xl">{t("daemon.title")}</h1>
+        <h1 className="q-title text-3xl">{t("daemon.title")}</h1>
         <div className="flex items-center gap-3">
-          <span className={`text-sm uppercase tracking-wide font-medium ${isRunning ? "text-emerald-500" : "text-muted-foreground"}`}>
+          <span className={`text-sm uppercase tracking-wide font-medium ${isRunning ? "text-success" : "text-muted-foreground"}`}>
             {isRunning ? t("daemon.running") : t("daemon.stopped")}
           </span>
           {isRunning ? (

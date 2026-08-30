@@ -88,8 +88,8 @@ export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
         <span>{t("nav.style")}</span>
       </div>
 
-      <h1 className="font-serif text-3xl flex items-center gap-3">
-        <Wand2 size={28} className="text-primary" />
+      <h1 className="q-title text-3xl flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Wand2 size={19} /></span>
         {t("style.title")}
       </h1>
 
@@ -97,7 +97,7 @@ export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
         {/* Input */}
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-2">{t("style.sourceName")}</label>
+            <label className="q-label block mb-2">{t("style.sourceName")}</label>
             <input
               type="text"
               value={sourceName}
@@ -107,7 +107,7 @@ export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
             />
           </div>
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block mb-2">{t("style.textSample")}</label>
+            <label className="q-label block mb-2">{t("style.textSample")}</label>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -214,7 +214,7 @@ export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
               ? "bg-destructive/10 text-destructive"
               : statusNotice.tone === "info"
                 ? "bg-secondary text-muted-foreground"
-                : "bg-emerald-500/10 text-emerald-600"
+                : "bg-success/10 text-success"
           }`}
         >
           {statusNotice.message}

@@ -15,7 +15,7 @@ export function LanguageSelector({ onSelect }: { onSelect: (lang: "zh" | "en") =
       {/* Logo — cinematic scale */}
       <div className="mb-16 text-center">
         <div className="flex items-baseline justify-center gap-1.5 mb-4">
-          <span className="font-serif text-6xl italic text-primary">Ink</span>
+          <span className="q-title text-6xl text-primary">Ink</span>
           <span className="text-5xl font-semibold tracking-tight text-foreground">OS</span>
         </div>
         <div className="text-base text-muted-foreground tracking-widest uppercase">Studio</div>
@@ -35,7 +35,7 @@ export function LanguageSelector({ onSelect }: { onSelect: (lang: "zh" | "en") =
                 : "border-border bg-card/50"
           }`}
         >
-          <div className="font-serif text-3xl mb-4 text-foreground">中文创作</div>
+          <div className="q-title text-3xl mb-4 text-foreground">中文创作</div>
           <div className="text-base text-foreground/70 leading-relaxed mb-6">
             玄幻 · 仙侠 · 都市 · 恐怖 · 通用
           </div>
@@ -56,7 +56,7 @@ export function LanguageSelector({ onSelect }: { onSelect: (lang: "zh" | "en") =
                 : "border-border bg-card/50"
           }`}
         >
-          <div className="font-serif text-3xl italic mb-4 text-foreground">English Writing</div>
+          <div className="q-title text-3xl mb-4 text-foreground">English Writing</div>
           <div className="text-base text-foreground/70 leading-relaxed mb-6">
             LitRPG · Progression · Romantasy · Sci-Fi · Isekai
           </div>

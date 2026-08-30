@@ -9,7 +9,6 @@ import { deriveActiveBookIds, shouldRefetchBookCollections } from "../hooks/use-
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import {
   Plus,
-  BookOpen,
   BarChart2,
   Zap,
   Clock,
@@ -78,7 +77,7 @@ function BookMenu({ bookId, bookTitle, nav, t, onDelete, onOpenChange }: {
     <div ref={menuRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="p-3 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 hover:scale-105 active:scale-95 transition-all cursor-pointer"
+        className="p-3 rounded-xl text-muted-foreground hover:text-primary hover:bg-primary/10 hover:-translate-y-px active:translate-y-0 active:scale-[0.985] transition-all cursor-pointer"
       >
         <MoreVertical size={18} />
       </button>
@@ -146,9 +145,15 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
   }, [refetch, sse.messages]);
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-      <span className="text-sm text-muted-foreground animate-pulse">Gathering manuscripts...</span>
+    <div className="grid gap-6" aria-busy="true" aria-label="Loading the library">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="paper-sheet rounded-2xl p-8 grid gap-3">
+          <div className="q-skel h-8 w-1/3" />
+          <div className="q-skel h-4 w-2/3" />
+          <div className="q-skel h-4 w-1/4" />
+        </div>
+      ))}
+      <span className="sr-only">Gathering manuscripts</span>
     </div>
   );
 
@@ -173,20 +178,39 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
         animated every property including colour on its own timing and fought
         the 120ms the rest of the app moves at.
       */
-      <div className="flex flex-col items-center justify-center min-h-[70vh] text-center fade-in">
-        <h2 className="font-serif text-5xl italic tracking-tight text-foreground mb-4">
-          {t("dash.noBooks")}
-        </h2>
-        <p className="text-base text-muted-foreground max-w-sm leading-relaxed mb-10">
-          {t("dash.createFirst")}
-        </p>
-        <button
-          onClick={nav.toBookCreate}
-          className="group flex items-center gap-2 rounded-xl bg-primary px-8 py-3.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20 transition-transform duration-150 ease-[cubic-bezier(0.16,1,0.3,1)] hover:scale-[1.03] active:scale-95"
-        >
-          <Plus size={18} />
-          {t("nav.newBook")}
-        </button>
+      <div className="flex min-h-[70vh] items-center justify-center fade-in">
+        {/* A disc only reads as geometry when an edge cuts it. This was a bare
+            flex column before, so the discs floated loose in the page. The card
+            is the edge they stop at. */}
+        <div className="q-crop w-full max-w-2xl rounded-3xl border border-border/60 bg-card px-10 py-14 shadow-md sm:px-14">
+          <span className="q-disc q-disc-fill" aria-hidden="true"
+                style={{ width: 300, height: 300, right: -110, top: -120, opacity: .13 }} />
+          <span className="q-disc q-disc-stroke" aria-hidden="true"
+                style={{ width: 150, height: 150, right: -46, top: -30, opacity: .45 }} />
+          <span className="q-disc q-disc-dots text-primary" aria-hidden="true"
+                style={{ width: 116, height: 116, left: -34, bottom: -40, opacity: .5 }} />
+
+          <div className="relative">
+            <h2 className="text-[2.75rem] font-semibold leading-[1.04] tracking-[-0.04em] text-foreground">
+              {t("dash.noBooks")}
+            </h2>
+            <p className="mt-4 max-w-sm text-[15px] leading-relaxed text-muted-foreground">
+              {t("dash.createFirst")}
+            </p>
+            <button
+              onClick={nav.toBookCreate}
+              className="q-row group mt-10 flex w-full items-center gap-4 border-t border-border/60 pt-6 text-left"
+            >
+              <span className="q-arrow" aria-hidden="true">
+                <Plus size={18} />
+              </span>
+              <span className="text-base font-semibold tracking-[-0.02em] text-foreground">
+                {t("nav.newBook")}
+              </span>
+              <ChevronRight size={18} className="q-row-act ml-auto text-primary" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -209,12 +233,12 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
       )}
       <div className="flex items-end justify-between border-b border-border/40 pb-8">
         <div>
-          <h1 className="font-serif text-4xl mb-2">{t("dash.title")}</h1>
+          <h1 className="text-4xl font-semibold tracking-[-0.035em] mb-2">{t("dash.title")}</h1>
           <p className="text-sm text-muted-foreground">{t("dash.subtitle")}</p>
         </div>
         <button
           onClick={nav.toBookCreate}
-          className="group flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold bg-primary text-primary-foreground hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20"
+          className="group flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold bg-primary text-primary-foreground shadow-md transition-[transform,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] hover:-translate-y-px hover:shadow-lg active:translate-y-0 active:scale-[0.985]"
         >
           <Plus size={16} />
           {t("nav.newBook")}
@@ -228,17 +252,29 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
           return (
             <div
               key={book.id}
-              className={`paper-sheet group relative rounded-2xl fade-in ${staggerClass} ${menuOpenBookId === book.id ? "z-50" : ""}`}
+              className={`paper-sheet group relative rounded-2xl fade-in q-crop transition-[transform,box-shadow] duration-[var(--dur-med)] ease-[var(--ease-out-quart)] hover:-translate-y-1 hover:shadow-lg ${staggerClass} ${menuOpenBookId === book.id ? "z-50" : ""}`}
             >
-              <div className="p-8 flex items-start justify-between">
+              {/* Alternating geometry, so a shelf of books does not repeat the
+                  same card three times. Keyed on index, so it is stable. */}
+              <span
+                className={`q-disc ${index % 3 === 0 ? "q-disc-fill" : index % 3 === 1 ? "q-disc-dots" : "q-disc-stroke"} transition-transform duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:scale-110`}
+                aria-hidden="true"
+                style={index % 3 === 1
+                  ? { width: 104, height: 104, right: 18, bottom: -30, opacity: .5 }
+                  : { width: 132, height: 132, right: -44, top: -46, opacity: index % 3 === 0 ? .16 : .55 }}
+              />
+              <div className="relative p-8 flex items-start justify-between">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 rounded-lg bg-primary/5 text-primary">
-                      <BookOpen size={20} />
-                    </div>
+                  <div className="flex items-baseline gap-3 mb-3">
+                    {/* The chapter count is the number that matters on this
+                        card, so it is set as one instead of hidden in a row of
+                        metadata behind an icon that said nothing. */}
+                    <span className="q-numeral text-3xl tabular-nums shrink-0">
+                      {String(book.chaptersWritten).padStart(2, "0")}
+                    </span>
                     <button
                       onClick={() => nav.toBook(book.id)}
-                      className="font-serif text-2xl hover:text-primary transition-all text-left truncate block font-medium hover:underline underline-offset-4 decoration-primary/30"
+                      className="text-2xl font-semibold tracking-[-0.03em] hover:text-primary transition-colors text-left truncate block"
                     >
                       {book.title}
                     </button>
@@ -254,8 +290,8 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className={`w-2 h-2 rounded-full ${
-                        book.status === "active" ? "bg-emerald-500" :
-                        book.status === "paused" ? "bg-amber-500" :
+                        book.status === "active" ? "bg-success" :
+                        book.status === "paused" ? "bg-warning" :
                         "bg-muted-foreground"
                       }`} />
                       <span>{
@@ -271,7 +307,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                       <span className="px-1.5 py-0.5 rounded border border-primary/20 text-primary text-[10px] font-bold">EN</span>
                     )}
                     {book.fanficMode && (
-                      <span className="flex items-center gap-1 text-purple-500">
+                      <span className="flex items-center gap-1 text-primary">
                         <Zap size={12} />
                         <span className="italic">{book.fanficMode}</span>
                       </span>
@@ -289,7 +325,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                     className={`flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold transition-all shadow-sm ${
                       isWriting
                         ? "bg-primary/20 text-primary cursor-wait animate-pulse"
-                        : "bg-secondary text-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-lg hover:shadow-primary/20 hover:scale-105 active:scale-95"
+                        : "bg-secondary text-foreground transition-[transform,box-shadow,background-color,color] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] hover:bg-primary hover:text-primary-foreground hover:-translate-y-px hover:shadow-md active:translate-y-0 active:scale-[0.985]"
                     }`}
                   >
                     {isWriting ? (
@@ -306,7 +342,7 @@ export function Dashboard({ nav, sse, theme, t }: { nav: Nav; sse: { messages: R
                   </button>
                   <button
                     onClick={() => nav.toAnalytics(book.id)}
-                    className="p-3 rounded-xl bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/30 hover:shadow-md hover:scale-105 active:scale-95 transition-all border border-border/50 shadow-sm"
+                    className="p-3 rounded-xl bg-secondary text-muted-foreground hover:text-primary hover:bg-primary/10 hover:border-primary/30 hover:shadow-md hover:-translate-y-px active:translate-y-0 active:scale-[0.985] transition-all border border-border/50 shadow-sm"
                     title={t("dash.stats")}
                   >
                     <BarChart2 size={18} />

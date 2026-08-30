@@ -193,8 +193,8 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
         <span>{t("nav.import")}</span>
       </div>
 
-      <h1 className="font-serif text-3xl flex items-center gap-3">
-        <FileInput size={28} className="text-primary" />
+      <h1 className="q-title text-3xl flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><FileInput size={19} /></span>
         {t("import.title")}
       </h1>
 
@@ -385,7 +385,7 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
         )}
 
         {status && (
-          <div className={`text-sm px-3 py-2 rounded-lg ${status.startsWith("Error") ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-600"}`}>
+          <div className={`text-sm px-3 py-2 rounded-lg ${status.startsWith("Error") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
             {status}
           </div>
         )}

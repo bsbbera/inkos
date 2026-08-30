@@ -30,18 +30,29 @@ function ServiceCard({ svc, onClick }: { svc: ServiceInfo; onClick: () => void }
   return (
     <div
       className={[
-        "flex min-h-[92px] flex-col gap-2 rounded-lg border p-5 text-left transition-all hover:shadow-sm",
+        "q-crop group flex min-h-[92px] flex-col gap-2 rounded-xl border bg-card p-5 text-left",
+        "transition-[transform,box-shadow,border-color] duration-[var(--dur-med)] ease-[var(--ease-out-quart)]",
+        "hover:-translate-y-0.5 hover:shadow-md",
         svc.connected
-          ? "border-emerald-500/30 bg-emerald-500/[0.03]"
-          : "border-dashed border-border/40",
+          ? "border-border/60 hover:border-primary/45"
+          : "border-border/40 hover:border-border",
       ].join(" ")}
     >
-      <button onClick={onClick} className="flex flex-1 flex-col gap-2 text-left">
-        <div className="flex items-center justify-between gap-3">
-          <span className="truncate text-sm font-medium">{svc.label}</span>
-          <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${svc.connected ? "bg-emerald-500" : "bg-muted-foreground/30"}`} />
+      {svc.connected && (
+        <span
+          className="q-disc q-disc-fill transition-transform duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:scale-125"
+          aria-hidden="true"
+          style={{ width: 84, height: 84, right: -32, top: -36, opacity: .13 }}
+        />
+      )}
+      <button onClick={onClick} className="relative flex flex-1 flex-col gap-2.5 text-left">
+        <div className="flex items-start justify-between gap-3">
+          <span className="truncate text-sm font-semibold">{svc.label}</span>
+          <span className="q-glyph !h-7 !w-7 shrink-0 !text-[11px]" aria-hidden="true">
+            {svc.label.slice(0, 1).toUpperCase()}
+          </span>
         </div>
-        <span className="text-xs text-muted-foreground/60">
+        <span className={`q-pill ${svc.connected ? "q-pill-ok" : ""}`}>
           {svc.connected ? tr("已连接", "Connected") : tr("未配置", "Not configured")}
         </span>
       </button>
@@ -173,7 +184,7 @@ function CoverConfigCard() {
           </p>
         </div>
         {selected?.connected && (
-          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+          <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
             {needsKey ? tr("已有密钥", "Key saved") : tr("本机渲染", "Runs on this machine")}
           </span>
         )}
@@ -264,7 +275,7 @@ function CoverConfigCard() {
           {tr("保存封面配置", "Save cover config")}
         </button>
         {message && (
-          <span className={`text-xs ${status === "error" ? "text-destructive" : "text-emerald-500"}`}>
+          <span className={`text-xs ${status === "error" ? "text-destructive" : "text-success"}`}>
             {message}
           </span>
         )}
@@ -353,7 +364,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <button
           onClick={nav.toDashboard}
-          className="inline-flex items-center rounded-lg border border-border/50 bg-card/60 px-3 py-1.5 font-medium text-foreground hover:bg-secondary/50 transition-colors"
+          className="q-btn q-btn-quiet !px-2.5 !py-1 text-xs"
         >
           {tr("首页", "Home")}
         </button>
@@ -361,7 +372,10 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         <span className="text-foreground">{tr("服务商管理", "Providers")}</span>
       </div>
 
-      <h1 className="font-serif text-2xl">{tr("服务商管理", "Providers")}</h1>
+      <header className="q-head">
+        <p className="q-label">{tr("模型", "Models")}</p>
+        <h1 className="mt-3">{tr("服务商管理", "Providers")}</h1>
+      </header>
 
       <ServiceConfigSourceCard onChange={() => { void refreshServices(); }} />
 
@@ -374,7 +388,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder={tr("搜索服务商", "Search providers")}
-          className="w-full rounded-lg border border-border/60 bg-background py-2 pl-9 pr-9 text-sm outline-none focus:border-primary/50"
+          className="w-full py-2 pl-9 pr-9 text-sm"
         />
         {query && (
           <button
@@ -391,10 +405,10 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         <button
           onClick={() => setSelectedGroups(new Set())}
           className={[
-            "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors",
+            "q-pill cursor-pointer transition-colors duration-[var(--dur-fast)]",
             selectedGroups.size === 0
-              ? "border-foreground bg-foreground text-background"
-              : "border-border/60 text-muted-foreground hover:bg-secondary/50",
+              ? "q-pill-fill"
+              : "hover:border-primary/40 hover:text-primary",
           ].join(" ")}
         >
           {tr("全部", "All")} {bankServices.length}
@@ -406,10 +420,10 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
               key={group}
               onClick={() => toggleGroup(group)}
               className={[
-                "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs transition-colors",
+                "q-pill cursor-pointer transition-colors duration-[var(--dur-fast)]",
                 selected
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-border/60 text-muted-foreground hover:bg-secondary/50",
+                  ? "q-pill-fill"
+                  : "hover:border-primary/40 hover:text-primary",
               ].join(" ")}
             >
               {selected && <Check size={12} />}
@@ -450,7 +464,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         return (
           <section key={group} className="space-y-3">
             <div className="space-y-1">
-              <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              <h2 className="q-label">
                 {getGroupLabel(group)}
               </h2>
               {getGroupDescription(group) && (
@@ -474,7 +488,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
 
       {showCustomSection && (
         <section className="space-y-3">
-          <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+          <h2 className="q-label">
             {tr("自定义服务", "Custom services")}
           </h2>
           <div className="grid grid-cols-2 gap-3">
@@ -488,9 +502,11 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
             {canCreateCustom && (
               <button
                 onClick={() => nav.toServiceDetail("custom")}
-                className="flex min-h-[92px] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-border/40 p-5 text-muted-foreground/60 transition-all hover:border-primary/30 hover:text-muted-foreground"
+                className="group flex min-h-[92px] flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-border/60 p-5 text-muted-foreground transition-colors duration-[var(--dur-fast)] hover:border-primary/50 hover:text-primary"
               >
-                <Plus size={18} />
+                <span className="q-glyph !h-9 !w-9 group-hover:!border-primary group-hover:!bg-primary group-hover:!text-primary-foreground">
+                  <Plus size={16} />
+                </span>
                 <span className="text-xs">{tr("自定义服务", "Custom service")}</span>
               </button>
             )}
@@ -499,8 +515,12 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
       )}
 
       {!loading && filtered.length === 0 && filteredCustom.length === 0 && !canCreateCustom && (
-        <div className="rounded-lg border border-dashed border-border/40 p-8 text-center text-sm text-muted-foreground">
-          {tr("没有匹配的服务商", "No matching providers")}
+        <div className="q-crop rounded-2xl border border-border/60 bg-card p-10 text-center">
+          <span className="q-disc q-disc-dots text-primary" aria-hidden="true"
+                style={{ width: 96, height: 96, left: -30, bottom: -36, opacity: .4 }} />
+          <p className="relative text-sm text-muted-foreground">
+            {tr("没有匹配的服务商", "No matching providers")}
+          </p>
         </div>
       )}
     </div>

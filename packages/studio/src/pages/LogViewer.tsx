@@ -16,7 +16,7 @@ interface Nav {
 
 const LEVEL_COLORS: Record<string, string> = {
   error: "text-destructive",
-  warn: "text-amber-500",
+  warn: "text-warning",
   info: "text-primary/70",
   debug: "text-muted-foreground/50",
 };
@@ -34,7 +34,7 @@ export function LogViewer({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
       </div>
 
       <div className="flex items-baseline justify-between">
-        <h1 className="font-serif text-3xl">{t("logs.title")}</h1>
+        <h1 className="q-title text-3xl">{t("logs.title")}</h1>
         <button
           onClick={() => refetch()}
           className={`px-4 py-2.5 text-sm rounded-md ${c.btnSecondary}`}

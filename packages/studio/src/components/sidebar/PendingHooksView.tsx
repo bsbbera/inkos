@@ -7,8 +7,8 @@ interface PendingHooksViewProps {
 }
 
 const HOOK_TYPE_COLOR: Record<string, string> = {
-  "主线伏笔": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "角色前置": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  "主线伏笔": "bg-warning/15 text-warning text-warning",
+  "角色前置": "bg-success/15 text-success text-success",
   "情感线伏笔": "bg-pink-500/15 text-pink-600 dark:text-pink-400",
   "次要伏笔": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
 };
@@ -40,7 +40,7 @@ export function PendingHooksView({ content }: PendingHooksViewProps) {
               </span>
             )}
             {hook.promoted === true && (
-              <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+              <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-success/15 text-success text-success">
                 {tr("活跃", "Active")}
               </span>
             )}
@@ -50,7 +50,7 @@ export function PendingHooksView({ content }: PendingHooksViewProps) {
               </span>
             )}
             {hook.core && (
-              <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400">
+              <span className="text-[12px] px-1.5 py-0.5 rounded-full bg-warning/15 text-warning text-warning">
                 {tr("核心", "Core")}
               </span>
             )}
@@ -58,7 +58,7 @@ export function PendingHooksView({ content }: PendingHooksViewProps) {
               <span className="text-[12px] text-muted-foreground/50 ml-auto">{tr("回收", "Payoff")} · {hook.payoff}</span>
             )}
           </div>
-          <p className="text-[15px] text-foreground leading-7 font-['SimSun','Songti_SC','STSong',serif]">
+          <p className="text-[15px] text-foreground leading-7 font-serif">
             {hook.content}
           </p>
         </div>

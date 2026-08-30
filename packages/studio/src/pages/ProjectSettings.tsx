@@ -75,20 +75,27 @@ function SettingsCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-border/50 bg-card/70 p-5 shadow-sm space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 rounded-xl bg-primary/10 p-2 text-primary">{icon}</div>
-        <div>
-          <h2 className="text-base font-bold">{title}</h2>
-          <p className="mt-1 text-sm text-muted-foreground leading-relaxed">{description}</p>
+    <section className="q-crop space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm sm:p-6">
+      <span className="q-disc q-disc-fill" aria-hidden="true"
+            style={{ width: 150, height: 150, right: -64, top: -70, opacity: .1 }} />
+      <div className="relative flex items-start gap-3.5">
+        <span
+          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary"
+          aria-hidden="true"
+        >
+          {icon}
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="q-title text-lg">{title}</h2>
+          <p className="q-note mt-1.5 leading-relaxed">{description}</p>
         </div>
       </div>
-      {children}
+      <div className="relative space-y-4">{children}</div>
     </section>
   );
 }
 
-const fieldClass = "w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm outline-none focus:border-primary/50";
+const fieldClass = "w-full text-sm";
 
 export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
@@ -203,22 +210,24 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
         <span>{t("settings.title")}</span>
       </div>
 
-      <div className="space-y-2">
-        <h1 className="font-serif text-3xl flex items-center gap-3">
-          <Settings2 size={28} className="text-primary" />
-          {t("settings.title")}
-        </h1>
-        <p className="text-sm text-muted-foreground">{t("settings.subtitle")}</p>
-      </div>
+      <header className="q-head">
+        <p className="q-label flex items-center gap-2">
+          <Settings2 size={13} aria-hidden="true" />
+          {t("bread.home")}
+        </p>
+        <h1 className="mt-3">{t("settings.title")}</h1>
+        <p>{t("settings.subtitle")}</p>
+      </header>
 
       {notice && (
         <div
-          className={`rounded-xl px-4 py-3 text-sm ${
+          role="status"
+          className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both] ${
             notice.tone === "error"
-              ? "bg-destructive/10 text-destructive"
+              ? "border-destructive/40 bg-destructive/10 text-destructive"
               : notice.tone === "info"
-                ? "bg-secondary text-muted-foreground"
-                : "bg-emerald-500/10 text-emerald-600"
+                ? "border-border/60 bg-secondary text-muted-foreground"
+                : "border-success/40 bg-success/10 text-success"
           }`}
         >
           {notice.message}
@@ -245,7 +254,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
       >
         <div className="space-y-3">
           {skillsData?.diagnostics?.length ? (
-            <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <div className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
               <div className="font-semibold">{isZh ? "部分外部 Skill 未加载" : "Some external skills were not loaded"}</div>
               {skillsData.diagnostics.slice(0, 8).map((item, index) => (
                 <div key={`${item.path ?? "skill"}-${index}`} className="mt-1 break-all">
@@ -340,7 +349,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                 {promptGroups.map((group) => (
                   <div key={group.id} className="space-y-2">
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{group.title}</div>
+                      <div className="q-label">{group.title}</div>
                       {group.description ? (
                         <p className="mt-1 text-[11px] leading-4 text-muted-foreground/80">{group.description}</p>
                       ) : null}

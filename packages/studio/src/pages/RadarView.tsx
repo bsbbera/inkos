@@ -71,8 +71,8 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="font-serif text-3xl flex items-center gap-3">
-          <TrendingUp size={28} className="text-primary" />
+        <h1 className="q-title text-3xl flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><TrendingUp size={19} /></span>
           {t("radar.title")}
         </h1>
         <button
@@ -92,7 +92,7 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
       {result && (
         <div className="space-y-6">
           <div className={`border ${c.cardStatic} rounded-lg p-5`}>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-3">{t("radar.summary")}</h3>
+            <h3 className="q-label mb-3">{t("radar.summary")}</h3>
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{result.marketSummary}</p>
           </div>
 
@@ -100,12 +100,12 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
             {result.recommendations.map((rec, i) => (
               <div key={i} className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  <span className="q-label">
                     {rec.platform} · {rec.genre}
                   </span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    rec.confidence >= 0.7 ? "bg-emerald-500/10 text-emerald-600" :
-                    rec.confidence >= 0.4 ? "bg-amber-500/10 text-amber-600" :
+                    rec.confidence >= 0.7 ? "bg-success/10 text-success" :
+                    rec.confidence >= 0.4 ? "bg-warning/10 text-warning" :
                     "bg-muted text-muted-foreground"
                   }`}>
                     {(rec.confidence * 100).toFixed(0)}%
@@ -128,7 +128,7 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
 
       {history.length > 0 && (
         <div className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`}>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+          <h3 className="q-label flex items-center gap-2">
             <Clock size={14} />
             {t("radar.history")}
           </h3>

@@ -265,8 +265,8 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-serif text-3xl flex items-center gap-3">
-            <Languages size={28} className="text-primary" />
+          <h1 className="q-title text-3xl flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Languages size={19} /></span>
             {t("translation.title")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -428,7 +428,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("translation.preview")}</div>
+                      <div className="q-label">{t("translation.preview")}</div>
                       <div className="font-semibold">{previewChapter.title}</div>
                     </div>
                     <div className="text-xs text-muted-foreground">{previewChapter.status}</div>
@@ -453,7 +453,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 </div>
               )}
               <div>
-                <div className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">{t("translation.report")}</div>
+                <div className="mb-2 q-label">{t("translation.report")}</div>
                 <pre className="max-h-80 overflow-auto rounded-xl bg-secondary/30 p-4 text-xs leading-6 whitespace-pre-wrap">
                   {detail?.report?.trim() || t("translation.noReport")}
                 </pre>
@@ -464,7 +464,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
       </div>
 
       {status && (
-        <div className={`rounded-xl px-4 py-3 text-sm ${status.startsWith("Error:") ? "bg-destructive/10 text-destructive" : "bg-emerald-500/10 text-emerald-600"}`}>
+        <div className={`rounded-xl px-4 py-3 text-sm ${status.startsWith("Error:") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
           {status}
         </div>
       )}

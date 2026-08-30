@@ -12,8 +12,8 @@ interface ChapterMeta {
 }
 
 const STATUS_INDICATOR: Record<string, { symbol: string; color: string }> = {
-  approved: { symbol: "✓", color: "text-emerald-500" },
-  "ready-for-review": { symbol: "◆", color: "text-amber-500" },
+  approved: { symbol: "✓", color: "text-success" },
+  "ready-for-review": { symbol: "◆", color: "text-warning" },
   drafted: { symbol: "○", color: "text-muted-foreground" },
   "needs-revision": { symbol: "✕", color: "text-destructive" },
   imported: { symbol: "◇", color: "text-blue-500" },

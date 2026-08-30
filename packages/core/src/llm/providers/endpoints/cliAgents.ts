@@ -11,25 +11,21 @@
  * filters its catalogue by that prefix, so the four providers list their own
  * models instead of all four listing the same two hundred.
  *
- * `models` is a seed, not the catalogue. It carries the metadata a live
- * /models probe cannot report — mainly which models accept images — and the
- * probe supplies everything else. devin alone offers 183 models and they
- * change whenever the CLI updates, so hardcoding the full list would be stale
- * by the next `devin update`.
+ * `models` is empty on purpose. It used to hold a seed — ten devin ids, four
+ * codex ids — described as metadata the probe could not report. It was pinned
+ * version ids, so it went stale on the next `devin update`, and because a
+ * failed probe fell through to it silently, the picker offered those ten as if
+ * they were the catalogue while the CLI had 183.
+ *
+ * The shim owns the model list, live and fallback both. Nothing about which
+ * models exist is compiled into this file any more.
  */
-import type { InkosEndpoint, InkosModel } from "../types.js";
+import type { InkosEndpoint } from "../types.js";
 
 // The port must follow the shim the surrounding app actually started: a dev
 // build installed beside the release one runs its shim on a different port,
 // and a baked-in 8787 would silently point it at the other app's shim.
 const SHIM = `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`;
-
-const text = (id: string, imageInput: boolean): InkosModel => ({
-  id,
-  maxOutput: 8192,
-  contextWindowTokens: 200000,
-  capabilities: { text: true, tools: true, imageInput },
-});
 
 export const CLAUDE_CLI: InkosEndpoint = {
   id: "claudeCli",
@@ -42,12 +38,7 @@ export const CLAUDE_CLI: InkosEndpoint = {
   // one. A probed model inherits this, which matters here more than
   // anywhere else: devin lists 183 and seeds ten.
   modelDefaults: { webSearch: true },
-  models: [
-    text("claude/default", true),
-    text("claude/opus", true),
-    text("claude/sonnet", true),
-    text("claude/haiku", true),
-  ],
+  models: [],
 };
 
 export const CODEX_CLI: InkosEndpoint = {
@@ -61,12 +52,7 @@ export const CODEX_CLI: InkosEndpoint = {
   // one. A probed model inherits this, which matters here more than
   // anywhere else: devin lists 183 and seeds ten.
   modelDefaults: { webSearch: true },
-  models: [
-    text("codex/gpt-5.6-terra", true),
-    text("codex/gpt-5.6-luna", true),
-    text("codex/gpt-5.5", true),
-    text("codex/gpt-5.4-mini", true),
-  ],
+  models: [],
 };
 
 export const DEVIN_CLI: InkosEndpoint = {
@@ -83,18 +69,7 @@ export const DEVIN_CLI: InkosEndpoint = {
   // one. A probed model inherits this, which matters here more than
   // anywhere else: devin lists 183 and seeds ten.
   modelDefaults: { webSearch: true },
-  models: [
-    text("devin/glm-5-2", false),
-    text("devin/glm-5-2-max", false),
-    text("devin/glm-5-2-1m", false),
-    text("devin/glm-5-2-max-1m", false),
-    text("devin/kimi-k3-high", true),
-    text("devin/kimi-k3-max", true),
-    text("devin/kimi-k2-6", true),
-    text("devin/claude-opus-5-medium", true),
-    text("devin/claude-opus-5-high", true),
-    text("devin/gpt-5-6-sol-medium", true),
-  ],
+  models: [],
 };
 
 export const ANTIGRAVITY_CLI: InkosEndpoint = {
@@ -108,9 +83,5 @@ export const ANTIGRAVITY_CLI: InkosEndpoint = {
   // one. A probed model inherits this, which matters here more than
   // anywhere else: devin lists 183 and seeds ten.
   modelDefaults: { webSearch: true },
-  models: [
-    text("antigravity/default", true),
-    text("antigravity/gemini-3.7-flash-high", true),
-    text("antigravity/gemini-3.7-flash-medium", true),
-  ],
+  models: [],
 };

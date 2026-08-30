@@ -69,6 +69,7 @@ import {
   Film,
   Languages,
   Newspaper,
+  SlidersHorizontal,
 } from "lucide-react";
 import { QuireMark } from "./QuireMark";
 
@@ -109,6 +110,7 @@ interface Nav {
   toRadar: () => void;
   toDoctor: () => void;
   toMcp: () => void;
+  toSetup: () => void;
   toAudit: () => void;
   toPublication: (issueId: string) => void;
   toFilmStudio: (id: string) => void;
@@ -386,10 +388,10 @@ export function Sidebar({ nav, activePage, sse, t }: {
           onClick={nav.toDashboard}
           className="group flex items-center gap-3 hover:opacity-80 transition-all duration-300"
         >
-          <QuireMark className="w-11 h-11 shrink-0 text-primary group-hover:scale-105 transition-transform" />
+          <QuireMark className="w-11 h-11 shrink-0 text-primary transition-transform duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:-translate-y-px group-hover:rotate-[-6deg]" />
           <div className="flex flex-col">
-            <span className="font-serif text-[27px] leading-none italic font-medium">Quire</span>
-            <span className="text-[13px] uppercase tracking-[0.22em] text-muted-foreground font-bold mt-1.5">Studio</span>
+            <span className="q-title text-[27px] leading-none">Quire</span>
+            <span className="q-label mt-1.5">Studio</span>
           </div>
         </button>
       </div>
@@ -399,9 +401,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
         {/* Quire Create Section — always visible, two columns. */}
         <div>
           <div className="px-3 mb-2.5">
-            <span className="text-[16px] leading-6 uppercase tracking-[0.1em] text-muted-foreground font-bold">
-              {t("nav.createSection")}
-            </span>
+            <span className="q-label">{t("nav.createSection")}</span>
           </div>
           <div className="grid grid-cols-2 gap-1">
             <CreateItem icon={<BookPlus size={16} />} label={t("nav.createNovel")} active={activePage === "book-create"} onClick={handleOpenBookCreate} />
@@ -745,7 +745,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
               active={activePage === "daemon"}
               onClick={nav.toDaemon}
               badge={daemon?.running ? t("nav.running") : undefined}
-              badgeColor={daemon?.running ? "bg-emerald-500/10 text-emerald-500" : "bg-muted text-muted-foreground"}
+              badgeColor={daemon?.running ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}
             />
             <SidebarItem
               label={t("nav.logs")}
@@ -800,6 +800,13 @@ export function Sidebar({ nav, activePage, sse, t }: {
               active={activePage === "mcp"}
               onClick={nav.toMcp}
             />
+            {/* Providers and ComfyUI. Was the launcher's Settings drawer. */}
+            <SidebarItem
+              label="Setup"
+              icon={<SlidersHorizontal size={16} />}
+              active={activePage === "setup"}
+              onClick={nav.toSetup}
+            />
           </div>
         </div>
       </div>
@@ -808,7 +815,7 @@ export function Sidebar({ nav, activePage, sse, t }: {
       {daemon?.running && (
         <div className="p-4 border-t border-border bg-secondary/40">
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-card border border-border shadow-sm">
-            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
             <span className="text-[11px] font-semibold text-foreground/80 uppercase tracking-wider">
               {t("nav.agentOnline")}
             </span>
@@ -961,13 +968,19 @@ function CreateItem({ icon, label, active, onClick }: {
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-w-0 items-center gap-2 rounded-lg px-2.5 py-2.5 text-left text-[16px] leading-6 transition-all ${
+      className={`group flex min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-2.5 text-left text-[16px] leading-6 transition-colors duration-[var(--dur-fast)] ${
         active
-          ? "border border-border bg-secondary text-foreground font-medium shadow-sm"
+          ? "bg-secondary font-medium text-foreground"
           : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground"
       }`}
     >
-      <span className={`shrink-0 ${active ? "text-primary" : ""}`}>{icon}</span>
+      <span
+        className={`shrink-0 transition-[color,transform] duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:-translate-y-px group-hover:text-primary ${
+          active ? "text-primary" : ""
+        }`}
+      >
+        {icon}
+      </span>
       <span className="truncate">{label}</span>
     </button>
   );
@@ -984,18 +997,22 @@ function SidebarItem({ label, icon, active, onClick, badge, badgeColor }: {
   return (
     <button
       onClick={onClick}
-      className={`w-full group flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 ${
-        active
-          ? "bg-secondary text-foreground font-medium shadow-sm border border-border"
-          : "text-foreground font-medium hover:text-foreground hover:bg-secondary/50"
-      }`}
+      className={`relative w-full group flex items-center gap-3 pl-4 pr-3 py-2 rounded-lg text-sm font-medium text-foreground
+        transition-colors duration-[var(--dur-fast)]
+        before:absolute before:left-1 before:top-1/2 before:-translate-y-1/2 before:w-[3px] before:rounded-full
+        before:bg-primary before:transition-[height] before:duration-[var(--dur-med)] before:ease-[var(--ease-out-quart)]
+        ${active ? "before:h-5 bg-accent/60" : "before:h-0 hover:bg-accent/35 hover:before:h-4"}`}
     >
-      <span className={`transition-colors ${active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+      <span
+        className={`transition-[color,transform] duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:-translate-y-px ${
+          active ? "text-primary" : "text-muted-foreground group-hover:text-primary"
+        }`}
+      >
         {icon}
       </span>
       <span className="flex-1 text-left">{label}</span>
       {badge && (
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase tracking-tight ${badgeColor}`}>
+        <span className={`q-pill !px-2 !py-0 !text-[9px] ${badgeColor}`}>
           {badge}
         </span>
       )}

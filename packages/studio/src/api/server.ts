@@ -3558,11 +3558,52 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     });
   });
 
+  /**
+   * The CLIs the shim reports as installed AND enabled, as endpoint ids.
+   *
+   * The shim owns detection: it resolves each binary, probes its version and
+   * asks the CLI itself whether it is signed in. Studio asking again would be
+   * a second answer to the same question, and the two would disagree.
+   *
+   * On no answer the set is empty, which is the honest reading — no shim means
+   * no CLI can be reached anyway.
+   */
+  async function shimAgents(): Promise<Map<string, { enabled: boolean; fallback: string[] }>> {
+    const port = process.env.SHIM_PORT || "8787";
+    try {
+      const r = await fetch(`http://127.0.0.1:${port}/agents`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      if (!r.ok) return new Map();
+      const body = await r.json() as {
+        agents?: { id: string; enabled: boolean; fallback?: string[] }[];
+      };
+      // Endpoint ids are the CLI id plus "Cli" — claude -> claudeCli.
+      return new Map((body.agents ?? []).map((a) => [
+        `${a.id}Cli`,
+        { enabled: a.enabled, fallback: a.fallback ?? [] },
+      ]));
+    } catch {
+      return new Map();
+    }
+  }
+
+  async function enabledCliIds(): Promise<Set<string>> {
+    const agents = await shimAgents();
+    return new Set([...agents].filter(([, a]) => a.enabled).map(([id]) => id));
+  }
+
   // --- Model discovery ---
 
   app.get("/api/v1/services", async (c) => {
     const secrets = await loadSecrets(root);
-    const endpoints = getAllEndpoints().filter((ep) => ep.id !== "custom");
+    // Quire is CLI-first: the only providers offered are the agent CLIs this
+    // machine actually has and the user has left switched on. The upstream
+    // bank of API vendors is still registered for lookup, so a project that
+    // already names one keeps resolving, but it is not put in front of anyone.
+    const allowed = await enabledCliIds();
+    const endpoints = getAllEndpoints()
+      .filter((ep) => ep.id !== "custom" && ep.group === "cli" && allowed.has(ep.id));
     let configuredServices: ReturnType<typeof normalizeServiceConfig> = [];
     try {
       const config = await loadRawConfig(root);
@@ -3982,7 +4023,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.models;
     try {
       const enriched = filterTextChatModels(await listModelsForService(service, ""));
-      if (enriched.length === 0) return null;
+      if (enriched.length === 0) {
+        // Nothing compiled in to fall back to any more. The shim carries the
+        // aliases each CLI keeps stable across releases, so ask it rather than
+        // hand back an empty picker.
+        const fallback = (await shimAgents()).get(service)?.fallback ?? [];
+        return fallback.length ? fallback.map((id) => ({ id, name: id })) : null;
+      }
       const models = enriched.map((m) => ({
         id: m.id,
         name: m.name,

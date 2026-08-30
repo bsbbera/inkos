@@ -20,7 +20,7 @@ function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail?: 
   return (
     <div className="flex items-center gap-3 py-3 border-b border-border/30 last:border-0">
       {ok ? (
-        <CheckCircle2 size={18} className="text-emerald-500 shrink-0" role="img" aria-label="passed" />
+        <CheckCircle2 size={18} className="text-success shrink-0" role="img" aria-label="passed" />
       ) : (
         <XCircle size={18} className="text-destructive shrink-0" role="img" aria-label="failed" />
       )}
@@ -44,8 +44,8 @@ export function DoctorView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
       </div>
 
       <div className="flex items-center justify-between">
-        <h1 className="font-serif text-3xl flex items-center gap-3">
-          <Stethoscope size={28} className="text-primary" />
+        <h1 className="q-title text-3xl flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Stethoscope size={19} /></span>
           {t("doctor.title")}
         </h1>
         <button
@@ -94,8 +94,8 @@ export function DoctorView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
       {data && (
         <div className={`px-4 py-3 rounded-lg text-sm font-medium ${
           data.inkosJson && (data.projectEnv || data.globalEnv) && data.llmConnected
-            ? "bg-emerald-500/10 text-emerald-600"
-            : "bg-amber-500/10 text-amber-600"
+            ? "bg-success/10 text-success"
+            : "bg-warning/10 text-warning"
         }`}>
           {data.inkosJson && (data.projectEnv || data.globalEnv) && data.llmConnected
             ? t("doctor.allPassed")

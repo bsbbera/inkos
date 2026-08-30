@@ -86,8 +86,8 @@ const post = async (path: string, body: unknown) => {
 };
 
 const STATE_TONE: Record<string, string> = {
-  done: "text-emerald-500",
-  partial: "text-amber-500",
+  done: "text-success",
+  partial: "text-warning",
   pending: "text-muted-foreground",
 };
 
@@ -162,8 +162,8 @@ export function PublicationDetail({
 
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="font-serif text-3xl flex items-center gap-3">
-            <BookOpen size={28} className="text-primary shrink-0" />
+          <h1 className="q-title text-3xl flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><BookOpen size={19} /></span>
             <span className="truncate">{issue.title || issue.subject}</span>
           </h1>
           <p className={`mt-2 text-sm ${c.muted}`}>{issue.thesis}</p>
@@ -216,7 +216,7 @@ export function PublicationDetail({
 
       {/* ----------------------------------------------------------- stages */}
       <section className="space-y-3">
-        <h2 className="font-serif text-xl">Stages</h2>
+        <h2 className="q-title text-xl">Stages</h2>
         <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
           {stages.map((s) => (
             <div key={s.stage} className="flex items-center gap-3 p-3 text-sm">
@@ -260,7 +260,7 @@ export function PublicationDetail({
         {/* Why the last run stopped. Without this the page showed a half-written
             issue that was not running and said nothing about either fact. */}
         {issue.lastError && !data.running ? (
-          <p className="text-sm text-amber-500">
+          <p className="text-sm text-warning">
             The last run stopped
             {issue.lastError.stage ? ` during ${issue.lastError.stage}` : ""}: {issue.lastError.message}
           </p>
@@ -270,7 +270,7 @@ export function PublicationDetail({
       {/* --------------------------------------------------------- findings */}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-4">
-          <h2 className="font-serif text-xl">
+          <h2 className="q-title text-xl">
             Audit
             {issue.audit ? <span className={`ml-2 text-sm ${c.muted}`}>
               {findings.length} findings
@@ -298,14 +298,14 @@ export function PublicationDetail({
         {!issue.audit ? (
           <p className={`text-sm ${c.muted}`}>This issue has never been audited.</p>
         ) : findings.length === 0 ? (
-          <p className="text-sm text-emerald-500">Nothing left to fix.</p>
+          <p className="text-sm text-success">Nothing left to fix.</p>
         ) : (
           <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide} max-h-96 overflow-y-auto`}>
             {findings.map((f, i) => (
               <div key={i} className="p-3 text-sm">
                 <div className="flex items-center gap-2">
                   <span className={`text-xs px-1.5 py-0.5 rounded ${c.code}`}>{f.category}</span>
-                  <span className={`text-xs ${f.severity === "warning" ? "text-amber-500" : c.muted}`}>
+                  <span className={`text-xs ${f.severity === "warning" ? "text-warning" : c.muted}`}>
                     {f.severity}
                   </span>
                 </div>
@@ -319,7 +319,7 @@ export function PublicationDetail({
 
       {/* ------------------------------------------------------------ pages */}
       <section className="space-y-3">
-        <h2 className="font-serif text-xl">Pages</h2>
+        <h2 className="q-title text-xl">Pages</h2>
         <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide}`}>
           {issue.pages.map((p) => {
             const open = openPage === p.n;
@@ -332,9 +332,9 @@ export function PublicationDetail({
                 >
                   <span className={`w-8 text-xs ${c.muted}`}>p{p.n}</span>
                   <span className="flex-1 truncate">{p.title}</span>
-                  {p.image ? <ImageIcon size={14} className="text-emerald-500 shrink-0" /> : null}
+                  {p.image ? <ImageIcon size={14} className="text-success shrink-0" /> : null}
                   {pageFindings ? (
-                    <span className="text-xs text-amber-500 shrink-0">{pageFindings}</span>
+                    <span className="text-xs text-warning shrink-0">{pageFindings}</span>
                   ) : null}
                   <span className={`text-xs shrink-0 ${p.body ? c.muted : "text-muted-foreground/50"}`}>
                     {p.body ? `${p.words ?? 0} words` : "unwritten"}
@@ -396,7 +396,7 @@ export function PublicationDetail({
 
       {issue.build?.pdf ? (
         <section className="space-y-2">
-          <h2 className="font-serif text-xl">Artifact</h2>
+          <h2 className="q-title text-xl">Artifact</h2>
           <p className={`text-xs font-mono ${c.muted}`}>{issue.build.pdf}</p>
         </section>
       ) : null}
@@ -421,7 +421,7 @@ function GateCard({
       <div className="flex items-center justify-between gap-3">
         <h3 className="font-medium">{title}</h3>
         {approved ? (
-          <span className="text-xs text-emerald-500 flex items-center gap-1">
+          <span className="text-xs text-success flex items-center gap-1">
             <Check size={14} />approved {new Date(approved.at).toLocaleDateString()}
           </span>
         ) : (

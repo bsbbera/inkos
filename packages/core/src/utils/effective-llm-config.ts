@@ -177,7 +177,12 @@ function resolveConfigMode(
   if (consumer === "studio") return "studio-project";
   if (source === "env") return "legacy-env";
   if (source === "studio" || services.length > 0) return "cli-project";
-  return "legacy-env";
+  // Quire is not env-configured. A project that says nothing used to fall back
+  // to reading INKOS_LLM_PROVIDER / _BASE_URL / _MODEL out of the environment,
+  // which is how a provider nobody had chosen kept reappearing next to the
+  // agent CLIs. The legacy path above stays for a project that explicitly asks
+  // for it; silence no longer opts you in.
+  return "cli-project";
 }
 
 async function applyProjectServiceConfig(

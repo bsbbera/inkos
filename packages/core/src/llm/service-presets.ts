@@ -182,7 +182,14 @@ export async function listModelsForService(
   const providerFamily = preset?.providerFamily ?? (provider?.api.startsWith("anthropic") ? "anthropic" : "openai");
   const canProbeWithoutApiKey = isApiKeyOptionalForEndpoint({ provider: providerFamily, baseUrl: probeBaseUrl });
   if ((apiKey || canProbeWithoutApiKey) && probeBaseUrl) {
-    const probed = await probeModelsFromUpstream(probeBaseUrl, apiKey ?? "", 10_000);
+    // A CLI catalogue is not an HTTP call. The shim has to start the binary
+    // and talk to it — devin's list only exists over an ACP handshake, codex
+    // shells out to `debug models` — and cold that takes longer than any
+    // hosted /models endpoint would. At 10s both timed out, fell through to
+    // the seed below, and the picker offered 10 devin models out of 183 with
+    // no error to explain it. The shim's own probes are capped at 25-30s.
+    const probeTimeoutMs = provider?.group === "cli" ? 60_000 : 10_000;
+    const probed = await probeModelsFromUpstream(probeBaseUrl, apiKey ?? "", probeTimeoutMs);
     if (probed.length > 0) {
       const { lookupModel } = await import("./providers/lookup.js");
       for (const m of probed) {

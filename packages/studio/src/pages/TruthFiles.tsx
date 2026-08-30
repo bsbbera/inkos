@@ -111,7 +111,7 @@ export function TruthFiles({ bookId, nav, theme, t }: { bookId: string; nav: Nav
         <span className="text-foreground">{t("truth.title")}</span>
       </div>
 
-      <h1 className="font-serif text-3xl">{t("truth.title")}</h1>
+      <h1 className="q-title text-3xl">{t("truth.title")}</h1>
 
       <div className="grid grid-cols-[240px_1fr] gap-6">
         {/* File list */}
@@ -142,7 +142,7 @@ export function TruthFiles({ bookId, nav, theme, t }: { bookId: string; nav: Nav
               {isLegacyShim && (
                 <div
                   data-testid="legacy-shim-warning"
-                  className="mb-3 px-3 py-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs leading-relaxed"
+                  className="mb-3 px-3 py-2 rounded-md border border-warning/40 bg-warning/10 text-amber-700 dark:text-amber-300 text-xs leading-relaxed"
                 >
                   <div className="font-medium">兼容层只读 / Read-only compat shim</div>
                   <div className="mt-1">

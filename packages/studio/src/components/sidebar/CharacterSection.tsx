@@ -33,14 +33,14 @@ function parseCharacterMatrix(md: string): CharacterInfo[] {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-  "主角": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "反派": "bg-red-500/15 text-red-600 dark:text-red-400",
-  "盟友": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  "主角": "bg-warning/15 text-warning text-warning",
+  "反派": "bg-destructive/15 text-destructive dark:text-destructive",
+  "盟友": "bg-success/15 text-success text-success",
   "配角": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
   "提及": "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400",
-  "protagonist": "bg-amber-500/15 text-amber-600 dark:text-amber-400",
-  "antagonist": "bg-red-500/15 text-red-600 dark:text-red-400",
-  "ally": "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400",
+  "protagonist": "bg-warning/15 text-warning text-warning",
+  "antagonist": "bg-destructive/15 text-destructive dark:text-destructive",
+  "ally": "bg-success/15 text-success text-success",
   "minor": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
   "mentioned": "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400",
 };
@@ -55,7 +55,7 @@ function getRoleColor(role: string): string {
 
 // label 在渲染时经 tr() 取当前语言，不能在模块加载时就固定成一种语言。
 const TIER_BADGE: Record<RoleRef["tier"], { zh: string; en: string; color: string }> = {
-  major: { zh: "主要", en: "Major", color: "bg-amber-500/15 text-amber-600 dark:text-amber-400" },
+  major: { zh: "主要", en: "Major", color: "bg-warning/15 text-warning text-warning" },
   minor: { zh: "次要", en: "Minor", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
 };
 
@@ -70,7 +70,7 @@ function RoleEntry({ role }: { readonly role: RoleRef }) {
       className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left"
     >
       <Users size={16} className="shrink-0 text-muted-foreground/60" />
-      <span className="text-[15px] leading-6 font-medium text-foreground font-['SimSun','Songti_SC','STSong',serif] flex-1 truncate">
+      <span className="text-[15px] leading-6 font-medium text-foreground q-title flex-1 truncate">
         {role.name}
       </span>
       <span className={cn("text-[12px] px-1.5 py-0.5 rounded-full shrink-0", badge.color)}>
@@ -93,7 +93,7 @@ function CharacterCard({ char }: { readonly char: CharacterInfo }) {
         className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
       >
         <Users size={16} className="shrink-0 text-muted-foreground/60" />
-        <span className="text-[15px] leading-6 font-medium text-foreground font-['SimSun','Songti_SC','STSong',serif] flex-1 truncate">
+        <span className="text-[15px] leading-6 font-medium text-foreground q-title flex-1 truncate">
           {char.name}
         </span>
         {role && (

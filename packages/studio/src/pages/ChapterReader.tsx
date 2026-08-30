@@ -10,7 +10,6 @@ import {
   X,
   List,
   RotateCcw,
-  BookOpen,
   CheckCircle2,
   XCircle,
   Hash,
@@ -79,7 +78,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
 
   if (loading && !data) return (
     <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
+      <div className="q-spin-ring" />
       <span className="text-sm text-muted-foreground">{t("reader.openingManuscript")}</span>
     </div>
   );
@@ -156,7 +155,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-primary text-primary-foreground rounded-xl hover:scale-105 active:scale-95 transition-all shadow-sm disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-primary text-primary-foreground rounded-xl hover:-translate-y-px active:translate-y-0 active:scale-[0.985] transition-all shadow-sm disabled:opacity-50"
               >
                 {saving ? <div className="w-3.5 h-3.5 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Save size={14} />}
                 {saving ? t("book.saving") : t("book.save")}
@@ -181,7 +180,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
 
           <button
             onClick={handleApprove}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-emerald-500/10 text-emerald-600 rounded-xl hover:bg-emerald-500 hover:text-white transition-all border border-emerald-500/20 shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-success/10 text-success rounded-xl hover:bg-success hover:text-white transition-all border border-success/20 shadow-sm"
           >
             <CheckCircle2 size={14} />
             {t("reader.approve")}
@@ -206,56 +205,65 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
       />
 
       {/* Manuscript Sheet */}
-      <div className="paper-sheet rounded-2xl p-8 md:p-16 lg:p-24 shadow-2xl shadow-primary/5 min-h-[80vh] relative overflow-hidden">
-        {/* Physical Paper Details */}
-        <div className="absolute top-0 left-8 w-px h-full bg-primary/5 hidden md:block" />
-        <div className="absolute top-0 right-8 w-px h-full bg-primary/5 hidden md:block" />
+      <div className="q-crop paper-sheet relative min-h-[80vh] rounded-3xl border border-border/60 p-8 shadow-md md:p-16 lg:p-24">
+        {/* One disc, cut by the sheet's own corner. The old sheet drew two
+            faint vertical hairlines to suggest paper; they read as rendering
+            artefacts on an LCD, which is the opposite of the intent. */}
+        <span className="q-disc q-disc-fill" aria-hidden="true"
+              style={{ width: 340, height: 340, right: -150, top: -170, opacity: .09 }} />
 
-        <header className="mb-16 text-center">
-          <div className="flex items-center justify-center gap-2 text-muted-foreground/30 mb-8 select-none">
-            <div className="h-px w-12 bg-border/40" />
-            <BookOpen size={20} />
-            <div className="h-px w-12 bg-border/40" />
+        <header className="relative mb-14">
+          {/* The chapter number is set as the page's numeral rather than
+              hidden in a row of small caps under the title. */}
+          <div className="flex items-baseline gap-4">
+            <span className="q-numeral text-6xl md:text-7xl">
+              {chapterNumber.toString().padStart(2, "0")}
+            </span>
+            <span className="q-label pb-1">{t("reader.manuscriptPage")}</span>
           </div>
-          <h1 className="text-4xl md:text-5xl font-serif font-medium italic text-foreground tracking-tight leading-tight">
+          <h1 className="q-title mt-5 text-4xl md:text-5xl">
             {title}
           </h1>
-          <div className="mt-8 flex items-center justify-center gap-4 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/60">
-            <span>{t("reader.manuscriptPage")}</span>
-            <span className="text-border">·</span>
-            <span>{chapterNumber.toString().padStart(2, '0')}</span>
-          </div>
+          <div className="mt-8 h-px w-full bg-border/60" />
         </header>
 
         {editing ? (
           <textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="w-full min-h-[60vh] bg-transparent font-serif text-lg leading-[1.8] text-foreground/90 focus:outline-none resize-none border border-border/30 rounded-lg p-6 focus:border-primary/40 focus:ring-2 focus:ring-primary/10 transition-all"
+            className="q-read mx-auto block min-h-[60vh] w-full resize-none rounded-xl border border-border/60 bg-transparent p-6"
             autoFocus
           />
         ) : (
-          <article className="prose prose-zinc dark:prose-invert max-w-none">
+          <article className="q-read relative mx-auto" style={{ "--read-size": "1.15rem" } as React.CSSProperties}>
             {paragraphs.map((para, i) => (
-              <p key={i} className="font-serif text-lg md:text-xl leading-[1.8] text-foreground/90 mb-8 first-letter:text-2xl first-letter:font-bold first-letter:text-primary/40">
+              /* The drop cap belongs to the chapter, not to every paragraph.
+                 Set on all of them it stopped being an opening and became a
+                 texture down the left margin. */
+              <p
+                key={i}
+                className={i === 0
+                  ? "first-letter:float-left first-letter:mr-2 first-letter:mt-1 first-letter:font-sans first-letter:text-[3.1em] first-letter:font-semibold first-letter:leading-[.78] first-letter:text-primary"
+                  : undefined}
+              >
                 {para}
               </p>
             ))}
           </article>
         )}
 
-        <footer className="mt-24 pt-12 border-t border-border/20 flex flex-col items-center gap-6 text-center">
-          <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
-             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/50">
-               <Type size={14} className="text-primary/60" />
-               <span>{body.length.toLocaleString()} {t("reader.characters")}</span>
-             </div>
-             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-secondary/50">
-               <Clock size={14} className="text-primary/60" />
-               <span>{Math.ceil(body.length / 500)} {t("reader.minRead")}</span>
-             </div>
+        <footer className="relative mt-24 flex flex-col items-center gap-6 border-t border-border/40 pt-12 text-center">
+          <div className="flex items-center gap-2">
+             <span className="q-pill">
+               <Type size={13} aria-hidden="true" />
+               {body.length.toLocaleString()} {t("reader.characters")}
+             </span>
+             <span className="q-pill">
+               <Clock size={13} aria-hidden="true" />
+               {Math.ceil(body.length / 500)} {t("reader.minRead")}
+             </span>
           </div>
-          <p className="text-[10px] uppercase tracking-widest text-muted-foreground/40 font-bold">{t("reader.endOfChapter")}</p>
+          <p className="q-label">{t("reader.endOfChapter")}</p>
         </footer>
       </div>
 
@@ -264,7 +272,7 @@ export function ChapterReader({ bookId, chapterNumber, nav, theme, t }: {
         {chapterNumber > 1 ? (
           <button
             onClick={() => nav.toBook(bookId)}
-            className="flex items-center gap-2 text-sm font-bold text-muted-foreground hover:text-primary transition-all group"
+            className="q-btn q-btn-quiet group"
           >
             <RotateCcw size={16} className="group-hover:-rotate-45 transition-transform" />
             {t("reader.chapterList")}

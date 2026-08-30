@@ -327,7 +327,12 @@ export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
-        "size-full text-[17px] leading-[1.72] font-['SimSun','Songti_SC','STSong',serif] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p+p]:mt-4",
+        // The upstream fork pinned a Chinese Song stack here. On a Latin system
+        // SimSun exists, so every English answer rendered in a fixed-width Song
+        // face: the single thing that made the app look unfinished. The
+        // manuscript face is the right answer for prose in either script, and
+        // the CJK plugin still handles Chinese glyph selection.
+        "size-full text-[17px] leading-[1.72] font-serif [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p+p]:mt-4",
         className
       )}
       plugins={streamdownPlugins}

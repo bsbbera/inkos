@@ -20,6 +20,7 @@ import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
 import { McpPage } from "./pages/McpPage";
+import { SetupPage } from "./pages/SetupPage";
 import { AuditPage } from "./pages/AuditPage";
 import { PublicationDetail } from "./pages/PublicationDetail";
 import { StoryPlayer } from "./pages/StoryPlayer";
@@ -116,6 +117,7 @@ export function App() {
     toRadar: () => setRoute({ page: "radar" }),
     toDoctor: () => setRoute({ page: "doctor" }),
     toMcp: () => setRoute({ page: "mcp" }),
+    toSetup: () => setRoute({ page: "setup" }),
     toAudit: () => setRoute({ page: "audit" }),
     toPublication: (issueId: string) => setRoute({ page: "publication", issueId }),
     toPlay: (projectId: string) => setRoute({ page: "play", projectId }),
@@ -377,6 +379,11 @@ export function App() {
           {route.page === "doctor" && (
             <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
               <DoctorView nav={nav} theme={theme} t={t} />
+            </div>
+          )}
+          {route.page === "setup" && (
+            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
+              <SetupPage />
             </div>
           )}
           {route.page === "mcp" && (

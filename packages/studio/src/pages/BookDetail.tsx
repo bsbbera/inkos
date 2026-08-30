@@ -75,8 +75,8 @@ function translateChapterStatus(status: string, t: TFunction): string {
 }
 
 const STATUS_CONFIG: Record<string, { color: string; icon: React.ReactNode }> = {
-  "ready-for-review": { color: "text-amber-500 bg-amber-500/10", icon: <Eye size={12} /> },
-  approved: { color: "text-emerald-500 bg-emerald-500/10", icon: <Check size={12} /> },
+  "ready-for-review": { color: "text-warning bg-warning/10", icon: <Eye size={12} /> },
+  approved: { color: "text-success bg-success/10", icon: <Check size={12} /> },
   drafted: { color: "text-muted-foreground bg-muted/20", icon: <FileText size={12} /> },
   "needs-revision": { color: "text-destructive bg-destructive/10", icon: <RotateCcw size={12} /> },
   imported: { color: "text-blue-500 bg-blue-500/10", icon: <Download size={12} /> },
@@ -417,13 +417,18 @@ export function BookDetail({
   };
 
   if (loading) return (
-    <div className="flex flex-col items-center justify-center py-32 space-y-4">
-      <div className="w-8 h-8 border-2 border-primary/20 border-t-primary rounded-full animate-spin" />
-      <span className="text-sm text-muted-foreground">{t("common.loading")}</span>
+    <div className="space-y-8" aria-busy="true">
+      <div className="space-y-3 border-b border-border/40 pb-8">
+        <div className="q-skel h-10 w-2/5" />
+        <div className="q-skel h-4 w-1/3" />
+      </div>
+      <div className="q-skel h-32 w-full rounded-2xl" />
+      <div className="q-skel h-64 w-full rounded-2xl" />
+      <span className="sr-only">{t("common.loading")}</span>
     </div>
   );
 
-  if (error) return <div className="text-destructive p-8 bg-destructive/5 rounded-xl border border-destructive/20">Error: {error}</div>;
+  if (error) return <div className="q-crop rounded-2xl border border-destructive/40 bg-destructive/5 p-8 text-destructive"><span className="q-disc q-disc-stroke" aria-hidden="true" style={{ width: 130, height: 130, right: -50, top: -54, opacity: .3, borderColor: "currentColor" }} /><p className="q-label relative !text-destructive">Error</p><p className="relative mt-2 text-sm">{error}</p></div>;
   if (!data) return null;
 
   const { book, chapters } = data;
@@ -455,13 +460,13 @@ export function BookDetail({
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/40 pb-8">
         <div className="space-y-2">
           <div className="flex items-center gap-3">
-            <h1 className="text-4xl font-serif font-medium">{book.title}</h1>
+            <h1 className="q-title text-4xl">{book.title}</h1>
             {book.language === "en" && (
               <span className="px-1.5 py-0.5 rounded border border-primary/20 text-primary text-[10px] font-bold">EN</span>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground font-medium">
-            <span className="px-2 py-0.5 rounded bg-secondary/50 text-foreground/70 uppercase tracking-wider text-xs">{book.genre}</span>
+            <span className="q-pill">{book.genre}</span>
             <div className="flex items-center gap-1.5">
               <FileText size={14} />
               <span>{chapters.length} {t("dash.chapters")}</span>
@@ -471,9 +476,9 @@ export function BookDetail({
               <span>{totalWords.toLocaleString()} {t("book.words")}</span>
             </div>
             {book.fanficMode && (
-              <span className="flex items-center gap-1 text-purple-500">
+              <span className="flex items-center gap-1 text-primary">
                 <Sparkles size={12} />
-                <span className="italic">fanfic:{book.fanficMode}</span>
+                <span>fanfic:{book.fanficMode}</span>
               </span>
             )}
           </div>
@@ -483,7 +488,7 @@ export function BookDetail({
           <button
             onClick={handleWriteNext}
             disabled={writing || drafting}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-primary text-primary-foreground rounded-xl hover:scale-105 active:scale-95 transition-all shadow-lg shadow-primary/20 disabled:opacity-50"
+            className="q-btn"
           >
             {writing ? <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Zap size={16} />}
             {writing ? t("dash.writing") : t("book.writeNext")}
@@ -491,7 +496,7 @@ export function BookDetail({
           <button
             onClick={handleDraft}
             disabled={writing || drafting}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-secondary text-foreground rounded-xl hover:bg-secondary/80 transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line"
           >
             {drafting ? <div className="w-4 h-4 border-2 border-muted-foreground/20 border-t-muted-foreground rounded-full animate-spin" /> : <Wand2 size={16} />}
             {drafting ? t("book.drafting") : t("book.draftOnly")}
@@ -501,7 +506,7 @@ export function BookDetail({
             title={reviewMode === "manual"
               ? "手动审查：写完即停，由你点 审稿/修订/通过（更快、更可控）。点此切回自动。"
               : "自动审查：写完自动审校并按需重写（更省心，但更慢）。点此切到手动·写完即停。"}
-            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium bg-secondary/60 text-foreground rounded-xl border border-border/50 hover:bg-secondary transition-all"
+            className="q-btn q-btn-line"
           >
             {reviewMode === "manual" ? <Hand size={16} /> : <Settings2 size={16} />}
             {reviewMode === "manual" ? "审查：手动·写完即停" : "审查：自动"}
@@ -509,7 +514,7 @@ export function BookDetail({
           <button
             onClick={() => setConfirmDeleteOpen(true)}
             disabled={deleting}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold bg-destructive/10 text-destructive rounded-xl hover:bg-destructive hover:text-white transition-all border border-destructive/20 disabled:opacity-50"
+            className="q-btn q-btn-line !text-destructive !border-destructive/40 hover:!bg-destructive hover:!text-white"
           >
             {deleting ? <div className="w-4 h-4 border-2 border-destructive/20 border-t-destructive rounded-full animate-spin" /> : <Trash2 size={16} />}
             {deleting ? t("common.loading") : t("book.deleteBook")}
@@ -542,7 +547,7 @@ export function BookDetail({
           {reviewCount > 0 && (
             <button
               onClick={handleApproveAll}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-emerald-500/10 text-emerald-600 rounded-lg hover:bg-emerald-500/20 transition-all border border-emerald-500/20"
+              className="q-btn q-btn-line text-xs !text-success !border-success/40 hover:!bg-success/10"
             >
               <CheckCheck size={14} />
               {t("book.approveAll")} ({reviewCount})
@@ -550,14 +555,14 @@ export function BookDetail({
           )}
           <button
             onClick={() => nav.toTruth(bookId)}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50"
+            className="q-btn q-btn-line text-xs"
           >
             <Database size={14} />
             {t("book.truthFiles")}
           </button>
           <button
             onClick={() => nav.toAnalytics(bookId)}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50"
+            className="q-btn q-btn-line text-xs"
           >
             <BarChart2 size={14} />
             {t("book.analytics")}
@@ -565,7 +570,7 @@ export function BookDetail({
           <button
             onClick={handleEvaluate}
             disabled={bookActionPending === "eval"}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line text-xs disabled:opacity-50"
           >
             <Search size={14} />
             {bookActionPending === "eval" ? t("common.loading") : t("book.evaluate")}
@@ -573,7 +578,7 @@ export function BookDetail({
           <button
             onClick={handleConsolidate}
             disabled={bookActionPending === "consolidate"}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line text-xs disabled:opacity-50"
           >
             <Database size={14} />
             {bookActionPending === "consolidate" ? t("common.loading") : t("book.consolidate")}
@@ -581,7 +586,7 @@ export function BookDetail({
           <button
             onClick={handleReviseFoundation}
             disabled={bookActionPending === "revise-foundation"}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line text-xs disabled:opacity-50"
           >
             <Sparkles size={14} />
             {bookActionPending === "revise-foundation" ? t("common.loading") : t("book.reviseFoundation")}
@@ -589,7 +594,7 @@ export function BookDetail({
           <button
             onClick={handlePlan}
             disabled={bookActionPending === "plan"}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line text-xs disabled:opacity-50"
           >
             <FileText size={14} />
             {bookActionPending === "plan" ? t("common.loading") : t("book.planNext")}
@@ -597,7 +602,7 @@ export function BookDetail({
           <button
             onClick={handleCompose}
             disabled={bookActionPending === "compose"}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50 disabled:opacity-50"
+            className="q-btn q-btn-line text-xs disabled:opacity-50"
           >
             <Wand2 size={14} />
             {bookActionPending === "compose" ? t("common.loading") : t("book.composeNext")}
@@ -634,7 +639,7 @@ export function BookDetail({
                   alert(e instanceof Error ? e.message : "Export failed");
                 }
               }}
-              className="flex items-center gap-2 px-4 py-2 text-xs font-bold bg-secondary/50 text-muted-foreground rounded-lg hover:text-foreground hover:bg-secondary transition-all border border-border/50"
+              className="q-btn q-btn-line text-xs"
             >
               <Download size={14} />
               {t("book.export")}
@@ -644,10 +649,10 @@ export function BookDetail({
 
       {/* Book Settings */}
       <div className="paper-sheet rounded-2xl border border-border/40 shadow-sm p-6">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-muted-foreground mb-4">{t("book.settings")}</h2>
+        <h2 className="q-label mb-4">{t("book.settings")}</h2>
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.wordsPerChapter")}</label>
+            <label className="q-label">{t("create.wordsPerChapter")}</label>
             <input
               type="number"
               value={currentWordCount}
@@ -656,7 +661,7 @@ export function BookDetail({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("create.targetChapters")}</label>
+            <label className="q-label">{t("create.targetChapters")}</label>
             <input
               type="number"
               value={currentTargetChapters}
@@ -665,7 +670,7 @@ export function BookDetail({
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{t("book.status")}</label>
+            <label className="q-label">{t("book.status")}</label>
             <select
               value={currentStatus}
               onChange={(e) => setSettingsStatus(e.target.value as BookStatus)}
@@ -681,7 +686,7 @@ export function BookDetail({
           <button
             onClick={handleSaveSettings}
             disabled={savingSettings}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-primary text-primary-foreground rounded-lg hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm font-bold bg-primary text-primary-foreground rounded-lg hover:-translate-y-px active:translate-y-0 active:scale-[0.985] transition-all disabled:opacity-50"
           >
             {savingSettings ? <div className="w-4 h-4 border-2 border-primary-foreground/20 border-t-primary-foreground rounded-full animate-spin" /> : <Save size={14} />}
             {savingSettings ? t("book.saving") : t("book.save")}
@@ -711,7 +716,7 @@ export function BookDetail({
                   <td className="px-6 py-4">
                     <button
                       onClick={() => nav.toChapter(bookId, ch.number)}
-                      className="font-serif text-lg font-medium hover:text-primary transition-colors text-left"
+                      className="q-title text-lg font-medium hover:text-primary transition-colors text-left"
                     >
                       {ch.title || t("chapter.label").replace("{n}", String(ch.number))}
                     </button>
@@ -732,7 +737,7 @@ export function BookDetail({
                               try { await postApi(`/books/${bookId}/chapters/${ch.number}/approve`); refetch(); }
                               catch (e) { alert(e instanceof Error ? e.message : "Approve failed"); }
                             }}
-                            className="p-2 rounded-lg bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+                            className="p-2 rounded-lg bg-success/10 text-success hover:bg-success hover:text-white transition-all shadow-sm"
                             title={t("book.approve")}
                           >
                             <Check size={14} />
@@ -788,11 +793,11 @@ export function BookDetail({
                         <button
                           onClick={() => handleRepairState(ch.number)}
                           disabled={bookActionPending === `repair-state-${ch.number}`}
-                          className="p-2 rounded-lg bg-amber-500/10 text-amber-600 hover:bg-amber-500 hover:text-white transition-all shadow-sm disabled:opacity-50"
+                          className="p-2 rounded-lg bg-warning/10 text-warning hover:bg-warning hover:text-white transition-all shadow-sm disabled:opacity-50"
                           title={t("book.repairState")}
                         >
                           {bookActionPending === `repair-state-${ch.number}`
-                            ? <div className="w-3.5 h-3.5 border-2 border-amber-600/20 border-t-amber-600 rounded-full animate-spin" />
+                            ? <div className="w-3.5 h-3.5 border-2 border-warning/20 border-t-amber-600 rounded-full animate-spin" />
                             : <Settings2 size={14} />}
                         </button>
                       )}

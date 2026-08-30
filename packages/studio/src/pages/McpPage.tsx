@@ -124,8 +124,8 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
 
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="font-serif text-3xl flex items-center gap-3">
-            <Plug size={28} className="text-primary" />
+          <h1 className="q-title text-3xl flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Plug size={19} /></span>
             MCP servers
           </h1>
           <p className={`mt-2 text-sm ${c.muted}`}>

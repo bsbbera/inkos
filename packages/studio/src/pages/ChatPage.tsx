@@ -34,6 +34,7 @@ import {
   BotMessageSquare,
   ArrowUp,
   ChevronDown,
+  ChevronRight,
   Check,
   FolderUp,
   X,
@@ -44,7 +45,6 @@ import {
   Square,
   Plus,
 } from "lucide-react";
-import { Shimmer } from "../components/ai-elements/shimmer";
 import {
   Message,
   MessageContent,
@@ -247,7 +247,7 @@ function SkillPickerPanel({
       <div className="max-h-[380px] overflow-y-auto p-3">
         {createError ? <div className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{createError}</div> : null}
         {diagnostics?.length ? (
-          <div className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          <div className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
             <div className="font-semibold">{isZh ? "部分外部 Skill 未加载" : "Some external skills were not loaded"}</div>
             {diagnostics.slice(0, 4).map((item, index) => (
               <div key={`${item.path ?? "skill"}-${index}`} className="mt-1 break-all">
@@ -853,40 +853,68 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         className={`chat-message-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] px-4 py-6 transition-[padding] duration-200 ${worldPanelInsetClass}`}
       >
         {needsPlayModeChoice ? (
-          <div className="h-full flex flex-col items-center justify-center text-center select-none gap-4">
-            <div className="w-14 h-14 rounded-2xl border border-dashed border-border flex items-center justify-center bg-secondary/30 opacity-40">
-              <Gamepad2 size={24} className="text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground/70 max-w-md leading-7">
-              {isZh ? "选个玩法，进去再聊你想玩的世界。" : "Pick a playstyle, then describe the world you want in chat."}
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => { if (activeSessionId) setSessionPlayMode(activeSessionId, "guided"); }}
-                className="w-40 rounded-xl border border-border/50 bg-secondary/30 px-4 py-3 text-left transition-all hover:border-primary/40 hover:bg-primary/5"
-              >
-                <div className="text-sm font-medium text-foreground">{isZh ? "点着玩" : "Choices"}</div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{isZh ? "GM 给选项，点着推进" : "Pick from offered actions"}</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => { if (activeSessionId) setSessionPlayMode(activeSessionId, "open"); }}
-                className="w-40 rounded-xl border border-border/50 bg-secondary/30 px-4 py-3 text-left transition-all hover:border-primary/40 hover:bg-primary/5"
-              >
-                <div className="text-sm font-medium text-foreground">{isZh ? "自由玩" : "Free"}</div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{isZh ? "自己打字，想干嘛干嘛" : "Type anything you want"}</div>
-              </button>
+          <div className="flex h-full items-center justify-center px-4 select-none">
+            <div className="q-crop w-full max-w-lg rounded-3xl border border-border/60 bg-card p-8 shadow-md">
+              <span className="q-disc q-disc-fill" aria-hidden="true"
+                    style={{ width: 210, height: 210, right: -78, top: -84, opacity: .13 }} />
+              <span className="q-disc q-disc-dots text-primary" aria-hidden="true"
+                    style={{ width: 92, height: 92, left: -28, bottom: -34, opacity: .45 }} />
+
+              <div className="relative">
+                <p className="q-label flex items-center gap-2">
+                  <Gamepad2 size={13} aria-hidden="true" />
+                  {isZh ? "玩法" : "Playstyle"}
+                </p>
+                <h2 className="q-title mt-3 text-2xl">
+                  {isZh ? "选个玩法" : "Pick how you want to play"}
+                </h2>
+                <p className="q-note mt-2">
+                  {isZh ? "选个玩法，进去再聊你想玩的世界。" : "Then describe the world you want, in chat."}
+                </p>
+
+                {/* Two rows rather than two tiles: they are a choice between
+                    two things, not a grid of many, and a row can carry the
+                    glyph that fills in under the cursor. */}
+                <div className="mt-6 grid gap-1">
+                  {([
+                    { mode: "guided" as const, glyph: "A", title: isZh ? "点着玩" : "Choices", note: isZh ? "GM 给选项，点着推进" : "Pick from offered actions" },
+                    { mode: "open" as const, glyph: "B", title: isZh ? "自由玩" : "Free", note: isZh ? "自己打字，想干嘛干嘛" : "Type anything you want" },
+                  ]).map((opt) => (
+                    <button
+                      key={opt.mode}
+                      type="button"
+                      onClick={() => { if (activeSessionId) setSessionPlayMode(activeSessionId, opt.mode); }}
+                      className="q-row group flex w-full items-center gap-3.5 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[var(--dur-fast)] hover:border-border/60 hover:bg-secondary/40"
+                    >
+                      <span className="q-glyph" aria-hidden="true">{opt.glyph}</span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold text-foreground">{opt.title}</span>
+                        <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{opt.note}</span>
+                      </span>
+                      <ChevronRight size={16} className="q-row-act shrink-0 text-primary" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         ) : messages.length === 0 && !loading ? (
-          <div className="h-full flex flex-col items-center justify-center text-center select-none">
-            <div className="w-14 h-14 rounded-2xl border border-dashed border-border flex items-center justify-center mb-4 bg-secondary/30 opacity-40">
-              <BotMessageSquare size={24} className="text-muted-foreground" />
+          <div className="flex h-full items-center justify-center px-4 select-none">
+            <div className="q-crop w-full max-w-md rounded-3xl border border-border/60 bg-card px-8 py-10 text-center shadow-md">
+              <span className="q-disc q-disc-stroke" aria-hidden="true"
+                    style={{ width: 220, height: 220, left: "50%", top: -150, marginLeft: -110, opacity: .35 }} />
+              <span className="q-disc q-disc-fill" aria-hidden="true"
+                    style={{ width: 120, height: 120, right: -46, bottom: -52, opacity: .12 }} />
+              <div className="relative">
+                <span
+                  className="mx-auto grid h-12 w-12 place-items-center rounded-full border-[1.5px] border-primary text-primary"
+                  aria-hidden="true"
+                >
+                  <BotMessageSquare size={20} />
+                </span>
+                <p className="mt-5 text-sm leading-7 text-muted-foreground">{emptyGuidance}</p>
+              </div>
             </div>
-            <p className="text-sm text-muted-foreground/70 max-w-md leading-7">
-              {emptyGuidance}
-            </p>
           </div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-4">
@@ -978,9 +1006,10 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             {loading && !isStreaming && (
               <Message from="assistant">
                 <MessageContent>
-                  <Shimmer className="text-sm" duration={1.5}>
-                    {isZh ? "思考中..." : "Thinking..."}
-                  </Shimmer>
+                  <span className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <span className="q-thinking" aria-hidden="true"><i /><i /><i /></span>
+                    {isZh ? "思考中" : "Thinking"}
+                  </span>
                 </MessageContent>
               </Message>
             )}
@@ -1043,7 +1072,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       <div className={`shrink-0 border-t border-border/40 px-4 py-3 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
         <div className="max-w-3xl mx-auto">
           <div className="flex items-start gap-2">
-            <div className="relative flex-1 rounded-xl bg-secondary/30 transition-all">
+            <div className="relative flex-1 rounded-2xl border border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] focus-within:border-primary/70 focus-within:shadow-md">
               {skillPanelOpen ? (
                 <SkillPickerPanel
                   isZh={isZh}
@@ -1164,7 +1193,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     onClick={() => void abortSession(activeSessionId)}
                     aria-label={isZh ? "停止当前回复" : "Stop generating"}
                     title={isZh ? "停止当前回复" : "Stop generating"}
-                    className="w-8 h-8 rounded-lg bg-secondary text-foreground border border-border/60 flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all"
+                    className="w-8 h-8 rounded-full bg-secondary text-foreground border border-border/60 flex items-center justify-center shrink-0 hover:-translate-y-px hover:border-primary/50 hover:text-primary active:translate-y-0 active:scale-[0.985] transition-[transform,border-color,color] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)]"
                   >
                     <Square size={13} fill="currentColor" />
                   </button>
@@ -1175,7 +1204,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   disabled={(!input.trim() && attachedFiles.length === 0) || !activeSessionId}
                   aria-label={isZh ? "发送" : "Send message"}
                   title={isZh ? "发送" : "Send message"}
-                  className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 hover:scale-105 active:scale-95 transition-all disabled:opacity-20 disabled:scale-100 shadow-sm shadow-primary/20"
+                  className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-sm hover:-translate-y-px hover:shadow-md active:translate-y-0 active:scale-[0.985] transition-[transform,box-shadow,opacity] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] disabled:opacity-20 disabled:shadow-none"
                 >
                   <ArrowUp size={14} strokeWidth={2.5} />
                 </button>
@@ -1228,7 +1257,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   onClick={() => setPlayImageMenuOpen((value) => !value)}
                   disabled={loading || !activeSessionId}
                   title={isZh ? "自动配图" : "Auto illustration"}
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-secondary/40 shadow-sm transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary active:scale-95 disabled:cursor-not-allowed disabled:opacity-30 ${playImageMenuOpen || playImageSettings.actors || playImageSettings.moments || playImageSettings.inventory ? "text-primary" : "text-muted-foreground"}`}
+                  className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-secondary/40 shadow-sm transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary active:translate-y-0 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-30 ${playImageMenuOpen || playImageSettings.actors || playImageSettings.moments || playImageSettings.inventory ? "text-primary" : "text-muted-foreground"}`}
                   aria-label={isZh ? "自动配图" : "Auto illustration"}
                 >
                   <Palette size={17} />
