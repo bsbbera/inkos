@@ -29,6 +29,9 @@ import {
   type Finding,
   type StoryAudit,
 } from "@actalk/quire-core";
+import {
+  loadPipeline, pipelineFor, productionByDir, reportUnitDone,
+} from "@actalk/quire-core";
 import { gateState, publicationWorkflow, stageStates } from "./publications.js";
 import { projectWorkflow, type Workflow } from "./workflow.js";
 import {
@@ -257,6 +260,49 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
    * anyway, and a stop has to leave a knowable amount of work done.
    * `path` still works and means a list of one.
    */
+  /**
+   * Tell the pipeline that a read happened, when a read is what it was waiting
+   * for.
+   *
+   * The audit has always been a button with no consequence beyond its own
+   * screen: a production could sit at `content.audit` forever while somebody
+   * audited every file in it, because nothing connected the two. This is that
+   * connection, and it is deliberately narrow - it fires only when the run is
+   * standing on the audit stage, so auditing a file again later moves nothing.
+   *
+   * Only work-shaped productions (a short, a translation) are reported. A book
+   * audits per chapter and needs a chapter-to-unit map that does not exist
+   * yet; reporting unit 1 for it would claim the whole book had been read.
+   *
+   * `satisfies` is which stage this run was: a de-AI pass is the destyle
+   * stage, a read is the audit stage. Sending one for the other would let a
+   * single button walk the run two steps.
+   */
+  async function reportAudited(
+    paths: ReadonlyArray<string>,
+    satisfies: "content.audit" | "content.destyle",
+  ): Promise<void> {
+    const refs = new Map<string, { type: string; id: string }>();
+    for (const path of paths) {
+      const [dir, id] = path.split("/");
+      if (!dir || !id) continue;
+      const spec = productionByDir(dir);
+      if (!spec?.pipeline || spec.pipeline.unit !== "work") continue;
+      refs.set(`${spec.id}/${id}`, { type: spec.id, id });
+    }
+    for (const ref of refs.values()) {
+      try {
+        const state = await loadPipeline(root, ref);
+        if (!state || state.stage !== satisfies) continue;
+        if (!pipelineFor(ref.type)) continue;
+        await reportUnitDone({ projectRoot: root, ref, unit: 1 });
+        broadcast("pipeline:stage", { kind: "stage:start", ref, stage: satisfies });
+      } catch {
+        // Bookkeeping never costs the audit that already ran.
+      }
+    }
+  }
+
   app.post("/api/v1/audit/run", async (c) => {
     const body = await c.req.json().catch(() => ({})) as {
       path?: string; paths?: ReadonlyArray<string>; revise?: boolean;
@@ -387,6 +433,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
        */
       const kept = await recordRun(root, located, read);
       broadcast("findings:changed", { paths: read });
+      await reportAudited(read, body.deslop === true ? "content.destyle" : "content.audit");
 
       const mine = kept.filter((f) => requested.includes(f.path));
       return c.json({

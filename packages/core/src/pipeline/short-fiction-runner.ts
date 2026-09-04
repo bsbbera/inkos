@@ -41,6 +41,7 @@ import {
   writeProductionRunSnapshot,
   type ProductionObservation,
 } from "../production/harness.js";
+import { ensurePipeline, reportUnitDone } from "./orchestrator.js";
 import { buildLengthSpec, countChapterLength } from "../utils/length-metrics.js";
 import { buildRuleStack } from "../utils/rule-stack.js";
 import { safeChildPath } from "../utils/path-safety.js";
@@ -159,6 +160,43 @@ export async function runShortFictionProduction(
   }
 }
 
+/**
+ * Tell the pipeline this short exists, and that its text is written.
+ *
+ * The state machine has been complete and unreachable: nothing created a
+ * `pipeline.json`, so no short could ever reach a gate, and the "waiting on
+ * you" question had no data behind it. The runner is the only thing that knows
+ * a story id at the moment the prose lands, so it is the thing that says so.
+ *
+ * A short's unit is the work itself - one unit, not one per chapter. Chapters
+ * here are sections of a single sitting, and nobody signs off chapter 7 of a
+ * short story on its own.
+ *
+ * Deliberately swallowed on failure. Bookkeeping must never lose a story that
+ * was actually written: a broken state file is a nuisance, a lost draft is
+ * not.
+ */
+async function trackShortPipeline(
+  root: string,
+  storyId: string,
+  step: "start" | "written",
+  onProgress?: (message: string) => void,
+): Promise<void> {
+  const ref = { type: "short", id: storyId };
+  try {
+    if (step === "start") {
+      await ensurePipeline({ projectRoot: root, ref, totalUnits: 1 });
+      return;
+    }
+    // Advances out of content.write and parks at content.audit, which is where
+    // it should sit: the audit has not run yet, and claiming otherwise is how
+    // a gate opens on prose nothing has read.
+    await reportUnitDone({ projectRoot: root, ref, unit: 1 });
+  } catch (error) {
+    onProgress?.(`Pipeline state not updated: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 async function produceShort(
   options: ShortFictionRunOptions,
   root: string,
@@ -269,6 +307,8 @@ async function produceShort(
           ].join("\n"));
     }
   }
+
+  await trackShortPipeline(root, storyId, "start", options.onProgress);
 
   let finalDraft: ShortFictionBatchDraft;
   let revisionWarning: string | undefined;
@@ -445,6 +485,8 @@ async function produceShort(
     artifacts,
     observations,
   });
+
+  await trackShortPipeline(root, storyId, "written", options.onProgress);
 
   return buildShortRunResult(storyId, baseDir, coverArtifacts);
 }
