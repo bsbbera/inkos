@@ -129,3 +129,39 @@ describe("deriveGates", () => {
     expect(gates[0].verb).toBe("needs a read");
   });
 });
+
+/*
+ * A gate the run is actually standing at.
+ *
+ * Everything else in this file is inference from file counts, which is all
+ * there was while no production recorded where it had got to.
+ */
+describe("deriveGates: pipeline gates", () => {
+  const waiting = {
+    ref: { type: "short", id: "the-second-law" },
+    gate: "content",
+    units: [1],
+    stage: "gate:content",
+  };
+
+  it("puts a real gate above anything inferred from counting files", () => {
+    const gates = deriveGates(
+      [],
+      [],
+      [work({ id: "the-lamp-room", files: 22, read: 6 })],
+      [waiting],
+    );
+    expect(gates[0]?.id).toBe("pipeline:the-second-law");
+    expect(gates[0]?.action).toBe("Sign it off");
+  });
+
+  it("does not also describe the same work by counting its files", () => {
+    const gates = deriveGates(
+      [],
+      [],
+      [work({ id: "the-second-law", files: 22, read: 6 })],
+      [waiting],
+    );
+    expect(gates).toHaveLength(1);
+  });
+});

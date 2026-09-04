@@ -244,8 +244,10 @@ export async function withdraw(input: {
 }): Promise<PipelineState> {
   const current = await loadPipeline(input.projectRoot, input.ref);
   if (!current) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  const pipeline = pipelineFor(input.ref.type);
   const next = withdrawState({
     state: current, gate: input.gate,
+    ...(pipeline ? { pipeline } : {}),
     ...(input.units ? { units: input.units } : {}),
   });
   await savePipeline(input.projectRoot, input.ref, next);

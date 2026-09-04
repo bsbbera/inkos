@@ -71,6 +71,14 @@ interface Item {
   readonly backup: boolean;
 }
 
+/** `pipeline.json` as the run reports it. Only the parts this screen reads. */
+interface PipelineRun {
+  readonly stage: string;
+  readonly status: string;
+  readonly units: { readonly total: number; readonly done: readonly number[] };
+  readonly gates: Readonly<Record<string, { readonly state: string }>>;
+}
+
 interface Detail {
   readonly kind: string;
   readonly kindLabel: string;
@@ -213,6 +221,37 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
     picked ? `/audit/project/${picked.kind}/${picked.id}` : "",
   );
   const items = useMemo(() => detail?.items ?? [], [detail]);
+
+  /*
+   * Where the run itself has got to, which is not the same question as what is
+   * on disk.
+   *
+   * The panel below this reads the stages off the artefacts - how many files
+   * exist, how many are signed. That is a good answer to "what is here" and no
+   * answer at all to "what is this waiting for", because a run that has
+   * stopped looks exactly like a run nobody started. The pipeline knows, and
+   * until now nothing in the app asked it.
+   */
+  const { data: pipelineData, refetch: refetchPipeline } = useApi<{ state: PipelineRun | null }>(
+    picked ? `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/pipeline` : "",
+  );
+  const pipeRun = pipelineData?.state ?? null;
+  const openGate = pipeRun?.status === "waiting-gate" ? pipeRun.stage.replace("gate:", "") : null;
+
+  /* The gate to undo is the last one given, not the first one declared: with
+     content and design both signed, withdrawing "content" would reopen the
+     writing while the pictures stood approved on top of it. */
+  const lastApproved = (["build", "design", "content"] as const)
+    .find((g) => pipeRun?.gates[g]?.state === "approved") ?? null;
+
+  const decideGate = async (verb: "approve" | "withdraw", gate: string | null) => {
+    if (!picked || !gate) return;
+    await act(verb === "approve" ? "gate" : "gate-undo", () => fetchJson(
+      `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/gates/${gate}/${verb}`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+    ), verb === "approve" ? "Signed off. The run moves on." : "Sign-off withdrawn.");
+    await refetchPipeline();
+  };
 
   const { data: findingData, refetch: refetchFindings } =
     useApi<{ findings: ReadonlyArray<Finding>; counts: Counts }>("/findings");
@@ -1027,6 +1066,51 @@ function StateColumn({
 
       {workflow && showState ? (
         <>
+          {/* --------------------------------------------------- the run --
+              Where the pipeline itself has stopped, and the one decision that
+              restarts it. Everything below this panel is read off the files on
+              disk; this is read off the run, and it is the only thing on the
+              screen that knows a gate is open. */}
+          {pipeRun ? (
+            <div className="panel-body" style={{ padding: "10px 16px" }}>
+              <div className="rowflex" style={{ gap: 8, fontSize: 12, alignItems: "baseline" }}>
+                <span className="dim" style={{ fontSize: 11 }}>Run</span>
+                <span className="mono grow" style={{ fontSize: 11.5 }}>{pipeRun.stage}</span>
+                <span className={openGate ? "pill pill-warn" : "pill"}>
+                  {openGate ? `${openGate} gate open` : pipeRun.status}
+                </span>
+              </div>
+              {openGate ? (
+                <div className="rowflex" style={{ gap: 7, marginTop: 9, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy !== null}
+                    onClick={() => void decideGate("approve", openGate)}
+                  >
+                    <Icon name="check" size={13} />
+                    {busy === "gate" ? "Signing off…" : `Sign off the ${openGate}`}
+                  </button>
+                  <span className="hint" style={{ fontSize: 11 }}>
+                    Signing off starts whatever comes next. It can be withdrawn.
+                  </span>
+                </div>
+              ) : lastApproved ? (
+                <div className="rowflex" style={{ gap: 7, marginTop: 9 }}>
+                  <button
+                    type="button"
+                    className="btn btn-line btn-sm"
+                    disabled={busy !== null}
+                    onClick={() => void decideGate("withdraw", lastApproved)}
+                  >
+                    <Icon name="x" size={13} />
+                    {busy === "gate-undo" ? "Reopening…" : `Withdraw the ${lastApproved} sign-off`}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {/* ------------------------------------------------------ stages */}
           <div className="panel-body" style={{ padding: "10px 16px" }}>
             <div className="stack-xs">

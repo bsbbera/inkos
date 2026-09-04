@@ -155,12 +155,50 @@ function join(numbers: readonly number[]): string {
  * off around, an unread file cannot be judged, and a read one is only waiting
  * on the decision itself.
  */
+/** One production stopped at a gate, as `GET /productions/waiting` reports it. */
+export interface PipelineWaiting {
+  readonly ref: { readonly type: string; readonly id: string };
+  readonly gate: string;
+  readonly units: readonly number[];
+  readonly stage: string;
+}
+
+const GATE_WORDS: Readonly<Record<string, { name: string; verb: string; act: string }>> = {
+  content: { name: "is written and read", verb: "sign off the writing", act: "Sign it off" },
+  design: { name: "has its pictures", verb: "sign off the design", act: "Sign it off" },
+  build: { name: "is laid out", verb: "sign off the build", act: "Sign it off" },
+};
+
 export function deriveGates(
   books: readonly BookSummary[],
   publications: readonly PublicationSummary[],
   creations: readonly Creation[] = [],
+  waiting: readonly PipelineWaiting[] = [],
 ): Omit<Gate, "open">[] {
   const gates: Omit<Gate, "open">[] = [];
+
+  /*
+   * A gate the pipeline is actually standing at, which outranks everything
+   * below it.
+   *
+   * The rest of this function infers what a person might owe the work by
+   * counting files: how many are unread, how many unsigned. That inference was
+   * all there was, because no production recorded where it had got to. These
+   * rows are not inferred - the run has stopped, and it cannot move until
+   * somebody says so.
+   */
+  for (const w of waiting) {
+    const words = GATE_WORDS[w.gate] ?? { name: `is at the ${w.gate} gate`, verb: w.gate, act: "Open" };
+    gates.push({
+      id: `pipeline:${w.ref.id}`,
+      icon: "check",
+      name: `${w.ref.id} ${words.name}`,
+      meta: [w.ref.type, `${w.units.length} unit${w.units.length === 1 ? "" : "s"} pending`, w.stage]
+        .join(" · "),
+      verb: words.verb,
+      action: words.act,
+    });
+  }
 
   for (const b of books) {
     if (b.pendingReview > 0) {
@@ -208,6 +246,7 @@ export function deriveGates(
   /* A book or an issue that already raised a gate above has said its piece;
      the folder walk would only say it again in a second vocabulary. */
   const spoken = new Set(gates.map((g) => g.id.split(":")[1]));
+  for (const w of waiting) spoken.add(w.ref.id);
   const blocked: Omit<Gate, "open">[] = [];
   const unread: Omit<Gate, "open">[] = [];
   const unsigned: Omit<Gate, "open">[] = [];
@@ -325,6 +364,9 @@ export function Dashboard({
    * does not use, next to two numerals that do.
    */
   const { data: workspace } = useApi<WorkspaceSummary>("/workspace/summary");
+  /* Every run that has stopped and cannot start itself again. Until now this
+     question had an answer on the server and no reader anywhere. */
+  const { data: waitingData } = useApi<{ waiting: PipelineWaiting[] }>("/productions/waiting");
   const creations = workspace?.projects ?? [];
   const approved = workspace
     ? creations.filter((p) => p.files > 0 && p.signedOff === p.files).length
@@ -359,7 +401,7 @@ export function Dashboard({
   }, [books]);
 
   const gates = useMemo(() => {
-    return deriveGates(books, publications, named).map((g) => {
+    return deriveGates(books, publications, named, waitingData?.waiting ?? []).map((g) => {
       const bookId = g.id.startsWith("book") ? g.id.split(":")[1] : null;
       const pubId = g.id.startsWith("pub:") ? g.id.slice(4) : null;
       const book = bookId ? books.find((b) => b.id === bookId) : undefined;
@@ -377,7 +419,7 @@ export function Dashboard({
         },
       };
     });
-  }, [books, publications, named, nav]);
+  }, [books, publications, named, waitingData, nav]);
 
   /* The last line the run produced. A stage dot says where it is; this says it
      is genuinely alive, which a dot cannot. */

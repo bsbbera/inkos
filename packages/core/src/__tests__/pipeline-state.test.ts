@@ -184,3 +184,39 @@ describe("a run with one gate fewer", () => {
     expect(advance(state, pipeline, now).moved).toBe(false);
   });
 });
+
+/*
+ * Withdrawal has to move the run, not only the record.
+ *
+ * Reopening the content gate while the run stood in design.artplan left a
+ * state that could only have been reached by an approval that no longer
+ * existed.
+ */
+describe("withdraw walks the run back", () => {
+  it("returns the run to the gate it is no longer past", () => {
+    const { state: fresh, pipeline } = start("short", 1);
+    let state = fresh;
+    // Walk it to the far side of the content gate.
+    for (;;) {
+      state = finishStage(state);
+      const step = advance(state, pipeline);
+      state = step.state;
+      if (state.stage === "gate:content") break;
+    }
+    state = approve({ state, gate: "content" });
+    state = advance(state, pipeline).state;
+    expect(state.stage).toBe("design.artplan");
+
+    const undone = withdraw({ state, gate: "content", pipeline });
+    expect(undone.stage).toBe("gate:content");
+    expect(undone.status).toBe("waiting-gate");
+    expect(undone.gates.content?.state).toBe("waiting");
+    // The record of the approval is kept; only its effect is undone.
+    expect(undone.history.some((h) => h.event === "gate:approved")).toBe(true);
+  });
+
+  it("leaves a run alone when the gate is still ahead of it", () => {
+    const { state, pipeline } = start("short", 1);
+    expect(withdraw({ state, gate: "content", pipeline }).stage).toBe(state.stage);
+  });
+});

@@ -374,6 +374,8 @@ export function withdraw(input: {
   readonly state: PipelineState;
   readonly gate: PipelineGate;
   readonly units?: ReadonlyArray<number>;
+  /** Needed to walk the run back to the gate. Omit only in a pure gate test. */
+  readonly pipeline?: ProductionPipeline;
   readonly now?: Now;
 }): PipelineState {
   const { state, gate } = input;
@@ -382,13 +384,42 @@ export function withdraw(input: {
   if (!record) return state;
   const units = unitsOrAll(state, input.units);
   const perUnit = withPerUnit(record, units, "waiting");
+
+  /*
+   * The run goes back to the gate it is no longer allowed past.
+   *
+   * Reopening the record alone left the state incoherent: the content gate
+   * read "waiting" while the run stood in design.artplan, which is a position
+   * it only reached by being approved. Whatever design has produced stays on
+   * disk - withdrawal is not deletion - but the run is behind the gate again,
+   * and re-approving walks it forward through `advance` exactly as the first
+   * approval did.
+   */
+  const sequence = input.pipeline ? stageSequence(input.pipeline) : [];
+  const gateStage = `gate:${gate}`;
+  const here = sequence.indexOf(state.stage);
+  const there = sequence.indexOf(gateStage);
+  const rewind = there !== -1 && here !== -1 && here > there;
+
   return {
     ...state,
+    ...(rewind
+      ? {
+          stage: gateStage,
+          status: "waiting-gate" as const,
+          // Unit progress belongs to the stage that was interrupted, not to
+          // the gate we are standing back at.
+          units: { ...state.units, done: [], failed: [] },
+        }
+      : {}),
     gates: {
       ...state.gates,
       [gate]: { ...record, state: "waiting", at: now(), perUnit },
     },
-    history: log(state, { at: now(), event: "gate:withdrawn", gate, units }),
+    history: log(state, {
+      at: now(), event: "gate:withdrawn", gate, units,
+      ...(rewind ? { stage: gateStage, note: `run returned from ${state.stage}` } : {}),
+    }),
   };
 }
 
