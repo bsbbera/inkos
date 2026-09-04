@@ -227,6 +227,8 @@ export interface RunnerContext {
   readonly projectRoot: string;
   readonly definition: PublicationDefinition;
   readonly ask: AskFn;
+  /** Whether the research agent's model browses on its own account. */
+  readonly modelSearches?: () => boolean;
   readonly onEvent?: (event: PublicationEvent) => void;
   /**
    * Base URL of Quire's shim, which owns ComfyUI and Affinity. Absent means
@@ -727,6 +729,9 @@ export async function runResearch(ctx: RunnerContext, id: string): Promise<Publi
     angle: issue.angle ?? undefined,
     pillars: def.pillars,
     ask: (prompt, label) => ctx.ask(prompt, label),
+    // Rung one of the search ladder: a model that browses does its own
+    // searching, and our keys are the fallback for one that cannot.
+    modelSearches: ctx.modelSearches?.() ?? false,
     onProgress: (message) => emit(ctx, "publication:stage", {
       id, stage: "research", state: "progress", message,
     }),

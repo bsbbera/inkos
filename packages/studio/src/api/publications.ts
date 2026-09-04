@@ -14,6 +14,8 @@
  */
 
 import type { Hono } from "hono";
+import { gate, type StageState, type Workflow } from "./workflow.js";
+import { locate, normalizeSeverity, type Finding } from "@actalk/quire-core";
 import {
   approvePublication,
   approvePublicationDesign,
@@ -143,6 +145,74 @@ export function gateState(issue: PublicationIssue) {
   };
 }
 
+/**
+ * Every finding, told where it is.
+ *
+ * The audit already knew — the AI-tell checks compute the exact run of
+ * sentences they object to — and the issue file kept only the sentence of
+ * prose describing it. So a magazine finding could be read but never seen:
+ * "p4: detected 7 consecutive sentences with the same opening pattern", with
+ * no way to reach the seven sentences.
+ *
+ * The page's own body is the text a quote is located against, which is why
+ * this is per-page rather than over the issue: two pages can contain the same
+ * sentence, and a finding about page 4 marked on page 9 is a wrong answer
+ * rather than a missing one.
+ */
+export function locatedFindings(issue: PublicationIssue): ReadonlyArray<Finding> {
+  const at = issue.audit?.at ?? new Date().toISOString();
+  const bodyOf = new Map(issue.pages.map((p) => [p.n, p.body ?? ""]));
+  return (issue.audit?.findings ?? []).map((f) => locate(
+    {
+      /* A page is the unit a magazine finding belongs to, so it stands in for
+         the file path the chapter side uses. It is what the screen groups on
+         and what a later settle would have to write back to. */
+      path: `${issue.id}#p${f.page}`,
+      section: f.page ? `p${f.page}` : "",
+      category: f.category,
+      /* Two vocabularies, one meaning: the publication audit says info where
+         the rest of the app says note, and neither ever says blocking. */
+      severity: normalizeSeverity(f.severity),
+      description: f.description,
+      suggestion: f.suggestion,
+      ...(f.quote ? { quote: f.quote } : {}),
+    },
+    bodyOf.get(f.page) ?? "",
+    at,
+  ));
+}
+
+/**
+ * The same issue, said in the vocabulary every other kind of work now uses.
+ *
+ * `stageStates` and `gateState` stay as they are because the publication
+ * routes and their tests are built on them; this is the adapter, so one screen
+ * component can render a magazine and a book without knowing which it has.
+ */
+export function publicationWorkflow(issue: PublicationIssue, isRunning: boolean): Workflow {
+  const g = gateState(issue);
+  return {
+    kind: issue.type || "publication",
+    stages: stageStates(issue).map((s) => ({
+      stage: s.stage,
+      // The publication side has always spoken these three words; it just
+      // never had a type saying so.
+      state: (s.state === "done" || s.state === "partial" ? s.state : "pending") as StageState,
+      detail: s.detail,
+    })),
+    gates: [
+      /* Copy has warnings and no blockers on purpose: an editor may sign off
+         an unfinished issue, and always could. Design is the opposite - build
+         reads it, so an unsound design cannot be waved through. */
+      gate("copy", "Copy", g.copy.approved, [], g.copy.warnings),
+      gate("design", "Design", g.design.approved, g.design.blockers),
+    ],
+    done: { can: g.build.canBuild, blockers: g.build.blockers },
+    running: isRunning,
+    lastError: issue.lastError ?? null,
+  };
+}
+
 /** Runs in flight, so a second resume on the same issue is refused rather than raced. */
 const running = new Set<string>();
 
@@ -165,6 +235,12 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     stages: stageStates(issue),
     gates: gateState(issue),
     running: running.has(issue.id),
+    /* The shared shape, alongside the two the existing screen reads. Both are
+       derived from the same issue, so they cannot disagree. */
+    workflow: publicationWorkflow(issue, running.has(issue.id)),
+    /* Findings that know where they are, so the screen can mark the sentence
+       rather than paraphrase it. */
+    located: locatedFindings(issue),
   });
 
   // Everything about one issue, in the shape the detail page needs: what has

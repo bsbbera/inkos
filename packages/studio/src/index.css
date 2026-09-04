@@ -15,21 +15,47 @@
    offline or behind a blocked network fell back to system-ui with no warning,
    which is why the type never looked the same twice.
 
-   Archivo is the interface. Literata is the manuscript, and only the
-   manuscript: it was drawn for long reading on screens, which is the one job
-   in this app that lasts hours. */
-@import "@fontsource-variable/archivo";
+   Geist is the interface, Geist Mono is measurement, and Literata is the
+   manuscript and only the manuscript: it was drawn for long reading on
+   screens, which is the one job in this app that lasts hours.
+
+   The weights are the point, not just the families. Literata shipped at 400
+   and 500 while the design system asks for 600 — on a drop cap and on every
+   bold run inside prose — so the browser synthesised those, smearing the 400
+   cut instead of using the one the family actually has. A synthetic bold is
+   heavier and blurrier than the real one at the same size, which is why the
+   same px in the same family still did not look like the mockup.
+
+   Geist Mono was never bundled at all, so paths, model names and token counts
+   fell through to Cascadia Mono — a different typeface carrying every piece of
+   measurement on the screen. */
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 @import "@fontsource/literata/400.css";
 @import "@fontsource/literata/400-italic.css";
 @import "@fontsource/literata/500.css";
+@import "@fontsource/literata/600.css";
+@import "@fontsource/literata/600-italic.css";
 
 @import "tailwindcss";
 
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* The design system, copied from analysis/mock/vermilion.css rather than
+   translated. The mockups and the app now read the same file, so a screen
+   ports by carrying its class names across. Loaded after Tailwind so the
+   component layer wins over the utility reset. */
+@import "./vermilion.css";
+
+/* `theme-dark`, not `dark`.
+   vermilion.css already owns `.dark` and it means something else there: a
+   charcoal card - the manuscript, a run thread - which appears inside a light
+   page. Stamping the same class on <html> for the theme made the root element
+   a charcoal card (rounded, clipped, char background) and turned on every
+   `dark:` utility inside every charcoal panel while the page was still light.
+   The two concerns get two names. */
+@custom-variant dark (&:is(.theme-dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -61,7 +87,13 @@
 
   /* Serif means manuscript here, not "a fancy heading". */
   --font-serif: Literata, "Iowan Old Style", Georgia, serif;
-  --font-sans: "Archivo Variable", "Geist Variable", "Segoe UI", system-ui, sans-serif;
+  /* Geist, not Archivo. vermilion.css names Geist as the interface face and
+     says why: it is a brand commitment in PRODUCT.md, confirmed against a
+     saturated-pattern warning, and it outranks the redesign plan that
+     proposed Archivo. The app shipped the plan's face while every mockup
+     was drawn in the committed one, so a screen could carry the mock's
+     class names exactly and still read as a different product. */
+  --font-sans: "Geist Variable", Geist, "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
 
   /* ── Motion budget ──
@@ -137,8 +169,39 @@
   --ring: #DE5140;
 }
 
+/* ── Charcoal is a ground, not a theme ──────────────────────────────────────
+   vermilion.css re-points --ok/--warn/--bad inside `.dark` so a screen can
+   write var(--ok) and stay legible on either surface. The shadcn tokens need
+   the same treatment for the same reason: chat is `.dark`, and a subtree that
+   inherits --card: #FAF7F3 paints putty tiles onto charcoal, while
+   --muted-foreground: #665E57 puts near-black caption text on it. That is the
+   whole reason the chat screen did not look like its own mockup.
+
+   Re-point the tokens once here and every Tailwind utility beneath — bg-card,
+   text-muted-foreground, border-border — resolves against charcoal without a
+   single call site knowing which ground it landed on. */
+.dark, .on-char {
+  --background: var(--char);
+  --foreground: var(--on-char);
+  --card: var(--char-2);
+  --card-foreground: var(--on-char);
+  --popover: var(--char-2);
+  --popover-foreground: var(--on-char);
+  --secondary: var(--char-2);
+  --secondary-foreground: var(--on-char);
+  --muted: var(--char-2);
+  --muted-foreground: var(--on-char-2);
+  --accent: var(--char-2);
+  --accent-foreground: var(--vermilion-soft);
+  --destructive: var(--bad-char);
+  --border: var(--line-char);
+  --input: var(--char-2);
+  --success: var(--ok-char);
+  --warning: var(--warn-char);
+}
+
 /* ── Dark: the same room at night ── */
-.dark {
+.theme-dark {
   --char: #100E0D;
   --char-2: #1C1917;
   --on-char: #F0EAE3;
@@ -1370,3 +1433,81 @@ h3 { font-size: 1.25rem; }
   background: transparent; transition: background-color var(--fast) var(--ease);
 }
 .aud .grip:hover::after, .aud .grip:active::after, .aud .grip:focus-visible::after { background: var(--vermilion); }
+
+/* Geist Mono is the measurement face, and it has to be said here.
+
+   vermilion.css carries its own `:root` with `--font-mono: ui-monospace, ...`,
+   and an @import is hoisted, so the design system's token block lands *after*
+   this file's — same specificity, later wins. Declaring Geist Mono up there
+   with the other tokens looked right and did nothing: every path, model name
+   and token count still rendered in Cascadia Mono. It has to be restated below
+   the import to apply at all. */
+:root {
+  --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+}
+
+/* ══════════════════════════════════════════════════════ APP SHELL (embedded)
+   vermilion.css draws `.screen` as a mockup would: a rounded, shadowed card
+   with a titlebar row, floating on a page. In the app it is the whole window,
+   and the titlebar belongs to the Tauri shell that owns the iframe - so the
+   card loses its edges and its first grid row, and nothing else changes.
+
+   This lives here rather than in vermilion.css so that file stays a verbatim
+   copy of the mock's and can be re-copied when a screen is redrawn. */
+.screen.embedded {
+  position: relative;          /* the palette scrim is absolute within it */
+  height: 100vh;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  grid-template-rows: 1fr;     /* no titlebar row in here */
+}
+
+/* The chat grid fills its column.
+
+   `.main` is a grid item in `.screen`, and `.chat` turns it into a grid of its
+   own. Stretching is the default for a grid item, but the chat screen rendered
+   with all three columns shrunk to their contents and two thirds of the window
+   left as empty putty — the tracks were sizing against an indefinite width.
+   Saying the width out loud costs nothing and removes the failure mode. */
+.main.chat { width: 100%; }
+
+/* Debug the same thing if it ever recurs: uncomment to see the container.
+   .main.chat { outline: 2px solid magenta; } */
+
+/* The drop cap, on rendered markdown.
+
+   vermilion.css puts it on `p.lead`, which a mockup can write by hand. Chat
+   renders prose through a markdown component that owns its own elements, so
+   the same rule is addressed at the first paragraph instead. `.has-lead` is
+   the switch: a passage gets a cap, a one-line answer does not. */
+.read.has-lead p:first-of-type { text-indent: 0; }
+.read.has-lead p:first-of-type::first-letter {
+  float: left; font-family: var(--font-read); font-size: 3.1em; line-height: .78;
+  font-weight: 600; color: var(--on-char); margin: .06em .09em 0 0;
+}
+
+/* The composer's text column has to be the same 820px band as the thread above
+   it, or the two edges disagree by exactly the width of whatever else is in the
+   row. The palette toggle is app-native — the mock has no such control — and it
+   was sitting inside the band, taking 40px plus an 8px gap out of the writing
+   surface and pushing its right edge 48px short of the messages.
+
+   So it hangs outside the band instead, and only while there is somewhere to
+   hang: `.crop` clips, and the composer's own side padding is all the room the
+   button has. Below that width it returns to the row and shares the space,
+   which is the correct trade when the space is what is scarce. */
+.composer { container-type: inline-size; }
+@container (min-width: 860px) {
+  .composer .composer-aside { margin-right: -48px; }
+}
+
+/* A screen that owns its own height and scrolling: audit's three columns, the
+   reader. `.stage` would give it padding and a second scrollbar. */
+.stage-flush {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}

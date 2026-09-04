@@ -12,10 +12,10 @@ import {
   migrateLegacyBookSessionToTranscript,
   readLegacyBookSession,
 } from "./session-transcript-legacy.js";
-import { deriveBookSessionFromTranscript } from "./session-transcript-restore.js";
+import { deriveBookSessionFromTranscript, firstLineTitle } from "./session-transcript-restore.js";
 
 /**
- * 从 messages 数组里取第一条 user 消息，裁剪成 ≤20 字的单行字符串。
+ * 从 messages 数组里取第一条 user 消息，压成单行并裁到 TITLE_WIDTH 列。
  * 用于把用户首条提问作为会话标题。
  */
 export function extractFirstUserMessageTitle(messages: unknown): string | null {
@@ -25,9 +25,7 @@ export function extractFirstUserMessageTitle(messages: unknown): string | null {
     if ((message as { role?: unknown }).role !== "user") continue;
     const content = (message as { content?: unknown }).content;
     if (typeof content !== "string") return null;
-    const oneLine = content.trim().replace(/\s+/g, " ");
-    if (oneLine.length === 0) return null;
-    return oneLine.length > 20 ? `${oneLine.slice(0, 20)}…` : oneLine;
+    return firstLineTitle(content);
   }
   return null;
 }
@@ -155,9 +153,16 @@ export function isPipelineSessionId(sessionId: string): boolean {
   return sessionId.startsWith("publication--");
 }
 
+/**
+ * The conversations on one shelf, or all of them.
+ *
+ * `null` is a real book id here — it means "not inside a book" — so there was
+ * no way to ask for everything, and a chat started outside a book could not be
+ * listed beside the ones started inside one. `undefined` is that question.
+ */
 export async function listBookSessions(
   projectRoot: string,
-  bookId: string | null,
+  bookId: string | null | undefined,
 ): Promise<ReadonlyArray<BookSessionSummary>> {
   const dir = sessionsDir(projectRoot);
   let files: string[];
@@ -184,7 +189,8 @@ export async function listBookSessions(
     [...sessionIds].map(async (sessionId): Promise<BookSessionSummary | null> => {
       try {
         const session = await loadBookSession(projectRoot, sessionId);
-        if (!session || session.bookId !== bookId) return null;
+        if (!session) return null;
+        if (bookId !== undefined && session.bookId !== bookId) return null;
 
         return {
           sessionId: session.sessionId,

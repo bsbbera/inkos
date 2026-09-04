@@ -1,6 +1,17 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { buildPartsFromEvents, type StreamEvent } from "../parts-builder";
 import { setAppLanguage } from "../../../lib/app-language";
+
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
 
 describe("buildPartsFromEvents", () => {
   it("produces thinking → text parts from basic conversation", () => {
@@ -354,7 +365,7 @@ describe("buildPartsFromEvents", () => {
 
 describe("buildPartsFromEvents in English app language", () => {
   afterEach(() => {
-    setAppLanguage("zh");
+    setAppLanguage("en");
   });
 
   it("resolves agent and tool labels in English", () => {

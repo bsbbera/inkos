@@ -3,9 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  buildStoryAuditPrompt,
   isStorySlopFinding,
+  parseStoryFindings,
   runStoryAudit,
   runStoryDeslop,
+  reviseStoryFile,
   splitMachineTail,
   splitSections,
   storyAuditReport,
@@ -241,7 +244,129 @@ However, perhaps the flour is not decoration. However, it feeds ants.
   });
 
   it("reads back as something a person can act on", () => {
-    expect(storyAuditReport({ at: "now", path, findings: [], rounds: 0 }))
+    expect(storyAuditReport({ at: "now", path, findings: [], rounds: 0, located: [] }))
       .toContain("nothing to fix");
+  });
+});
+
+describe("findings that know where they are", () => {
+  it("asks for the quote and the replacement, and says what blocking means", () => {
+    const prompt = buildStoryAuditPrompt({ heading: "One", body: "Some prose." }, 0, 1, "en");
+    expect(prompt).toContain("QUOTE:");
+    expect(prompt).toContain("FIX:");
+    expect(prompt).toContain("contradicts something the piece has already");
+  });
+
+  it("keeps the quote and the fix the model returned", () => {
+    const findings = parseStoryFindings({
+      findings: [{
+        dimension: 18, severity: "critical", title: "The limp changed legs",
+        quote: "favoured his right leg", fix: "favoured his left leg",
+        description: "Chapter 3 puts the weight on his left.",
+        suggestion: "Match chapter 3.",
+      }],
+    }, "Chapter 9");
+    expect(findings).toHaveLength(1);
+    // `critical` is the continuity auditor's word for it; one vocabulary now.
+    expect(findings[0].severity).toBe("blocking");
+    expect(findings[0].quote).toBe("favoured his right leg");
+    expect(findings[0].fix).toBe("favoured his left leg");
+    expect(findings[0].title).toBe("The limp changed legs");
+  });
+
+  it("drops a fix with no quote, because it has nothing to stand in for", () => {
+    const findings = parseStoryFindings({
+      findings: [{ dimension: 1, fix: "write it better", description: "d", suggestion: "s" }],
+    }, "");
+    expect(findings[0].fix).toBeUndefined();
+    expect(findings[0].quote).toBeUndefined();
+  });
+});
+
+describe("runStoryAudit located findings", () => {
+  let root = "";
+  const path = "shorts/x/final/story.md";
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "located-"));
+    await writeFile(join(root, "story.md"), STORY, "utf-8");
+  });
+  afterEach(async () => { await rm(root, { recursive: true, force: true }); });
+
+  it("gives a quoted finding a span into the file and leaves an unquoted one unlocated", async () => {
+    await writeFile(join(root, "story.md"), STORY, "utf-8");
+    const ask: StoryAskFn = async (_p, tag) => tag.startsWith("story-audit")
+      ? {
+          findings: [
+            { dimension: 18, severity: "warning", quote: "the ledger was still open",
+              fix: "the ledger lay open", description: "d", suggestion: "s" },
+            { dimension: 16, severity: "info", description: "Runs short.", suggestion: "s" },
+          ],
+        }
+      : {};
+    const audit = await runStoryAudit({ projectRoot: root, path: "story.md", ask, revise: false });
+
+    const withSpan = audit.located.filter((f) => f.start >= 0);
+    expect(withSpan.length).toBeGreaterThan(0);
+    for (const f of withSpan) {
+      expect(STORY.slice(f.start, f.end)).toBe(f.quote);
+      expect(f.fix).toBe("the ledger lay open");
+    }
+    // The one that measured the whole section keeps its complaint and no span.
+    expect(audit.located.some((f) => f.start === -1 && f.severity === "note")).toBe(true);
+    // Every finding gets a stable id whether or not it could be located.
+    expect(new Set(audit.located.map((f) => f.id)).size).toBe(audit.located.length);
+  });
+});
+
+describe("reviseStoryFile", () => {
+  let root: string;
+  const path = "story.md";
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "story-revise-"));
+    await writeFile(join(root, path), STORY);
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  /** Echoes the note back as the new body, so the rewrite is visible. */
+  const rewrites: StoryAskFn = async (prompt: string) => ({
+    body: prompt.includes("Chapter 1") ? "Chapter one, redone." : "Chapter two, redone.",
+  });
+
+  it("carries an editor's note into every section and writes the file back", async () => {
+    const out = await reviseStoryFile({
+      projectRoot: root, path, ask: rewrites, note: "the openings are limp",
+    });
+    expect(out.changed).toBe(true);
+    expect(out.sections).toBe(2);
+    const after = await readFile(join(root, path), "utf-8");
+    expect(after).toContain("redone");
+    // The heading is the section's own; a rewrite replaces bodies, not structure.
+    expect(after).toContain("## Chapter 1");
+  });
+
+  it("keeps the original beside it, so the same Restore puts it back", async () => {
+    await reviseStoryFile({ projectRoot: root, path, ask: rewrites, note: "again" });
+    const kept = await readFile(join(root, "story.pre-audit.md"), "utf-8");
+    expect(kept).toBe(STORY);
+  });
+
+  it("rewrites only the section it was pointed at", async () => {
+    const out = await reviseStoryFile({
+      projectRoot: root, path, ask: rewrites, note: "just this one",
+      sections: ["Chapter 2"],
+    });
+    expect(out.sections).toBe(1);
+    const after = await readFile(join(root, path), "utf-8");
+    expect(after).toContain("He felt very angry");
+    expect(after).toContain("redone");
+  });
+
+  it("refuses an empty note rather than rewriting the file for no reason", async () => {
+    await expect(reviseStoryFile({ projectRoot: root, path, ask: rewrites, note: "   " }))
+      .rejects.toThrow(/note is required/);
   });
 });

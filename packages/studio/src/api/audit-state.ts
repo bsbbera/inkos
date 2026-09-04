@@ -21,6 +21,22 @@ export interface FileAudit {
   readonly warnings?: number;
   /** When a pass last rewrote the file in place. */
   readonly rewritten?: string;
+  /*
+   * How much has been done to this file, not only when it last happened.
+   *
+   * A date answers "has anyone touched this" and nothing else. "Read four
+   * times, rewritten twice, de-AI'd once" is the question actually being
+   * asked of a file that still is not right, and the screen had no way to
+   * answer it because nothing counted.
+   */
+  /** Completed audit passes over this file. */
+  readonly reads?: number;
+  /** Revise rounds that landed. One pass can be several rounds. */
+  readonly revisions?: number;
+  /** De-AI passes run over it. */
+  readonly deslops?: number;
+  /** Editor notes that were turned into a rewrite of this file. */
+  readonly notes?: number;
   /** Signed off. While this is set, the file is not edited by accident. */
   readonly approved?: { readonly at: string; readonly by: string };
 }
@@ -88,6 +104,24 @@ export async function writeAuditState(root: string, state: AuditState): Promise<
 }
 
 /** Read, fold, write. The three call sites all want exactly this. */
+/**
+ * What one finished audit pass adds to a file's counts.
+ *
+ * All three are counts of passes over the prose, so they can be read against
+ * each other. A revise goes round the loop up to `MAX_ROUNDS` times and audits
+ * once more before it stops, which is why a read is `rounds + 1` and not one
+ * per request: counting requests made a file that had been rewritten twice
+ * report a single read, and a page cannot be rewritten more often than it has
+ * been read.
+ */
+export function passCounts(rounds: number, deslop: boolean): {
+  readonly reads: number;
+  readonly revisions: number;
+  readonly deslops: number;
+} {
+  return { reads: rounds + 1, revisions: rounds, deslops: deslop ? 1 : 0 };
+}
+
 export async function updateFileAudit(
   root: string,
   path: string,

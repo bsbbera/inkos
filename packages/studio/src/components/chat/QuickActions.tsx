@@ -54,7 +54,7 @@ const CHIPS: ReadonlyArray<ChipDef> = [
 
 export function QuickActions({ onAction, disabled, isZh }: QuickActionsProps) {
   return (
-    <div className="flex gap-2 overflow-x-auto px-1 py-1">
+    <div className="quick">
       {CHIPS.map((chip) => {
         const label = isZh ? chip.labelZh : chip.labelEn;
         const command = isZh ? chip.commandZh : chip.commandEn;
@@ -63,7 +63,7 @@ export function QuickActions({ onAction, disabled, isZh }: QuickActionsProps) {
             key={label}
             onClick={() => onAction(command, chip.requestedIntent)}
             disabled={disabled}
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary/50 border border-border/30 text-xs font-medium text-muted-foreground hover:text-primary hover:border-primary/30 hover:bg-primary/5 transition-all disabled:opacity-40 disabled:pointer-events-none group"
+            className="pill group disabled:opacity-40 disabled:pointer-events-none"
           >
             <span className="group-hover:scale-110 transition-transform">{chip.icon}</span>
             {label}

@@ -1,9 +1,15 @@
+/*
+ * Doctor. Mock 22.
+ *
+ * The count first - "6 / 8 passing" - then the checks as rows, each saying
+ * what it looked at rather than only whether it liked what it found. A person
+ * opens this because something is wrong, so nothing here may be a bare tick.
+ */
 import { useApi } from "../hooks/use-api";
-import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
-import { useColors } from "../hooks/use-colors";
 import { doctorViewState } from "./doctor-view-state";
-import { Stethoscope, CheckCircle2, XCircle, Loader2, AlertTriangle } from "lucide-react";
+import { Icon } from "../components/ui/icon";
+import { Failed, Loading } from "../components/ui/states";
 
 interface DoctorChecks {
   readonly inkosJson: boolean;
@@ -14,94 +20,114 @@ interface DoctorChecks {
   readonly bookCount: number;
 }
 
-interface Nav { toDashboard: () => void }
+interface Check {
+  readonly label: string;
+  readonly ok: boolean;
+  readonly detail: string;
+}
 
-function CheckRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+function Row({ check }: { readonly check: Check }) {
   return (
-    <div className="flex items-center gap-3 py-3 border-b border-border/30 last:border-0">
-      {ok ? (
-        <CheckCircle2 size={18} className="text-success shrink-0" role="img" aria-label="passed" />
-      ) : (
-        <XCircle size={18} className="text-destructive shrink-0" role="img" aria-label="failed" />
-      )}
-      <span className="text-sm font-medium flex-1">{label}</span>
-      {detail && <span className="text-xs text-muted-foreground">{detail}</span>}
+    <div className="row" style={{ alignItems: "flex-start", padding: "14px 4px" }}>
+      <span className={check.ok ? "st done" : "st"} style={{ marginTop: 3 }}>
+        <i />
+      </span>
+      <span className="grow">
+        <span className="name">{check.label}</span>
+        <span className="meta mono" style={{ fontSize: 11 }}>{check.detail}</span>
+      </span>
+      <span className={check.ok ? "pill pill-ok" : "pill pill-warn"}>{check.ok ? "ok" : "wants you"}</span>
     </div>
   );
 }
 
-export function DoctorView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
-  const c = useColors(theme);
+export function DoctorView({ t }: { readonly t: TFunction }) {
   const { data, error, loading, refetch } = useApi<DoctorChecks>("/doctor");
   const state = doctorViewState({ error, data });
 
-  return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
-        <span className="text-border">/</span>
-        <span>{t("nav.doctor")}</span>
-      </div>
+  const checks: Check[] = data
+    ? [
+        { label: t("doctor.inkosJson"), ok: data.inkosJson, detail: "inkos.json in the workspace root" },
+        { label: t("doctor.projectEnv"), ok: data.projectEnv, detail: "project .env" },
+        { label: t("doctor.globalEnv"), ok: data.globalEnv, detail: "global .env" },
+        {
+          label: t("doctor.booksDir"),
+          ok: data.booksDir,
+          detail: `books/ · ${data.bookCount} ${data.bookCount === 1 ? "book" : "books"}`,
+        },
+        {
+          label: t("doctor.llmApi"),
+          ok: data.llmConnected,
+          detail: data.llmConnected ? t("doctor.connected") : t("doctor.failed"),
+        },
+      ]
+    : [];
 
-      <div className="flex items-center justify-between">
-        <h1 className="q-title text-3xl flex items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Stethoscope size={19} /></span>
-          {t("doctor.title")}
-        </h1>
-        <button
-          onClick={() => refetch()}
-          disabled={loading}
-          className={`px-4 py-2 text-sm rounded-lg disabled:opacity-50 ${c.btnSecondary}`}
-        >
-          {loading ? t("doctor.checking") : t("doctor.recheck")}
-        </button>
-      </div>
+  const passing = checks.filter((c) => c.ok).length;
+
+  return (
+    <div className="wrap-read stack-lg">
+      <section className="crop" style={{ paddingBottom: 0 }}>
+        <span className="disc fill" style={{ width: 210, height: 210, right: -104, top: -112, opacity: 0.13 }} />
+        <span className="disc stroke" style={{ width: 104, height: 104, right: -34, top: -30, opacity: 0.4 }} />
+        <div className="spread" style={{ alignItems: "flex-end" }}>
+          <div>
+            <h2 className="h-page">Let us see what you have</h2>
+            <p className="muted" style={{ fontSize: 14, marginTop: 10, maxWidth: "52ch" }}>
+              {checks.length === 0
+                ? "Checking the workspace, the providers and the files Quire needs."
+                : passing === checks.length
+                  ? t("doctor.allPassed")
+                  : `${checks.length - passing} of them want something from you. You can start writing before you fix either.`}
+            </p>
+          </div>
+          {checks.length > 0 ? (
+            <div style={{ textAlign: "right" }}>
+              <div className="rowflex" style={{ gap: 2, justifyContent: "flex-end", alignItems: "baseline" }}>
+                <span className="numeral" style={{ fontSize: 68 }}>{passing}</span>
+                <span className="numeral ghost" style={{ fontSize: 34 }}>/{checks.length}</span>
+              </div>
+              <div className="label" style={{ marginTop: 6 }}>passing</div>
+            </div>
+          ) : null}
+        </div>
+      </section>
 
       {/*
         * This page is the one a person opens *because* something is wrong, so
         * it has to survive its own subject failing. It used to render a
         * spinner whenever there was no data and never look at `error`, which
         * meant the check that says "the backend is unreachable" was displayed
-        * as an endless spinner — indistinguishable from a slow probe, with no
-        * way to tell that the answer had already come back and was a failure.
+        * as an endless spinner — indistinguishable from a slow probe.
         */}
       {state === "error" ? (
-        <div className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`} role="alert">
-          <div className="flex items-center gap-3">
-            <AlertTriangle size={18} className="text-destructive shrink-0" />
-            <span className="text-sm font-medium flex-1">{t("doctor.unreachable")}</span>
-          </div>
-          <p className="text-sm text-muted-foreground leading-relaxed">
-            {t("doctor.unreachableHint")}
-          </p>
-          <p className="text-xs font-mono text-muted-foreground break-all">{error}</p>
-        </div>
+        <Failed
+          what={t("doctor.unreachable")}
+          detail={error}
+          kept={t("doctor.unreachableHint")}
+          retry={() => refetch()}
+        />
       ) : state === "loading" || !data ? (
-        <div className="flex items-center justify-center py-12" role="status" aria-live="polite">
-          <Loader2 size={24} className="animate-spin text-primary" />
-          <span className="sr-only">{t("doctor.checking")}</span>
-        </div>
+        <Loading what={t("doctor.checking")} rows={5} />
       ) : (
-        <div className={`border ${c.cardStatic} rounded-lg p-5`}>
-          <CheckRow label={t("doctor.inkosJson")} ok={data.inkosJson} />
-          <CheckRow label={t("doctor.projectEnv")} ok={data.projectEnv} />
-          <CheckRow label={t("doctor.globalEnv")} ok={data.globalEnv} />
-          <CheckRow label={t("doctor.booksDir")} ok={data.booksDir} detail={`${data.bookCount} book(s)`} />
-          <CheckRow label={t("doctor.llmApi")} ok={data.llmConnected} detail={data.llmConnected ? t("doctor.connected") : t("doctor.failed")} />
-        </div>
-      )}
+        <>
+          <section className="panel panel-flush">
+            <div className="panel-body" style={{ paddingTop: 14, paddingBottom: 14 }}>
+              <div className="rows">
+                {checks.map((c) => (
+                  <Row key={c.label} check={c} />
+                ))}
+              </div>
+            </div>
+          </section>
 
-      {data && (
-        <div className={`px-4 py-3 rounded-lg text-sm font-medium ${
-          data.inkosJson && (data.projectEnv || data.globalEnv) && data.llmConnected
-            ? "bg-success/10 text-success"
-            : "bg-warning/10 text-warning"
-        }`}>
-          {data.inkosJson && (data.projectEnv || data.globalEnv) && data.llmConnected
-            ? t("doctor.allPassed")
-            : t("doctor.someFailed")
-          }
-        </div>
+          <div className="rowflex">
+            <button type="button" className="btn btn-line btn-sm" disabled={loading} onClick={() => refetch()}>
+              <Icon name="redo" size={14} />
+              {loading ? t("doctor.checking") : t("doctor.recheck")}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

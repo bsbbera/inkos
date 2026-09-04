@@ -1,6 +1,7 @@
 import { getEndpoint } from "./providers/index.js";
 import type { InkosModel } from "./providers/types.js";
 import { probeModelsFromUpstream } from "./providers/probe.js";
+import { probeLocalContextWindows } from "./providers/local-context.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 
 export interface ServicePreset {
@@ -192,15 +193,45 @@ export async function listModelsForService(
     const probed = await probeModelsFromUpstream(probeBaseUrl, apiKey ?? "", probeTimeoutMs);
     if (probed.length > 0) {
       const { lookupModel } = await import("./providers/lookup.js");
+      // A local server knows its models' context windows and will say so, but
+      // not on the OpenAI-shaped route probed above. Without asking, every
+      // locally pulled model arrived with a window of zero and was later
+      // assumed to be 128k - sixteen times the truth for an 8k model, in the
+      // direction that defeats the guard rather than trips it.
+      const localWindows = provider?.group === "local"
+        ? await probeLocalContextWindows(service, probeBaseUrl, probed.map((m) => m.id))
+        : undefined;
       for (const m of probed) {
         const card = lookupModel(service, m.id);
-        byId.set(m.id, card ? toModelInfo(card) : { id: m.id, name: m.name, contextWindow: m.contextWindow });
+        const localWindow = localWindows?.get(m.id);
+        // The live server outranks a card here: the card describes the model as
+        // published, the server describes the copy that will answer, which may
+        // have been loaded with a smaller window than the model supports.
+        if (card && localWindow) {
+          byId.set(m.id, { ...toModelInfo(card), contextWindow: localWindow });
+          continue;
+        }
+        byId.set(m.id, card ? toModelInfo(card) : {
+          id: m.id,
+          name: m.name,
+          contextWindow: localWindow ?? m.contextWindow,
+          // A CLI that declares image support is the only authority on it; a
+          // bank card would not know, and guessing from the id is how the
+          // composer ended up refusing attachments a model could read.
+          ...(m.imageInput !== undefined ? { capabilities: { imageInput: m.imageInput } } : {}),
+        });
       }
     }
   }
 
   // 2) provider bank fallback / 补充
-  if (provider) {
+  //
+  // Not for a local server. Ollama and LM Studio run on loopback and answer
+  // for themselves; if the probe above found nothing, the process is not
+  // running, and every model in the seed is one this machine cannot serve.
+  // Handing back the seed anyway is what put 52 Ollama models in the picker of
+  // a machine with no Ollama installed, each of which fails on the first call.
+  if (provider && !(provider.group === "local" && byId.size === 0)) {
     for (const m of provider.models) {
       if (m.enabled === false) continue;
       if (byId.has(m.id)) continue;
@@ -208,8 +239,8 @@ export async function listModelsForService(
     }
   }
 
-  // 3) 旧 knownModels fallback
-  if (byId.size === 0 && preset?.knownModels) {
+  // 3) 旧 knownModels fallback — same rule: never for a silent local server.
+  if (byId.size === 0 && preset?.knownModels && provider?.group !== "local") {
     for (const id of preset.knownModels) {
       byId.set(id, { id, name: id, contextWindow: 0 });
     }

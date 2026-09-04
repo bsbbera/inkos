@@ -175,8 +175,20 @@ describe("pickModelSelection", () => {
     });
   });
 
-  it("keeps a valid user selection over the configured default", () => {
+  it("moves a stale tab onto the configured default", () => {
+    // The setup page is the one place the choice lives; a tab still showing
+    // the model it was opened with is out of date, not authoritative.
     expect(pickModelSelection(grouped, "gemini-2.5-flash", "google", {
+      service: "moonshot",
+      model: "kimi-k2.5",
+    })).toEqual({
+      model: "kimi-k2.5",
+      service: "moonshot",
+    });
+  });
+
+  it("leaves a tab alone when it already matches the configured default", () => {
+    expect(pickModelSelection(grouped, "kimi-k2.5", "moonshot", {
       service: "moonshot",
       model: "kimi-k2.5",
     })).toBeNull();

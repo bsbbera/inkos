@@ -216,17 +216,28 @@ export async function researchPublication(args: {
   readonly onProgress?: (message: string) => void;
   /** Supplied by a caller that already resolved them; discovered otherwise. */
   readonly sources?: ReadonlyArray<SearchSource>;
+  /**
+   * Whether the model answering this stage browses on its own account. A CLI
+   * usually does, and that is rung one of the ladder — our keys are the
+   * fallback for models that cannot, not the only way to search.
+   */
+  readonly modelSearches?: boolean;
 }): Promise<ResearchReport> {
   const sources = args.sources ?? await allSearchSources(args.projectRoot);
   // Material the editor attached is research too. Refusing to run because no
   // search key is set, while their own PDF sits archived in the project, is
   // the stage telling them their sources do not count.
   const hasOwnMaterial = (await materialResults(args.projectRoot, [args.subject])).length > 0;
-  if (!sources.length && !hasOwnMaterial) {
+  // The model itself is the first place to ask. Refusing to start because no
+  // Tavily key is set, while the model answering the stage browses the web on
+  // its own account, told people to go and configure a searcher they already
+  // had — and it is the ordinary case, since every agent CLI browses.
+  if (!sources.length && !hasOwnMaterial && !args.modelSearches) {
     throw new Error(
-      "no web search is configured, so this issue would be written from memory alone. "
-      + "Enable a search MCP server, or set a Tavily or Brave key in Project Settings "
-      + "→ research search, or the TAVILY_API_KEY / BRAVE_API_KEY environment variable.",
+      "this issue would be written from memory alone: the model answering the "
+      + "research stage does not browse, and no search source is configured. "
+      + "Pin the research agent to a model that searches, enable a search MCP "
+      + "server, or set a Tavily or Brave key.",
     );
   }
 

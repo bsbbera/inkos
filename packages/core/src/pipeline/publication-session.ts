@@ -22,6 +22,7 @@
  */
 
 import { runAgentSession } from "../agent/agent-session.js";
+import { agentForStage } from "./publication-agents.js";
 import { workerModel } from "../agent/worker-agent.js";
 import { parseJson } from "../publications/parse-json.js";
 import type { PipelineRunner } from "./runner.js";
@@ -98,7 +99,10 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
     const id = typeof issueId === "function" ? issueId() : issueId;
     if (!id) throw new Error(`${tag}: no issue id yet — a stage ran before the issue was created`);
 
-    const agentCtx = pipeline.createAgentContext("publication");
+    // The stage decides the model, not the pipeline. `tag` is already the
+    // stage, so routing costs one lookup and no new plumbing; an unrecognised
+    // tag falls back to "publication", the id every older config pinned.
+    const agentCtx = pipeline.createAgentContext(agentForStage(tag));
     const model = workerModel(agentCtx.client, agentCtx.model);
 
     const result = await runAgentSession(

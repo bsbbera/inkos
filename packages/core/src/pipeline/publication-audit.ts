@@ -29,6 +29,14 @@ export interface PublicationFinding {
   readonly category: string;
   readonly description: string;
   readonly suggestion: string;
+  /**
+   * The words on the page this is about, verbatim, where there are any.
+   *
+   * Absent on the findings that genuinely have no one place: a length miss is
+   * a property of the page, and cross-issue repetition is a property of the
+   * page against every other page. Those describe; the rest can point.
+   */
+  readonly quote?: string;
 }
 
 export interface PublicationAudit {
@@ -127,6 +135,7 @@ export function auditPages(
         category: `ai-tell/${issue.category}`,
         description: `p${page.n}: ${issue.description}`,
         suggestion: issue.suggestion,
+        ...(issue.quote ? { quote: issue.quote } : {}),
       });
     }
 

@@ -273,9 +273,13 @@ export class Scheduler {
         chapterNumber,
       );
       if (!detResult.passed && this.config.detection.autoRewrite) {
+        // Through the router, not around it. This call built its own context
+        // out of the project's global client, so a model pinned to the de-AI
+        // pass was read from the config, offered in the UI, and then never
+        // asked for: the rewrite ran on whatever the project default was.
         await detectAndRewrite(
           this.config.detection,
-          { client: this.config.client, model: this.config.model, projectRoot: this.config.projectRoot },
+          this.pipeline.createAgentContext("destyler", bookId),
           bookDir,
           chapterContent,
           chapterNumber,

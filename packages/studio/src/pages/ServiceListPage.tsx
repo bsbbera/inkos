@@ -361,17 +361,6 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button
-          onClick={nav.toDashboard}
-          className="q-btn q-btn-quiet !px-2.5 !py-1 text-xs"
-        >
-          {tr("首页", "Home")}
-        </button>
-        <span className="text-border">/</span>
-        <span className="text-foreground">{tr("服务商管理", "Providers")}</span>
-      </div>
-
       <header className="q-head">
         <p className="q-label">{tr("模型", "Models")}</p>
         <h1 className="mt-3">{tr("服务商管理", "Providers")}</h1>

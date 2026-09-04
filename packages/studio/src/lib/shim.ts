@@ -9,12 +9,21 @@
  * The two servers are paired one port apart in both stages — dev 4568/8788,
  * prod 4567/8787 — so Studio's own port names the shim's.
  */
-const SHIM = `http://127.0.0.1:${8787 + (Number(location.port || 4567) - 4567)}`;
+/* Read lazily and defensively: this module is reached from App.tsx, and the
+   unit tests import that under Node, where `location` does not exist. A module
+   whose top level touches the DOM cannot be imported by a test that only wants
+   a pure function out of it. */
+const studioPort = (): number => {
+  if (typeof location === "undefined") return 4567;
+  return Number(location.port) || 4567;
+};
 
-export const shimAsset = (id: string): string => `${SHIM}/assets/${id}`;
+const SHIM = () => `http://127.0.0.1:${8787 + (studioPort() - 4567)}`;
+
+export const shimAsset = (id: string): string => `${SHIM()}/assets/${id}`;
 
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`${SHIM}${path}`, init);
+  const r = await fetch(`${SHIM()}${path}`, init);
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((body as { error?: string }).error || `${path} failed (${r.status})`);
   return body as T;

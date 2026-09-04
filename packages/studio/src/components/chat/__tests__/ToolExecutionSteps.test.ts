@@ -6,6 +6,17 @@ import { PipelineResultDetails, ToolExecutionSteps, UtilityExecutionRow, buildPl
 import { usePreferencesStore } from "../../../store/preferences";
 import { setAppLanguage } from "../../../lib/app-language";
 
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
+
 const makeExec = (overrides: Partial<ToolExecution> & { id: string; tool: string }): ToolExecution => ({
   label: "test",
   status: "completed",
@@ -620,7 +631,7 @@ describe("English app language", () => {
   });
 
   afterEach(() => {
-    setAppLanguage("zh");
+    setAppLanguage("en");
   });
 
   it("renders pipeline status, result summary, and file-operation group in English", () => {
@@ -639,7 +650,11 @@ describe("English app language", () => {
 
     expect(html).toContain("Completed");
     expect(html).toContain("View result");
-    expect(html).toContain("1 file operation");
+    // Reads are stated, not counted behind a disclosure: the mock shows what
+    // the model read so the answer is visibly grounded in the book.
+    expect(html).toContain('class="tool"');
+    expect(html).toContain("books/demo/chapter-1.md");
+    expect(html).not.toContain("file operation");
     expect(html).not.toContain("已完成");
     expect(html).not.toContain("查看操作结果");
   });

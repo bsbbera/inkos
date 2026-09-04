@@ -1,6 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { LLMClient, OnStreamProgress } from "../llm/provider.js";
 import { createLLMClient } from "../llm/provider.js";
+import { resolveAgentRoute, type ModelPin, type RouteTarget } from "../llm/model-routing.js";
+import { canonicalAgentId } from "../llm/agent-roster.js";
 import { runWorkerAgent } from "../agent/worker-agent.js";
 import type { Logger } from "../utils/logger.js";
 import type { BookConfig, FanficMode, RevisionGate } from "../models/book.js";
@@ -260,7 +262,27 @@ export interface PipelineConfig {
   readonly notifyChannels?: ReadonlyArray<NotifyChannel>;
   readonly radarSources?: ReadonlyArray<RadarSource>;
   readonly externalContext?: string;
-  readonly modelOverrides?: Record<string, string | AgentLLMOverride>;
+  readonly modelOverrides?: Record<string, ModelPin>;
+  /**
+   * Whether a pinned model can actually be reached right now. Supplied by the
+   * host, which is the only layer that knows which CLIs are detected and which
+   * services hold a key. Omitted here, every pin is trusted — correct for tests
+   * and for a runner with no live roster behind it.
+   */
+  readonly isModelAvailable?: (target: RouteTarget) => boolean;
+  /** Where per-agent token usage goes. Studio broadcasts it; the CLI ignores it. */
+  readonly onUsage?: AgentContext["onUsage"];
+  /**
+   * Base URL and key per service id, so a pin can say `{service, model}` and
+   * reach a different vendor without spelling out a URL. Resolved by the host:
+   * keys live in the secret store behind an async read, and this class picks a
+   * client synchronously in the middle of a run.
+   */
+  readonly serviceEndpoints?: Readonly<Record<string, {
+    readonly baseUrl: string;
+    readonly apiKey?: string;
+    readonly apiFormat?: "chat" | "responses";
+  }>>;
   readonly logger?: Logger;
   readonly onStreamProgress?: OnStreamProgress;
   readonly onContextCompression?: ContextCompressionCallback;
@@ -666,42 +688,78 @@ export class PipelineRunner {
     };
   }
 
+  /** Where a service-named pin points, when the host said. */
+  private serviceBaseUrl(service: string | undefined): string | undefined {
+    if (!service) return undefined;
+    return this.config.serviceEndpoints?.[service]?.baseUrl;
+  }
+
+  /**
+   * Which model answers for this agent.
+   *
+   * The decision is `model-routing.ts`; this only carries it out, because
+   * carrying it out means building a client and that is not something a pure
+   * resolver should do. Two things changed here beyond the move: the agent name
+   * is canonicalised, so the `stateValidator` call site and the three
+   * `state-validator` ones are one pin again; and a pin the host says it cannot
+   * reach falls back to the project model rather than being sent to a provider
+   * that is not there.
+   */
   private resolveOverride(agentName: string): { model: string; client: LLMClient } {
-    const override = this.config.modelOverrides?.[agentName];
-    if (!override) {
+    const route = resolveAgentRoute({
+      agent: agentName,
+      ...(this.config.modelOverrides ? { overrides: this.config.modelOverrides } : {}),
+      global: { model: this.config.model },
+      ...(this.config.isModelAvailable ? { isAvailable: this.config.isModelAvailable } : {}),
+    });
+    if (route.droppedPin) {
+      this.config.logger?.warn?.(
+        `${canonicalAgentId(agentName)}: pinned model ${route.droppedPin.model} is not reachable; using the project default`,
+      );
+    }
+    const override = route.source === "pin" ? route.override : undefined;
+    if (route.source !== "pin") {
       return { model: this.config.model, client: this.config.client };
     }
-    if (typeof override === "string") {
-      return { model: override, client: this.config.client };
+    if (!override) {
+      return { model: route.model, client: this.config.client };
     }
-    // Full override — needs its own client if baseUrl differs
-    if (!override.baseUrl) {
+    // Full override — needs its own client if it reaches somewhere else.
+    const serviceBaseUrl = override.baseUrl ?? this.serviceBaseUrl(override.service);
+    if (!serviceBaseUrl) {
       return { model: override.model, client: this.config.client };
     }
     const base = this.config.defaultLLMConfig;
     const provider = override.provider ?? base?.provider ?? "custom";
     const apiKeySource = override.apiKeyEnv
       ? `env:${override.apiKeyEnv}`
-      : `base:${base?.apiKey ?? ""}`;
+      : override.service
+        ? `service:${override.service}`
+        : `base:${base?.apiKey ?? ""}`;
     const stream = override.stream ?? base?.stream ?? true;
-    const apiFormat = base?.apiFormat ?? "chat";
+    const apiFormat = (override.service
+      ? this.config.serviceEndpoints?.[override.service]?.apiFormat
+      : undefined) ?? base?.apiFormat ?? "chat";
     const cacheKey = [
       provider,
-      override.baseUrl,
+      serviceBaseUrl,
       apiKeySource,
       `stream:${stream}`,
       `format:${apiFormat}`,
     ].join("|");
     let client = this.agentClients.get(cacheKey);
     if (!client) {
+      const serviceKey = override.service
+        ? this.config.serviceEndpoints?.[override.service]?.apiKey
+        : undefined;
       const apiKey = override.apiKeyEnv
         ? process.env[override.apiKeyEnv] ?? ""
-        : base?.apiKey ?? "";
+        : serviceKey ?? base?.apiKey ?? "";
       client = createLLMClient({
         provider,
-        service: base?.service ?? "custom",
+        service: override.service ?? base?.service ?? "custom",
         configSource: base?.configSource ?? "env",
-        baseUrl: override.baseUrl,
+        baseUrl: serviceBaseUrl,
         apiKey,
         model: override.model,
         temperature: base?.temperature ?? 0.7,
@@ -719,6 +777,8 @@ export class PipelineRunner {
     return {
       client,
       model,
+      agent: canonicalAgentId(agent),
+      ...(this.config.onUsage ? { onUsage: this.config.onUsage } : {}),
       projectRoot: this.config.projectRoot,
       bookId,
       logger: this.config.logger?.child(agent),

@@ -27,14 +27,39 @@ import { analyzeAITells } from "../agents/ai-tells.js";
 import { detectCrossChapterRepetition } from "../agents/post-write-validator.js";
 import { safeChildPath } from "../utils/path-safety.js";
 import type { ReviewDimension } from "./publication-review.js";
+import {
+  locate, normalizeSeverity, type Finding, type FindingSeverity, type RawFinding,
+} from "./findings.js";
 
 export interface StoryFinding {
   /** The heading it is about, or "" for a finding about the whole piece. */
   readonly section: string;
-  readonly severity: "warning" | "info";
+  /**
+   * `blocking` for a contradiction of something already established, which is
+   * the one severity that stands in the way of an approval; `note` for
+   * something worth knowing.
+   *
+   * This used to be `warning | info`, which could not say "this one is wrong,
+   * not merely worth looking at" — so a chapter that contradicted its own
+   * canon was reported at the same weight as a repeated transition word.
+   */
+  readonly severity: FindingSeverity;
   readonly category: string;
   readonly description: string;
   readonly suggestion: string;
+  /**
+   * The exact words the finding is about, copied out of the text.
+   *
+   * Without it the only thing a screen can do is print the complaint, and the
+   * only thing a person can do is re-read the chapter looking for the sentence
+   * the machine meant. Rule-pass findings measure a whole section and have
+   * none; those stay unlocated rather than being given a wrong span.
+   */
+  readonly quote?: string;
+  /** What the checker proposes should stand in the quote's place. */
+  readonly fix?: string;
+  /** A queue row's worth of words. Derived from the description when absent. */
+  readonly title?: string;
 }
 
 export interface StoryAudit {
@@ -44,6 +69,15 @@ export interface StoryAudit {
   readonly findings: ReadonlyArray<StoryFinding>;
   /** Revise-then-re-audit rounds. 0 means findings were only reported. */
   readonly rounds: number;
+  /**
+   * The same findings, each carrying an id and — where its quote was found —
+   * a character span into the file as it stands at the end of the run.
+   *
+   * Kept beside `findings` rather than replacing it because a finding's span
+   * is only true of one revision of one file, while the complaint itself is
+   * what a report or a tool result wants.
+   */
+  readonly located: ReadonlyArray<Finding>;
 }
 
 /**
@@ -187,7 +221,7 @@ export function ruleFindings(sections: ReadonlyArray<StorySection>, language: "z
     for (const issue of analyzeAITells(section.body, language).issues) {
       findings.push({
         section: section.heading,
-        severity: issue.severity,
+        severity: normalizeSeverity(issue.severity),
         category: `ai-tell/${issue.category}`,
         description: section.heading ? `${section.heading}: ${issue.description}` : issue.description,
         suggestion: issue.suggestion,
@@ -198,7 +232,10 @@ export function ruleFindings(sections: ReadonlyArray<StorySection>, language: "z
     for (const violation of detectCrossChapterRepetition(section.body, others, language)) {
       findings.push({
         section: section.heading,
-        severity: violation.severity === "error" ? "warning" : "info",
+        // A rule pass measures a whole section, so `error` here means "this
+        // reads as machine-made", not "this contradicts the book". Nothing a
+        // rule can see on its own is allowed to block an approval.
+        severity: violation.severity === "error" ? "warning" : "note",
         category: `repetition/${violation.rule}`,
         description: section.heading ? `${section.heading}: ${violation.description}` : violation.description,
         suggestion: violation.suggestion,
@@ -228,9 +265,23 @@ export function buildStoryAuditPrompt(
     "Judge it on these dimensions:",
     STORY_DIMENSIONS.map((d) => `${d.n}. ${d.name} — ${d.ask}`).join("\n"),
     "",
-    "A dimension with nothing wrong produces no finding. Quote the offending text",
-    "so the writer can find it. Be specific enough to act on: \"the third paragraph",
-    "names the feeling instead of showing it\" is usable, \"the prose is weak\" is not.",
+    "A dimension with nothing wrong produces no finding. Be specific enough to act",
+    "on: \"the third paragraph names the feeling instead of showing it\" is usable,",
+    "\"the prose is weak\" is not.",
+    "",
+    // The quote is what makes a finding usable rather than merely true. Without
+    // it a screen can only print the complaint and a reader has to hunt the
+    // chapter for the sentence the machine meant. It has to be an exact copy: a
+    // paraphrase cannot be found in the file, so the finding arrives with no
+    // location, no highlight, and no fix anything can apply.
+    "QUOTE: copy the offending words out of the text exactly, character for",
+    "character, so they can be found again. One sentence or clause — long enough",
+    "to be unique, short enough to point at the problem. Omit `quote` only for a",
+    "finding about the section as a whole.",
+    "",
+    "FIX: when you can say what those exact words should be instead, give the",
+    "replacement — the words alone, no commentary, ready to stand where the quote",
+    "stands. Omit `fix` when the problem needs a decision rather than a swap.",
     "",
     `The prose is in ${language === "zh" ? "Chinese" : "English"}; judge it in that language's terms.`,
     "",
@@ -239,8 +290,15 @@ export function buildStoryAuditPrompt(
     section.body.slice(0, MAX_SECTION_CHARS),
     "",
     "Respond with JSON only:",
-    '{"findings":[{"dimension":7,"severity":"warning","description":"...","suggestion":"..."}]}',
-    'severity is "warning" for something that should change and "info" for something worth knowing.',
+    '{"findings":[{"dimension":7,"severity":"warning","title":"The limp changed legs",'
+      + '"quote":"favoured his right leg","fix":"favoured his left leg",'
+      + '"description":"...","suggestion":"..."}]}',
+    'severity is "blocking" when the text contradicts something the piece has already',
+    'established — a fact, a name, a number, a rule the work set itself — "warning"',
+    'for something that should change, and "note" for something worth knowing.',
+    "Only a blocking finding stops the piece being approved, so use it for",
+    "contradictions and not for taste.",
+    "title is at most eight words naming the problem, not restating the rule.",
   ].join("\n");
 }
 
@@ -254,14 +312,23 @@ export function parseStoryFindings(out: Record<string, unknown>, section: string
     const dimension = STORY_DIMENSIONS.find((d) => d.n === n);
     const description = String(f.description ?? "").trim();
     if (!description) continue;
+    const quote = String(f.quote ?? "").trim();
+    const fix = String(f.fix ?? "").trim();
+    const title = String(f.title ?? "").trim();
     findings.push({
       section,
-      severity: f.severity === "info" ? "info" : "warning",
+      severity: normalizeSeverity(f.severity),
       // Unknown dimension numbers still carry their finding: a real problem
       // reported under the wrong number is worth more than a dropped one.
       category: dimension ? `dim${dimension.n}/${dimension.name}` : "dim0/unclassified",
       description: section ? `${section}: ${description}` : description,
       suggestion: String(f.suggestion ?? "").trim() || "Fix as described.",
+      ...(quote ? { quote } : {}),
+      // A fix with nothing to replace is not a fix: it has no span to stand in.
+      // Dropping it keeps an "accept this" control off a finding that could
+      // only ever fail to apply.
+      ...(quote && fix ? { fix } : {}),
+      ...(title ? { title } : {}),
     });
   }
   return findings;
@@ -391,7 +458,7 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
     signal?.throwIfAborted();
     const sections = splitSections(markdown);
     if (sections.length === 0) {
-      return { at: new Date().toISOString(), path: options.path, findings: [], rounds: 0 };
+      return { at: new Date().toISOString(), path: options.path, findings: [], rounds: 0, located: [] };
     }
 
     onProgress?.(round === 0
@@ -408,8 +475,16 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
       findings.push(...parseStoryFindings(out, section.heading));
     }
 
+    /*
+     * A note is worth knowing and not worth a rewrite; everything above one is.
+     *
+     * This read `severity === "warning"` when warning was the top severity.
+     * Now that a contradiction of the book's own canon can be reported as
+     * blocking, the same test would have quietly excluded the most serious
+     * findings from the revise pass — the only ones nobody would want skipped.
+     */
     const actionable = findings.filter((f) =>
-      f.severity === "warning" && (!options.slopOnly || isStorySlopFinding(f)));
+      f.severity !== "note" && (!options.slopOnly || isStorySlopFinding(f)));
     if (!revise || round >= MAX_ROUNDS || actionable.length === 0) break;
 
     // Keep the original once, before anything is changed.
@@ -428,7 +503,35 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
     rounds = round + 1;
   }
 
-  return { at: new Date().toISOString(), path: options.path, findings, rounds };
+  /*
+   * Locate against the text as it now stands, not as it was read.
+   *
+   * A revise round rewrote whole sections, so an offset taken before it would
+   * point into prose that no longer exists. Findings from the last round are
+   * about the current file, and the ones a rule pass measured across a whole
+   * section carry no quote and stay unlocated rather than being given a span
+   * they never had.
+   */
+  const current = revise && rounds > 0 ? markdown : originalProse;
+  const at = new Date().toISOString();
+  const located = findings.map((f) => locate(toRaw(f, options.path), current, at));
+
+  return { at, path: options.path, findings, rounds, located };
+}
+
+/** A story finding in the shape the shared findings store takes. */
+function toRaw(f: StoryFinding, path: string): RawFinding {
+  return {
+    path,
+    section: f.section,
+    severity: f.severity,
+    category: f.category,
+    description: f.description,
+    suggestion: f.suggestion,
+    ...(f.quote ? { quote: f.quote } : {}),
+    ...(f.fix ? { fix: f.fix } : {}),
+    ...(f.title ? { title: f.title } : {}),
+  };
 }
 
 /** The same loop, with only the machine-made findings acted on. */
@@ -493,4 +596,86 @@ export function storyAuditReport(audit: StoryAudit): string {
     ...audit.findings.slice(0, 40).map((f) => `- [${f.category}] ${f.description} → ${f.suggestion}`),
     audit.findings.length > 40 ? `…and ${audit.findings.length - 40} more.` : "",
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * Rewrite one file to do what an editor asked, without auditing it first.
+ *
+ * The magazine had this and nothing else did: a note about a page became a
+ * finding and went through the same revise pass the checks use, so "the
+ * opening is limp" was a rewrite rather than a comment nobody reads. Every
+ * other kind of writing could only be rewritten by running a full audit and
+ * hoping it happened to object to the same thing.
+ *
+ * The note is carried as one finding per section, because a note about a file
+ * is a note about all of it and `reviseSections` works section by section. A
+ * caller that means one section says so in `sections`.
+ */
+export interface StoryReviseOptions {
+  readonly projectRoot: string;
+  readonly path: string;
+  readonly ask: StoryAskFn;
+  /** What the editor said is wrong. */
+  readonly note: string;
+  /** Limit the rewrite to these headings. Empty or absent means all of them. */
+  readonly sections?: readonly string[];
+  readonly onProgress?: (message: string) => void;
+  readonly onText?: (markdown: string) => void;
+  readonly onSection?: (heading: string) => void;
+  readonly signal?: AbortSignal;
+}
+
+export interface StoryRevised {
+  readonly path: string;
+  readonly at: string;
+  /** How many sections the pass was asked to rewrite. */
+  readonly sections: number;
+  /** Whether the file on disk actually changed. */
+  readonly changed: boolean;
+}
+
+export async function reviseStoryFile(options: StoryReviseOptions): Promise<StoryRevised> {
+  const note = options.note.trim();
+  if (!note) throw new Error("a note is required");
+
+  const absolute = safeChildPath(options.projectRoot, options.path);
+  const original = await readFile(absolute, "utf-8");
+  // The brief is not prose and must not be rewritten, reworded, or dropped.
+  const { prose, tail } = splitMachineTail(original);
+  const language = languageOf(prose);
+  const sections = splitSections(prose);
+  if (sections.length === 0) {
+    return { path: options.path, at: new Date().toISOString(), sections: 0, changed: false };
+  }
+
+  const wanted = options.sections?.length
+    ? sections.filter((s) => options.sections!.includes(s.heading))
+    : sections;
+  if (wanted.length === 0) {
+    return { path: options.path, at: new Date().toISOString(), sections: 0, changed: false };
+  }
+
+  const findings: StoryFinding[] = wanted.map((s) => ({
+    section: s.heading,
+    severity: "warning",
+    category: "feedback/editor",
+    description: note,
+    suggestion: "Do what the editor asked, and change nothing else.",
+  }));
+
+  options.onProgress?.(`Rewriting ${wanted.length} section${wanted.length === 1 ? "" : "s"}…`);
+
+  // Keep the original before anything is changed, the same way an audit does,
+  // so the same Restore button on the same screen puts it back.
+  await writeFile(absolute.replace(/(\.[^.]+)$/, ".pre-audit$1"), original, "utf-8");
+
+  const revised = await reviseSections(
+    prose, sections, findings, options.ask, language, options.signal,
+    options.onText ? (partial: string) => options.onText!(partial + tail) : undefined,
+    options.onSection,
+  );
+
+  const changed = revised !== prose;
+  if (changed) await writeFile(absolute, revised + tail, "utf-8");
+  return { path: options.path, at: new Date().toISOString(), sections: wanted.length, changed };
 }

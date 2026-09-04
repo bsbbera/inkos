@@ -8,6 +8,7 @@ import {
 import {
   Loader2,
   CheckCircle2,
+  Pencil,
   XCircle,
   ChevronDown,
   Wrench,
@@ -28,28 +29,28 @@ function ExecStatusBadge({ status }: { status: ToolExecution["status"] }) {
   switch (status) {
     case "running":
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-primary">
+        <span className="inline-flex items-center gap-1 text-[11px] text-primary">
           <Loader2 size={12} className="animate-spin" />
           <span>{tr("执行中", "Running")}</span>
         </span>
       );
     case "processing":
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
           <Loader2 size={12} className="animate-spin" style={{ animationDuration: "2s" }} />
           <span>{tr("处理结果", "Processing result")}</span>
         </span>
       );
     case "completed":
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-success text-success">
+        <span className="inline-flex items-center gap-1 text-[11px] text-success text-success">
           <CheckCircle2 size={12} />
           <span>{tr("已完成", "Completed")}</span>
         </span>
       );
     case "error":
       return (
-        <span className="inline-flex items-center gap-1 text-xs text-destructive">
+        <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
           <XCircle size={12} />
           <span>{tr("失败", "Failed")}</span>
         </span>
@@ -214,7 +215,7 @@ function SkillUsagePreview({ exec }: { exec: ToolExecution }) {
   const skills = getExecutionSkillIds(exec);
   if (skills.length === 0) return null;
   return (
-    <div className="mx-3 mb-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+    <div className="mx-3 mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
       <span className="font-semibold text-foreground/80">{tr("专业 Skill", "Professional skills")}</span>
       {skills.map((skill) => (
         <span key={skill} className="rounded-full border border-border/50 bg-background/60 px-2 py-0.5 font-mono text-[11px]">
@@ -290,7 +291,7 @@ function ChapterContextTracePreview({ exec }: { exec: ToolExecution }) {
   const traces = getChapterContextTraceDetails(exec);
   if (traces.length === 0) return null;
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-border/50 bg-background/55 px-3 py-2.5 text-xs">
+    <div className="mx-3 mb-3 mt-1 rounded-xl border border-border/50 bg-background/55 px-3 py-2.5 text-[11px]">
       <div className="font-semibold text-foreground">{tr("本轮参考依据", "Context used this turn")}</div>
       <div className="mt-2 space-y-2">
         {traces.map((trace) => (
@@ -665,7 +666,7 @@ function ShortFictionResultPreview({ exec }: { exec: ToolExecution }) {
   if (!coverPath || !/\.(png|jpe?g|webp)$/iu.test(coverPath)) {
     if (!coverError) return null;
     return (
-      <div className="mx-3 mb-3 mt-1 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+      <div className="mx-3 mb-3 mt-1 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
         {tr("封面未生成：", "Cover not generated: ")}{coverError}
       </div>
     );
@@ -882,39 +883,63 @@ function ProposedActionPreview({
   const locked = resolution !== undefined;
   const contractRows = getProposedActionContractRows(details);
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3.5">
-      <div className="text-[17px] leading-6 font-semibold text-foreground">{details.title ?? tr("确认执行", "Confirm action")}</div>
-      {details.summary && (
-        <div className="mt-1.5 whitespace-pre-wrap break-words text-[15px] leading-7 text-muted-foreground">{details.summary}</div>
-      )}
-      <div className="mt-2.5 whitespace-pre-wrap break-words rounded-lg bg-background/70 px-3 py-2.5 text-[15px] leading-7 text-muted-foreground">
-        {details.instruction}
-      </div>
-      {contractRows.length > 0 && (
-        <div className="mt-2 space-y-1.5">
+    /* A proposed action waits for a person. It is a gate, in the middle of a
+       conversation, and the system draws every gate the same way — charcoal
+       ground, vermilion edge, exactly one filled button. */
+    <div
+      className={`gate${locked ? " is-done" : " is-open"}`}
+      style={{ background: "var(--char-2)", borderColor: "var(--vermilion-ink)" }}
+    >
+      <span className="glyph" style={{ width: 32, height: 32, borderColor: "var(--vermilion)", color: "var(--vermilion-ink)" }}>
+        <Pencil size={15} aria-hidden="true" />
+      </span>
+      <span className="grow" style={{ minWidth: 0 }}>
+        <span className="what" style={{ display: "block", color: "var(--on-char)" }}>
+          {details.title ?? tr("确认执行", "Confirm action")}
+        </span>
+        {details.summary && (
+          <span className="when" style={{ display: "block", color: "var(--on-char-2)" }}>{details.summary}</span>
+        )}
+      </span>
+      {/* What it would actually run, and the terms it would run under. The
+          mock's gate has neither because its example needs neither; a gate
+          that hides the instruction it is asking permission for does not. */}
+      {(details.instruction || contractRows.length > 0) && (
+        <div style={{ width: "100%" }}>
+          {details.instruction && (
+            <div
+              className="whitespace-pre-wrap break-words"
+              style={{ background: "var(--char)", borderRadius: "var(--r-ctl)", padding: "9px 11px", fontSize: 14, color: "var(--on-char-2)" }}
+            >
+              {details.instruction}
+            </div>
+          )}
           {contractRows.map((row) => (
-            <div key={row.label} className="rounded-lg border border-border/50 bg-background/60 px-3 py-2.5">
-              <div className="text-[13px] leading-5 font-semibold text-foreground">{row.label}</div>
-              <div className="mt-1 whitespace-pre-wrap break-words text-[15px] leading-7 text-muted-foreground">{row.value}</div>
+            <div
+              key={row.label}
+              style={{ marginTop: 6, border: "1px solid var(--line-char)", borderRadius: "var(--r-ctl)", padding: "9px 11px" }}
+            >
+              <div className="label">{row.label}</div>
+              <div className="whitespace-pre-wrap break-words" style={{ marginTop: 3, fontSize: 14, color: "var(--on-char-2)" }}>{row.value}</div>
             </div>
           ))}
         </div>
       )}
       {resolution === "confirmed" ? (
-        <div className="mt-3 flex items-center gap-1.5 text-[15px] leading-6 font-medium text-primary">
+        <div className="rowflex gap-1.5" style={{ fontSize: 14, color: "var(--vermilion-soft)" }}>
           <Check size={15} className="shrink-0" />
           {tr("已执行", "Executed")}
         </div>
       ) : resolution === "rejected" ? (
-        <div className="mt-3 text-[15px] leading-6 font-medium text-muted-foreground">{tr("已取消", "Cancelled")}</div>
+        <div className="dim" style={{ fontSize: 14 }}>{tr("已取消", "Cancelled")}</div>
       ) : (
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="rowflex gap-2">
           <button
             type="button"
             data-testid="confirm-action"
             onClick={() => onProposedAction?.(details)}
             disabled={!onProposedAction || streaming || locked}
-            className="rounded-lg bg-primary px-3.5 py-2 text-[15px] leading-6 font-medium text-primary-foreground disabled:opacity-50"
+            className="btn btn-sm"
           >
             {streaming ? tr("执行中…", "Running…") : tr("继续执行", "Continue")}
           </button>
@@ -922,7 +947,7 @@ function ProposedActionPreview({
             type="button"
             onClick={() => onRejectProposedAction?.(details)}
             disabled={!onRejectProposedAction || streaming || locked}
-            className="rounded-lg border border-border/60 bg-background/80 px-3.5 py-2 text-[15px] leading-6 font-medium text-muted-foreground disabled:opacity-50"
+            className="btn btn-line btn-sm"
           >
             {tr("取消", "Cancel")}
           </button>
@@ -948,7 +973,7 @@ function PlayResultPreview({ exec }: { exec: ToolExecution }) {
       <div className="mb-2 text-[16px] leading-6 font-semibold text-primary">
         {label}
       </div>
-      <div className="whitespace-pre-wrap text-base leading-7 text-foreground">{details.sceneText}</div>
+      <div className="whitespace-pre-wrap text-[14px] leading-7 text-foreground">{details.sceneText}</div>
       <PlaySceneImagePreview details={details} />
     </div>
   );
@@ -969,7 +994,7 @@ function PlayEditPreview({ exec }: { exec: ToolExecution }) {
   return (
     <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
       <div className="text-[16px] leading-6 font-semibold text-primary">{tr("互动世界设定已更新", "Interactive world settings updated")}</div>
-      <div className="mt-1 text-xs leading-5 text-muted-foreground">
+      <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
         {changes.length > 0 ? changes.join(" · ") : tr("已写入当前世界。", "Written to the current world.")}
       </div>
     </div>
@@ -1029,7 +1054,7 @@ export function PipelineResultDetails({ result, defaultOpen }: { result: string;
     <details
       key={defaultOpen ? "result-default-open" : "result-default-collapsed"}
       open={defaultOpen}
-      className="mx-3 mb-3 mt-1 rounded-lg border border-border/40 bg-background/60 px-2.5 py-2 text-xs"
+      className="mx-3 mb-3 mt-1 rounded-lg border border-border/40 bg-background/60 px-2.5 py-2 text-[11px]"
     >
       <summary className="cursor-pointer select-none font-medium text-muted-foreground hover:text-foreground">
         {tr("查看操作结果", "View result")}
@@ -1120,7 +1145,7 @@ function PipelineExecution({
                 <li
                   key={stage.label}
                   className={[
-                    "flex items-start gap-2 rounded-lg px-2 py-1.5 text-xs",
+                    "flex items-start gap-2 rounded-lg px-2 py-1.5 text-[11px]",
                     stage.status === "active" ? "bg-primary/5 text-foreground" : "text-muted-foreground",
                   ].join(" ")}
                 >
@@ -1144,7 +1169,7 @@ function PipelineExecution({
                 const isError = log.startsWith("[error]") || /error/i.test(log);
                 const isWarn = log.startsWith("[warning]") || /warning|警告/i.test(log);
                 return (
-                  <li key={i} className={`text-xs font-mono break-words ${isError ? "text-destructive" : isWarn ? "text-warning text-warning" : "text-muted-foreground"}`}>
+                  <li key={i} className={`text-[11px] font-mono break-words ${isError ? "text-destructive" : isWarn ? "text-warning text-warning" : "text-muted-foreground"}`}>
                     {log}
                   </li>
                 );
@@ -1152,7 +1177,7 @@ function PipelineExecution({
             </ul>
           )}
           {exec.status === "error" && exec.error && (
-            <div className="mt-2 text-xs text-destructive bg-destructive/5 rounded-lg px-2.5 py-2">
+            <div className="mt-2 text-[11px] text-destructive bg-destructive/5 rounded-lg px-2.5 py-2">
               {exec.error}
             </div>
           )}
@@ -1205,31 +1230,42 @@ export function UtilityExecutionRow({ exec }: { exec: ToolExecution }) {
   );
 }
 
-function UtilityToolsGroup({ execs }: { execs: ToolExecution[] }) {
-  const [open, setOpen] = useState(false);
-  const allDone = execs.every(e => e.status === "completed" || e.status === "error");
-  const hasError = execs.some(e => e.status === "error");
+/**
+ * What the model read before it answered, stated plainly.
+ *
+ * These were folded behind a "3 file operations" disclosure, which is the one
+ * thing they must not be: the mock's "Reading first" block exists so a person
+ * can see the answer was grounded in the book without asking for it. A row is
+ * the tool, the file, and one measurement — never a collapsed count.
+ */
+function toolMetric(exec: ToolExecution): string | null {
+  const result = typeof exec.result === "string" ? exec.result.trim() : "";
+  if (!result) return null;
+  const lines = result.split(/\r?\n/).length;
+  return lines > 1 ? `${lines.toLocaleString()} lines` : `${result.length.toLocaleString()} chars`;
+}
 
+function UtilityToolsGroup({ execs }: { execs: ToolExecution[] }) {
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer text-xs text-muted-foreground">
-        <Wrench size={12} />
-        <span>{tr(`${execs.length} 个文件操作`, `${execs.length} file operation${execs.length === 1 ? "" : "s"}`)}</span>
-        {allDone && !hasError && <CheckCircle2 size={10} className="text-success text-success" />}
-        {hasError && <XCircle size={10} className="text-destructive" />}
-        {!allDone && <Loader2 size={10} className="animate-spin text-primary" />}
-        <ChevronDown size={10} className={`transition-transform ${open ? "rotate-180" : ""}`} />
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <ul className="pl-6 space-y-0.5 py-1">
-          {execs.map((exec) => (
-            <li key={exec.id} className="text-xs text-muted-foreground">
-              <UtilityExecutionRow exec={exec} />
-            </li>
-          ))}
-        </ul>
-      </CollapsibleContent>
-    </Collapsible>
+    <div className="stack" style={{ gap: 7 }}>
+      {execs.map((exec) => {
+        const target = String(exec.args?.path ?? exec.args?.pattern ?? "");
+        const metric = toolMetric(exec);
+        return (
+          <div key={exec.id} className="tool">
+            {exec.status === "error"
+              ? <XCircle size={14} className="shrink-0 text-destructive" aria-hidden="true" />
+              : exec.status === "completed"
+                ? <CheckCircle2 size={14} className="tick shrink-0" aria-hidden="true" />
+                : <Loader2 size={14} className="shrink-0 animate-spin text-primary" aria-hidden="true" />}
+            <span className="capitalize">{exec.tool.replace(/_/g, " ")}</span>
+            {target ? <span className="mono trunc">{target}</span> : null}
+            <span className="grow" />
+            {metric ? <span className="mono dim" style={{ fontSize: 11 }}>{metric}</span> : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 

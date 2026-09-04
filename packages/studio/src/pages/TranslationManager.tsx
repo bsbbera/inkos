@@ -257,12 +257,6 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
-        <span className="text-border">/</span>
-        <span>{t("nav.translation")}</span>
-      </div>
-
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="q-title text-3xl flex items-center gap-3">

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, beforeEach } from "vitest";
 import { setAppLanguage } from "./app-language";
 import {
   FOUNDATION_FILE_LABELS,
@@ -12,6 +12,17 @@ import {
   roleFromPath,
   stripStructuralMarkers,
 } from "./truth-display";
+
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
 
 describe("frontmatterToCards", () => {
   it("maps story-meaningful fields to friendly Chinese cards", () => {
@@ -246,7 +257,7 @@ describe("FOUNDATION_FILE_LABELS", () => {
 
 describe("English UI (app language = en)", () => {
   afterEach(() => {
-    setAppLanguage("zh");
+    setAppLanguage("en");
   });
 
   it("frontmatterToCards emits English labels and fanfic-mode names", () => {

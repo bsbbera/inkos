@@ -2,11 +2,13 @@ import { useCallback, useRef, useEffect, useMemo, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
-import { toFamilies } from "./model-picker-state";
+import { modelLabel, scopeToProvider, toFamilies } from "./model-picker-state";
+import { modelVendor } from "./model-vendor";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { ChatAttachmentPayload } from "../store/chat/types";
 import { chatSelectors, useChatStore } from "../store/chat";
 import type { ChatSessionKind } from "../store/chat";
+import { modelBar } from "./chat-model-label";
 import { useServiceStore } from "../store/service";
 import {
   DropdownMenu,
@@ -21,6 +23,9 @@ import {
 } from "../components/ai-elements/reasoning";
 import { ChatMessage } from "../components/chat/ChatMessage";
 import { QuickActions } from "../components/chat/QuickActions";
+import { ChatContextRail } from "../components/chat/ChatContextRail";
+import { ChatArtifactsRail } from "../components/chat/ChatArtifactsRail";
+import { sessionFiles } from "../components/chat/chat-session-files";
 import { ToolExecutionSteps, type ProposedActionDetails } from "../components/chat/ToolExecutionSteps";
 import {
   buildNarrativeForecastRecheckInstruction,
@@ -43,7 +48,10 @@ import {
   Palette,
   RotateCcw,
   Square,
+  Sparkles,
+  Cpu,
   Plus,
+  Layers,
 } from "lucide-react";
 import {
   Message,
@@ -63,8 +71,11 @@ import {
   shouldShowPlayChoicePanel,
 } from "./chat-page-state";
 import {
+  applySlashPick,
+  matchSkills,
   serializeSkillFolder,
   selectedSkillIdsForSend,
+  slashToken,
   toggleSelectedSkillIds,
   type StudioSkill,
 } from "./skill-ui-state";
@@ -75,6 +86,7 @@ interface Nav {
   toDashboard: () => void;
   toBook: (id: string) => void;
   toServices: () => void;
+  toAgents: () => void;
   toFilm: (projectId: string) => void;
   toFilmStudio: (projectId: string) => void;
 }
@@ -213,8 +225,8 @@ function SkillPickerPanel({
       <div className="border-b border-border/40 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-bold">{isZh ? "选择 Agent Skill" : "Select Agent Skills"}</div>
-            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+            <div className="text-[14px] font-bold">{isZh ? "选择 Agent Skill" : "Select Agent Skills"}</div>
+            <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
               {isZh
                 ? "Agent 会按当前意图自主调用；点选 Skill 可强制它随下一条消息启用。"
                 : "The agent can choose a skill from your intent; selecting one forces it for the next message."}
@@ -225,7 +237,7 @@ function SkillPickerPanel({
               type="button"
               onClick={() => folderInputRef.current?.click()}
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
             >
               <FolderUp size={13} />
               {isZh ? "导入" : "Import"}
@@ -245,9 +257,9 @@ function SkillPickerPanel({
         </div>
       </div>
       <div className="max-h-[380px] overflow-y-auto p-3">
-        {createError ? <div className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-xs text-destructive">{createError}</div> : null}
+        {createError ? <div className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-[11px] text-destructive">{createError}</div> : null}
         {diagnostics?.length ? (
-          <div className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          <div className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
             <div className="font-semibold">{isZh ? "部分外部 Skill 未加载" : "Some external skills were not loaded"}</div>
             {diagnostics.slice(0, 4).map((item, index) => (
               <div key={`${item.path ?? "skill"}-${index}`} className="mt-1 break-all">
@@ -257,11 +269,11 @@ function SkillPickerPanel({
           </div>
         ) : null}
         {loading ? (
-          <div className="px-2 py-6 text-center text-sm text-muted-foreground">{isZh ? "加载 Skill..." : "Loading skills..."}</div>
+          <div className="px-2 py-6 text-center text-[14px] text-muted-foreground">{isZh ? "加载 Skill..." : "Loading skills..."}</div>
         ) : error ? (
-          <div className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div>
+          <div className="rounded-xl bg-destructive/10 px-3 py-2 text-[14px] text-destructive">{error}</div>
         ) : skills.length === 0 ? (
-          <div className="px-2 py-6 text-center text-sm text-muted-foreground">{isZh ? "还没有可用 Skill。" : "No skills available yet."}</div>
+          <div className="px-2 py-6 text-center text-[14px] text-muted-foreground">{isZh ? "还没有可用 Skill。" : "No skills available yet."}</div>
         ) : (
           <div className="grid gap-2 md:grid-cols-2">
             {skills.map((skill) => {
@@ -279,13 +291,13 @@ function SkillPickerPanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <div className="truncate text-sm font-semibold">{skill.name}</div>
+                        <div className="truncate text-[14px] font-semibold">{skill.name}</div>
                         <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
                           {skill.source ?? "skill"}
                         </span>
                       </div>
                       <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">@{skill.id}</div>
-                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                      <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{skill.description}</p>
                     </div>
                   </div>
                 </button>
@@ -301,11 +313,24 @@ function SkillPickerPanel({
 
 // -- Component --
 
+/**
+ * Words written so far, for the label on a streaming turn.
+ *
+ * CJK has no spaces, so splitting on whitespace would report one word for a
+ * whole chapter. Characters are the unit a Chinese reader counts in anyway.
+ */
+function wordsSoFar(text: string): number {
+  const cjk = (text.match(/[一-鿿]/g) ?? []).length;
+  if (cjk > 0) return cjk;
+  return text.trim() ? text.trim().split(/\s+/).length : 0;
+}
+
 export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-create", nav, theme, t, sse: _sse }: ChatPageProps) {
   // -- Store selectors --
   const messages = useChatStore(chatSelectors.activeMessages);
   const activeSession = useChatStore(chatSelectors.activeSession);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const [artifactsOpen, setArtifactsOpen] = useState(true);
   const input = useChatStore((s) => s.input);
   const loading = useChatStore(chatSelectors.isActiveSessionStreaming);
   const chatStreaming = useChatStore(chatSelectors.isActiveSessionChatStreaming);
@@ -339,6 +364,16 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       : mode === "book-create" ? "book-create"
       : activeBookId ? "book" : "chat");
   const playMode = activeSession?.playMode;
+
+  // The count on the Artifacts button is the same derivation the rail shows,
+  // so the number and the column can never disagree.
+  // The file the current turn is writing into, when a tool in it named one.
+  const streamTarget = useMemo(() => {
+    const last = messages[messages.length - 1];
+    return sessionFiles(last ? [last] : []).find((f) => f.busy)?.name ?? null;
+  }, [messages]);
+
+  const artifactCount = useMemo(() => sessionFiles(activeSession?.messages).length, [activeSession?.messages]);
   // A play session must pick its playstyle (点着玩 / 自由玩) before chatting.
   const needsPlayModeChoice = currentSessionKind === "play" && !playMode;
   // Even in 点着玩 the world is shaped by free typing first; the choice panel
@@ -364,6 +399,11 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   const [playImageSettings, setPlayImageSettings] = useState<PlayImageSettings>({ actors: false, moments: false, inventory: false });
   const [playImageCoverReady, setPlayImageCoverReady] = useState(false);
   const [skillPanelOpen, setSkillPanelOpen] = useState(false);
+  /* Where the caret is, which `input` alone does not say — a `/` is only a
+     menu when you are standing in it. Escape closes the menu without closing
+     the token, so the slash can be typed as a literal. */
+  const [caret, setCaret] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [skillSaving, setSkillSaving] = useState(false);
   const [skillCreateError, setSkillCreateError] = useState<string | null>(null);
@@ -372,6 +412,12 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   const { data: skillsData, loading: skillsLoading, error: skillsError, refetch: refetchSkills } = useApi<SkillsResponse>("/skills");
   const worldPanelInsetClass = currentSessionKind === "play" && worldPanelOpen ? "lg:pr-[380px]" : "";
   const availableSkills = skillsData?.skills ?? [];
+  /* `/` in the composer opens the skills it could mean. Anchored to the head
+     of a line by `slashToken`, so the paths this app prints constantly —
+     `shorts/the-second-law/final/full.md` — never trigger it. */
+  const slash = slashDismissed ? null : slashToken(input, caret);
+  const slashSkills = slash ? matchSkills(availableSkills, slash.query) : [];
+  const slashOpen = slash !== null && Boolean(activeSessionId) && slashSkills.length > 0;
   const selectedSkills = useMemo(
     () => selectedSkillIds
       .map((id) => availableSkills.find((skill) => skill.id === id))
@@ -446,6 +492,27 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       .map((s) => ({ service: s.service, label: s.label, models: modelsByService[s.service]! }));
   }, [services, modelsByService]);
 
+  /**
+   * Which model each agent resolved to, so the bar can name the one running.
+   * Read once: pins change on the setup page, not mid-conversation.
+   */
+  const [routes, setRoutes] = useState<Record<string, { service?: string; model: string }>>({});
+  const [roleLabels, setRoleLabels] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let cancelled = false;
+    fetchJson<{
+      routes: Record<string, { service?: string; model: string }>;
+      roster: ReadonlyArray<{ id: string; label: string }>;
+    }>("/project/model-routing")
+      .then((table) => {
+        if (cancelled) return;
+        setRoutes(table.routes ?? {});
+        setRoleLabels(Object.fromEntries((table.roster ?? []).map((r) => [r.id, r.label])));
+      })
+      .catch(() => { /* the bar falls back to the default model's name */ });
+    return () => { cancelled = true; };
+  }, []);
+
   const selectedModelLabel = useMemo(() => {
     if (!selectedModel) return isZh ? "选择模型" : "Select model";
     const group = groupedModels.find((item) => item.service === selectedService);
@@ -453,6 +520,18 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     const modelLabel = model?.name ?? selectedModel;
     return group ? `${group.label} · ${modelLabel}` : modelLabel;
   }, [groupedModels, selectedModel, selectedService, isZh]);
+
+  // Planning, writing and auditing can each run on a different model. The bar
+  // names whichever is answering right now, and the default between turns.
+  const runningBar = useMemo(() => {
+    const last = messages[messages.length - 1];
+    return modelBar({
+      ...(last?.toolExecutions ? { tools: last.toolExecutions } : {}),
+      routes,
+      roleLabels,
+      fallback: selectedModelLabel,
+    });
+  }, [messages, routes, roleLabels, selectedModelLabel]);
 
   // Same CLI, same interface, different model: devin serves both glm-5-2,
   // which cannot read images, and kimi, which can. Sending an image to the
@@ -477,14 +556,30 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
    * One app, one model: the choice is written to the project config, which is
    * where all of them read it from.
    */
+  /** Set when the project could not be told which model was picked. */
+  const [modelSaveError, setModelSaveError] = useState<string | null>(null);
+
   const chooseModel = useCallback((model: string, service: string) => {
     setSelectedModel(model, service);
     setConfiguredModelSelection({ service, model });
-    void putApi("/project/default-model", { defaultModel: model, service }).catch(() => {
-      // The chat itself sends the model with each turn, so a failed save costs
-      // the pipelines the new choice, not this conversation.
-    });
-  }, [setSelectedModel]);
+    // Sent with the choice: for a model served from this machine the catalogue
+    // just read is the only place its real context window is stated, and the
+    // engine would otherwise assume a generic 128k for it.
+    const chosen = groupedModels
+      .find((group) => group.service === service)?.models
+      .find((entry) => entry.id === model);
+    const contextWindow = chosen?.contextWindow && chosen.contextWindow > 0 ? chosen.contextWindow : undefined;
+    /* Said out loud when it fails. The chat sends its model with each turn, so
+       this conversation is fine either way — but every pipeline reads
+       llm.defaultModel, and a save that failed silently left production running
+       a model the composer had stopped showing. That is not a difference anyone
+       can see until a run fails on a model they thought they had changed. */
+    void putApi("/project/default-model", { defaultModel: model, service, contextWindow })
+      .then(() => setModelSaveError(null))
+      .catch((error: unknown) => {
+        setModelSaveError(error instanceof Error ? error.message : String(error));
+      });
+  }, [setSelectedModel, groupedModels]);
 
   // Auto-select from saved service config first, then fall back to the first available model.
   useEffect(() => {
@@ -838,7 +933,54 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   })();
 
   return (
-    <div className="flex flex-col h-full flex-1 min-w-0 relative">
+    /* The conversation, as the mockup draws it: what it is about on the left,
+       what it made on the right, and between them a `.convo` column holding a
+       putty topbar over a charcoal card. Charcoal is not a theme here — putty
+       is the app, charcoal is the manuscript, and chat is manuscript.
+
+       The rails live here rather than beside this page in the router, because
+       the Artifacts count and its column are one thing and were two. */
+    <>
+      <ChatContextRail
+        {...(activeBookId ? { bookId: activeBookId } : {})}
+        onReference={(text) => setInput(input ? `${input} ${text}` : text)}
+      />
+      <div className="convo">
+      {/* What this conversation has made, and a way to start a clean one. The
+          model in use lives in the app topbar above; saying it twice on one
+          screen is how it ended up disagreeing with itself. */}
+      <div className="topbar shrink-0">
+        <div className="crumbs grow">
+          {activeBookId ? (
+            <>
+              <a href={`#/book/${activeBookId}`}>{activeBookId}</a>
+              <span className="sep">/</span>
+            </>
+          ) : null}
+          <h1>{isZh ? "对话" : "Chat"}</h1>
+        </div>
+        <span className="pill mono">{runningBar.text}</span>
+        <button type="button" className="btn btn-quiet btn-sm" onClick={() => setArtifactsOpen((open) => !open)}>
+          <Layers size={15} aria-hidden="true" />
+          {isZh ? "产出" : "Artifacts"}
+          <span className="pill" style={{ marginLeft: 4, fontSize: 11 }}>{artifactCount}</span>
+        </button>
+        <button
+          type="button"
+          className="btn btn-quiet btn-sm"
+          onClick={() => { void createSession(activeBookId ?? null, currentSessionKind); }}
+        >
+          <Plus size={15} aria-hidden="true" />
+          {isZh ? "新会话" : "New session"}
+        </button>
+      </div>
+
+      <div className="dark crop">
+        <span
+          className="disc dots dots-light"
+          style={{ width: 260, height: 260, right: -120, top: -130 }}
+          aria-hidden="true"
+        />
       {/* Message scroll area */}
       <div
         ref={scrollRef}
@@ -850,7 +992,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             scrollHeight: target.scrollHeight,
           });
         }}
-        className={`chat-message-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable] px-4 py-6 transition-[padding] duration-200 ${worldPanelInsetClass}`}
+        className={`chat-message-scroll flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges] px-[clamp(16px,3vw,32px)] pt-6 pb-2 transition-[padding] duration-200 ${worldPanelInsetClass}`}
       >
         {needsPlayModeChoice ? (
           <div className="flex h-full items-center justify-center px-4 select-none">
@@ -888,8 +1030,8 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     >
                       <span className="q-glyph" aria-hidden="true">{opt.glyph}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm font-semibold text-foreground">{opt.title}</span>
-                        <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">{opt.note}</span>
+                        <span className="block text-[14px] font-semibold text-foreground">{opt.title}</span>
+                        <span className="mt-0.5 block text-[11px] leading-5 text-muted-foreground">{opt.note}</span>
                       </span>
                       <ChevronRight size={16} className="q-row-act shrink-0 text-primary" aria-hidden="true" />
                     </button>
@@ -912,17 +1054,25 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                 >
                   <BotMessageSquare size={20} />
                 </span>
-                <p className="mt-5 text-sm leading-7 text-muted-foreground">{emptyGuidance}</p>
+                <p className="mt-5 text-[14px] leading-7 text-muted-foreground">{emptyGuidance}</p>
               </div>
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto space-y-4">
+          /* `.thread`, the mock's own grid, at its own measure. This was a
+             stack of Tailwind utilities that happened to look similar and drifted
+             from the system the rest of the app renders with. */
+          <div className="thread" style={{ maxWidth: 820, margin: "0 auto" }}>
             {messages.map((msg, i) => (
               <div key={`${msg.timestamp}-${i}`}>
                 {msg.role === "user" ? (
                   /* User message */
-                  <ChatMessage role="user" content={msg.content} timestamp={msg.timestamp} theme={theme} />
+                  <ChatMessage
+                    role="user"
+                    content={msg.content}
+                    timestamp={msg.timestamp}
+                    {...(msg.chips ? { chips: msg.chips } : {})}
+                  />
                 ) : msg.parts && msg.parts.length > 0 ? (
                   /* Assistant message — parts-based rendering (chronological) */
                   /* Merge consecutive utility tool parts into one group */
@@ -963,26 +1113,58 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                           );
                         }
                         if (item.kind === "tools") {
+                          // Same turn shell as anything else Quire says, because
+                          // what it read is part of the answer, not chrome
+                          // beside it. The label says which part.
                           return (
-                            <ToolExecutionSteps
-                              key={`x-${item.startIdx}`}
-                              executions={item.parts.map(p => p.execution)}
-                              onProposedAction={handleProposedAction}
-                              onRejectProposedAction={handleRejectProposedAction}
-                              onOpenFilmStudio={nav.toFilmStudio}
-                              onSelectNarrativeBranch={handleSelectNarrativeBranch}
-                              onRecheckNarrativeForecast={handleRecheckNarrativeForecast}
-                            />
+                            <div key={`x-${item.startIdx}`} className="msg">
+                              <span className="who-av model" aria-hidden="true">Q</span>
+                              <div className="body">
+                                <div className="tag">{isZh ? "先读了" : "Reading first"}</div>
+                                <ToolExecutionSteps
+                                  executions={item.parts.map(p => p.execution)}
+                                  onProposedAction={handleProposedAction}
+                                  onRejectProposedAction={handleRejectProposedAction}
+                                  onOpenFilmStudio={nav.toFilmStudio}
+                                  onSelectNarrativeBranch={handleSelectNarrativeBranch}
+                                  onRecheckNarrativeForecast={handleRecheckNarrativeForecast}
+                                />
+                              </div>
+                            </div>
                           );
                         }
                         if (item.kind === "text" && item.part.content) {
+                          const streamingThis = chatStreaming && i === messages.length - 1;
                           return (
                             <ChatMessage
                               key={`c-${item.pi}`}
                               role="assistant"
                               content={item.part.content}
                               timestamp={msg.timestamp}
-                              theme={theme}
+                              // While it writes, the label counts. The mock says
+                              // "380 words so far" because a length is the one
+                              // thing a reader cannot judge mid-stream.
+                              {...(streamingThis
+                                ? {
+                                    tag: `${isZh ? "写作中" : "Writing"} · ${wordsSoFar(item.part.content)} ${isZh ? "字" : "words so far"}`,
+                                    streaming: true,
+                                    footer: (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="btn btn-line btn-sm"
+                                          onClick={() => { if (activeSessionId) void abortSession(activeSessionId); }}
+                                        >
+                                          {isZh ? "停止" : "Stop"}
+                                        </button>
+                                        <span className="dim" style={{ fontSize: 11 }}>
+                                          {isZh ? "正在写入" : "Streaming into"}{" "}
+                                          <span className="mono">{streamTarget ?? (isZh ? "本次会话" : "this session")}</span>
+                                        </span>
+                                      </>
+                                    ),
+                                  }
+                                : {})}
                             />
                           );
                         }
@@ -996,7 +1178,6 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     role={msg.role}
                     content={msg.content}
                     timestamp={msg.timestamp}
-                    theme={theme}
                   />
                 )}
               </div>
@@ -1006,7 +1187,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             {loading && !isStreaming && (
               <Message from="assistant">
                 <MessageContent>
-                  <span className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                  <span className="flex items-center gap-2.5 text-[14px] text-muted-foreground">
                     <span className="q-thinking" aria-hidden="true"><i /><i /><i /></span>
                     {isZh ? "思考中" : "Thinking"}
                   </span>
@@ -1019,9 +1200,9 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       </div>
 
       {/* Quick actions (only when a book is active) */}
-      {hasBook && !showChoicePanel && (
-        <div className={`shrink-0 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-          <div className="max-w-3xl mx-auto w-full px-4">
+      {!showChoicePanel && (
+        <div className={`shrink-0 px-[clamp(16px,3vw,32px)] transition-[padding] duration-200 ${worldPanelInsetClass}`}>
+          <div style={{ maxWidth: 820, margin: "0 auto" }} className="w-full">
             <QuickActions
               onAction={handleQuickAction}
               disabled={loading || !activeSessionId}
@@ -1052,15 +1233,15 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       {/* 重试上一条失败的聊天消息（issue #335）：只针对聊天轮失败；
           后台生产任务的失败由任务卡自己展示，不在这里出现。 */}
       {lastFailedSend && !chatStreaming && activeSessionId ? (
-        <div className={`shrink-0 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-          <div className="max-w-3xl mx-auto w-full px-4 pb-2">
+        <div className={`shrink-0 px-[clamp(16px,3vw,32px)] transition-[padding] duration-200 ${worldPanelInsetClass}`}>
+          <div style={{ maxWidth: 820, margin: "0 auto" }} className="w-full pb-2">
             <button
               type="button"
               onClick={() => {
                 autoScrollPinnedRef.current = true;
                 void retryLastSend(activeSessionId);
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-secondary/30 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+              className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-secondary/30 px-3 py-1.5 text-[14px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
             >
               <RotateCcw size={14} />
               {isZh ? "重试上一条消息" : "Retry last message"}
@@ -1069,21 +1250,37 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         </div>
       ) : null}
       {needsPlayModeChoice ? null : (
-      <div className={`shrink-0 border-t border-border/40 px-4 py-3 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-        <div className="max-w-3xl mx-auto">
+      <div className={`composer shrink-0 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
+        <div style={{ maxWidth: 820, margin: "0 auto" }}>
+          {modelSaveError ? (
+            <div role="status" className="fail" style={{ marginBottom: 10, fontSize: 12 }}>
+              {isZh
+                ? `没能把模型选择写进项目配置，生产任务仍会用上一个模型：${modelSaveError}`
+                : `Could not save that model to the project, so runs will still use the previous one: ${modelSaveError}`}
+            </div>
+          ) : null}
           <div className="flex items-start gap-2">
-            <div className="relative flex-1 rounded-2xl border border-border/60 bg-card shadow-sm transition-[border-color,box-shadow] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] focus-within:border-primary/70 focus-within:shadow-md">
-              {skillPanelOpen ? (
+            <div className="box relative flex-1">
+              {skillPanelOpen || slashOpen ? (
                 <SkillPickerPanel
                   isZh={isZh}
-                  skills={availableSkills}
+                  skills={slashOpen ? slashSkills : availableSkills}
                   diagnostics={skillsData?.diagnostics}
                   selectedSkillIds={selectedSkillIds}
                   loading={skillsLoading}
                   error={skillsError}
                   saving={skillSaving}
                   createError={skillCreateError}
-                  onToggleSkill={(skillId) => setSelectedSkillIds((prev) => toggleSelectedSkillIds(prev, skillId))}
+                  onToggleSkill={(skillId) => {
+                    setSelectedSkillIds((prev) => toggleSelectedSkillIds(prev, skillId));
+                    // The skill becomes a chip, so the `/audit` that summoned
+                    // it must not also be sent as prose.
+                    if (slash) {
+                      setInput(applySlashPick(input, slash));
+                      setCaret(slash.start);
+                      textareaRef.current?.focus();
+                    }
+                  }}
                   onImport={(files) => void importProjectSkill(files)}
                 />
               ) : null}
@@ -1103,7 +1300,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   {selectedSkills.map((skill) => (
                     <span
                       key={skill.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
                     >
                       {skill.name}
                       <button
@@ -1125,7 +1322,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       {attachedFiles.map((file) => (
                         <span
                           key={`${file.name}-${file.size}-${file.lastModified}`}
-                          className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-2.5 py-1 text-xs text-muted-foreground"
+                          className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground"
                           title={`${file.name} · ${file.type || "application/octet-stream"} · ${formatFileSize(file.size)}`}
                         >
                           <Paperclip size={12} />
@@ -1143,40 +1340,54 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     </div>
                   ) : null}
                   {attachmentError ? (
-                    <div className="mt-1 text-xs leading-5 text-destructive">{attachmentError}</div>
+                    <div className="mt-1 text-[11px] leading-5 text-destructive">{attachmentError}</div>
                   ) : null}
                 </div>
               ) : null}
-              <div className="flex items-center gap-2 px-3 py-2">
-                <button
-                  type="button"
-                  onClick={() => setSkillPanelOpen((value) => !value)}
-                  disabled={loading || !activeSessionId}
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50 transition-colors disabled:opacity-30 ${skillPanelOpen || selectedSkillIds.length > 0 ? "bg-primary/10 text-primary" : "text-muted-foreground hover:border-primary/40 hover:text-primary"}`}
-                  title={isZh ? "添加 Skill" : "Add skill"}
-                  aria-label={isZh ? "添加 Skill" : "Add skill"}
-                >
-                  <Plus size={16} strokeWidth={2.4} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={!activeSessionId}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50 text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-30"
-                  title={isZh ? "上传图片或资料" : "Attach files"}
-                  aria-label={isZh ? "上传图片或资料" : "Attach files"}
-                >
-                  <Paperclip size={16} strokeWidth={2.3} />
-                </button>
+              {/*
+                The mock's composer: what you are writing on one line, and the
+                controls under it. This was a single row — a plus, a clip, the
+                field and an arrow — so the model in use, the skills attached and
+                the send key had nowhere to be said, and two of the three ended
+                up somewhere else on the screen.
+              */}
+              <div className="flex flex-col gap-2 px-3 py-2">
+                <div className="flex items-start gap-2">
                 <textarea
                   ref={textareaRef}
                   value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void onSend(input); } }}
-                  placeholder={isZh ? "输入指令..." : "Enter command..."}
+                  onChange={(e) => {
+                    setInput(e.target.value);
+                    setCaret(e.target.selectionStart ?? e.target.value.length);
+                    setSlashDismissed(false);
+                  }}
+                  onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onKeyDown={(e) => {
+                    // Escape leaves the slash on the line and takes the menu
+                    // away, so `/` can still be typed as a character.
+                    if (e.key === "Escape" && slashOpen) { e.preventDefault(); setSlashDismissed(true); return; }
+                    /* Enter picks the top match while the menu is up. Sending
+                       "/aud" as a message is never what the keystroke meant. */
+                    if (e.key === "Enter" && !e.shiftKey && slashOpen && slash) {
+                      e.preventDefault();
+                      const pick = slashSkills[0];
+                      if (pick) {
+                        setSelectedSkillIds((prev) => toggleSelectedSkillIds(prev, pick.id));
+                        setInput(applySlashPick(input, slash));
+                        setCaret(slash.start);
+                      }
+                      return;
+                    }
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void onSend(input); }
+                  }}
+                  placeholder={isZh
+                    ? "让它写一场戏、改一稿、核对一处事实。用下面的按钮附上章节或技能。"
+                    : "Ask for a scene, a revision, a fact check. Attach a chapter or a skill with the buttons below."}
                   disabled={!activeSessionId}
                   rows={1}
-                  className="flex-1 bg-transparent text-base leading-7 placeholder:text-muted-foreground/50 outline-none! border-none! ring-0! shadow-none focus:outline-none! focus:ring-0! focus:border-none! resize-none disabled:opacity-50 max-h-[200px] overflow-y-auto"
+                  className="flex-1 bg-transparent outline-none! border-none! ring-0! shadow-none focus:outline-none! focus:ring-0! focus:border-none! resize-none disabled:opacity-50 max-h-[200px] overflow-y-auto"
+                  style={{ fontSize: 14, lineHeight: 1.55, minHeight: 46 }}
                 />
                 {/*
                   * Stop is its own control, and it stays put.
@@ -1198,41 +1409,59 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     <Square size={13} fill="currentColor" />
                   </button>
                 ) : null}
+                </div>
+                <div className="tools">
                 <button
                   type="button"
-                  onClick={() => void onSend(input)}
-                  disabled={(!input.trim() && attachedFiles.length === 0) || !activeSessionId}
-                  aria-label={isZh ? "发送" : "Send message"}
-                  title={isZh ? "发送" : "Send message"}
-                  className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 shadow-sm hover:-translate-y-px hover:shadow-md active:translate-y-0 active:scale-[0.985] transition-[transform,box-shadow,opacity] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)] disabled:opacity-20 disabled:shadow-none"
+                  className="btn btn-quiet btn-sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={!activeSessionId}
                 >
-                  <ArrowUp size={14} strokeWidth={2.5} />
+                  <Paperclip size={15} aria-hidden="true" />
+                  {isZh ? "附件" : "Attach"}
                 </button>
-              </div>
-              <div className="flex items-center gap-2 px-3 pb-2 border-t border-border/20 pt-1.5">
+                <button
+                  type="button"
+                  className="btn btn-quiet btn-sm"
+                  onClick={() => setSkillPanelOpen((value) => !value)}
+                  disabled={loading || !activeSessionId}
+                >
+                  <Sparkles size={15} aria-hidden="true" />
+                  {isZh ? "技能" : "Skills"}
+                  {selectedSkillIds.length > 0 ? (
+                    <span className="pill" style={{ marginLeft: 4, fontSize: 11 }}>{selectedSkillIds.length}</span>
+                  ) : null}
+                </button>
                 {modelPickerStatus === "loading" ? (
-                  <span className="text-[15px] text-muted-foreground/40 animate-pulse">{isZh ? "加载模型..." : "Loading models..."}</span>
+                  <span className="dim animate-pulse" style={{ fontSize: 11 }}>{isZh ? "加载模型..." : "Loading models..."}</span>
                 ) : modelPickerStatus === "ready" ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-muted text-[16px] transition-colors cursor-pointer">
-                      <span className="font-medium truncate max-w-[260px]">
-                        {selectedModelLabel}
-                      </span>
-                      <ChevronDown size={17} className="text-muted-foreground" />
-                    </DropdownMenuTrigger>
-                    <ModelPickerContent
-                      groupedModels={groupedModels}
-                      selectedModel={selectedModel}
-                      selectedService={selectedService}
-                      onSelect={chooseModel}
-                      onManage={() => nav.toServices()}
-                      isZh={isZh}
-                    />
-                  </DropdownMenu>
+                  /*
+                   * Which model is answering, not which model to pick.
+                   *
+                   * Choosing here chose for the whole app — every pipeline, every
+                   * agent — from inside one conversation, which is why the model
+                   * a book was written with kept changing without anyone deciding
+                   * it should. The choice lives on the routing page now, made once
+                   * beside the agents that inherit it. This says what is running.
+                   */
+                  <button
+                    type="button"
+                    onClick={() => nav.toAgents()}
+                    title={isZh ? "在“模型与设置 → 智能体”中更改" : "Change in Models & setup → Agents"}
+                    className="btn btn-quiet btn-sm"
+                  >
+                    <Cpu size={15} aria-hidden="true" />
+                    <span className="mono trunc" style={{ fontSize: 11, maxWidth: 260 }}>
+                      {runningBar.text}
+                    </span>
+                    {runningBar.agent ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden />
+                    ) : null}
+                  </button>
                 ) : (
                   <button
                     onClick={() => nav.toServices()}
-                    className="text-[15px] text-muted-foreground/50 hover:text-primary transition-colors"
+                    className="btn btn-quiet btn-sm"
                   >
                     {isZh ? "配置模型 →" : "Set up models →"}
                   </button>
@@ -1241,17 +1470,31 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   <button
                     type="button"
                     onClick={() => setWorldPanelOpen((v) => !v)}
-                    className={`ml-auto flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[16px] font-medium transition-colors ${worldPanelOpen ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted hover:text-primary"}`}
+                    className="btn btn-quiet btn-sm"
                     title={isZh ? "查看世界：持有 / 状态 / 关系" : "View world: holdings / state / relations"}
                   >
                     <Gamepad2 size={18} />
                     {isZh ? "查看世界" : "View World"}
                   </button>
                 )}
+                <span className="grow" />
+                {/* Send ends the row, where the mock puts it: the last thing
+                    under the sentence you just wrote. */}
+                <button
+                  type="button"
+                  onClick={() => void onSend(input)}
+                  disabled={(!input.trim() && attachedFiles.length === 0) || !activeSessionId}
+                  aria-label={isZh ? "发送" : "Send message"}
+                  title={isZh ? "发送" : "Send message"}
+                  className="btn btn-sm"
+                >
+                  <ArrowUp size={15} strokeWidth={2.5} aria-hidden="true" />
+                </button>
+              </div>
               </div>
             </div>
             {currentSessionKind === "play" ? (
-              <div className="relative mt-1 shrink-0">
+              <div className="composer-aside relative mt-1 shrink-0">
                 <button
                   type="button"
                   onClick={() => setPlayImageMenuOpen((value) => !value)}
@@ -1317,8 +1560,34 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           sessionTitle={activeSession?.title ?? null}
         />
       )}
+      </div>
       <ProjectArtifactDrawer />
-    </div>
+      </div>
+      {artifactsOpen ? <ChatArtifactsRail {...(activeBookId ? { bookId: activeBookId } : {})} /> : null}
+    </>
+  );
+}
+
+/**
+ * Whose model this is, at a glance.
+ *
+ * A monogram rather than a logo: Quire ships no brand assets and will not
+ * borrow another application's. An unknown model gets an empty box of the same
+ * size, because a list where some rows are indented and some are not is harder
+ * to scan than one with a gap in it.
+ */
+function VendorMark({ modelId }: { modelId: string }) {
+  const vendor = modelVendor(modelId);
+  if (!vendor) return <span className="h-5 w-5 shrink-0" aria-hidden="true" />;
+  return (
+    <span
+      className="grid h-5 w-5 shrink-0 place-items-center rounded text-[9px] font-bold leading-none tracking-tight"
+      style={{ background: vendor.bg, color: vendor.fg }}
+      title={vendor.label}
+      aria-label={vendor.label}
+    >
+      {vendor.initials}
+    </span>
   );
 }
 
@@ -1338,7 +1607,18 @@ function ModelPickerContent({
   isZh: boolean;
 }) {
   const [search, setSearch] = useState("");
+  // Which provider's list is on screen. Starts on whatever is selected, and is
+  // the only thing the strip below changes — picking a provider must not send
+  // a request, only decide what you are choosing between.
+  const [viewService, setViewService] = useState<string | null>(selectedService);
   const filtered = useMemo(() => filterModelGroups(groupedModels, search), [groupedModels, search]);
+  // Searching looks across every provider, because a search is a question about
+  // models, not about CLIs. Browsing shows one.
+  const scoped = useMemo(
+    () => scopeToProvider(filtered, search.trim() ? null : viewService),
+    [filtered, viewService, search],
+  );
+  const shown = search.trim() ? filtered : (scoped.current ? [scoped.current] : []);
 
   return (
     <DropdownMenuContent side="top" align="start" className="w-[26rem] max-h-[28rem] flex flex-col">
@@ -1349,7 +1629,7 @@ function ModelPickerContent({
           onChange={(e) => setSearch(e.target.value)}
           placeholder={isZh ? "搜索模型…" : "Search models…"}
           aria-label={isZh ? "搜索模型" : "Search models"}
-          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/40"
+          className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/40"
           onClick={(e) => e.stopPropagation()}
           // Typing must not reach the menu, or every letter jumps the
           // selection to whatever item starts with it. Arrows, Enter and
@@ -1363,57 +1643,81 @@ function ModelPickerContent({
           }}
         />
       </div>
+      {/* The provider strip. One CLI is running your prompts; the others'
+          models are not candidates you are weighing, they are a scroll you are
+          paying for. Hidden when there is only one provider to choose. */}
+      {!search.trim() && scoped.providers.length > 1 ? (
+        <div className="flex gap-1 overflow-x-auto px-2 py-1.5 border-b border-border/30">
+          {scoped.providers.map((p) => {
+            const active = scoped.current?.service === p.service;
+            return (
+              <button
+                key={p.service}
+                type="button"
+                onClick={(e) => { e.preventDefault(); setViewService(p.service); }}
+                aria-pressed={active}
+                className={`shrink-0 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors ${
+                  active
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "border-border/50 text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="overflow-y-auto flex-1">
-        {filtered.map((group) => (
+        {shown.map((group) => (
           <div key={group.service}>
-            <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-              {group.label}
-            </div>
-            {toFamilies(group.models).map((family) => {
-              const only = family.variants.length === 1 && family.variants[0]!.variant === "";
-              const context = family.variants[0]?.contextWindow;
-              return (
-                <div key={`${group.service}:${family.base}`} className="px-2 py-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-sm truncate">{family.base.split("/").pop()}</span>
-                    {context ? (
-                      <span className="text-[11px] text-muted-foreground shrink-0">
-                        {Math.round(context / 1000)}k context
+            {/* The header only earns its place when the list is mixed, which is
+                now only while searching. */}
+            {search.trim() ? (
+              <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                {group.label}
+              </div>
+            ) : null}
+            {toFamilies(group.models).flatMap((family) =>
+              // Flat: one row per model you can actually pick. The variant grid
+              // meant reading a name, then decoding chips beside it; a list you
+              // scan beats a matrix you solve.
+              family.variants.map((v) => {
+                const isSelected = selectedModel === v.id && selectedService === group.service;
+                const context = v.contextWindow;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => onSelect(v.id, group.service)}
+                    aria-pressed={isSelected}
+                    title={v.id}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left transition-colors ${
+                      isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <VendorMark modelId={v.id} />
+                      <span className="text-[14px] truncate">
+                        {modelLabel(v, family.base)}
                       </span>
-                    ) : null}
-                  </div>
-                  {/* One row per model, its efforts as chips beside it: the
-                      three dimensions the ids encode, laid out as three
-                      dimensions instead of as 183 siblings. */}
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {family.variants.map((v) => {
-                      const isSelected = selectedModel === v.id && selectedService === group.service;
-                      return (
-                        <button
-                          key={v.id}
-                          type="button"
-                          onClick={() => onSelect(v.id, group.service)}
-                          aria-pressed={isSelected}
-                          title={v.id}
-                          className={`px-2 py-0.5 rounded-md text-[12px] border transition-colors ${
-                            isSelected
-                              ? "bg-primary text-primary-foreground border-primary"
-                              : "border-border/50 text-muted-foreground hover:bg-muted"
-                          }`}
-                        >
-                          {only ? (isZh ? "选择" : "Use") : v.variant}
-                          {isSelected ? <Check size={11} className="inline ml-1 -mt-0.5" /> : null}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+                    </span>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {context ? (
+                        <span className="text-[11px] text-muted-foreground">
+                          {Math.round(context / 1000)}k
+                        </span>
+                      ) : null}
+                      {isSelected ? <Check size={13} /> : null}
+                    </span>
+                  </button>
+                );
+              }),
+            )}
           </div>
         ))}
-        {filtered.length === 0 && (
-          <div className="px-3 py-4 text-xs text-muted-foreground/50 text-center italic">
+        {shown.length === 0 && (
+          <div className="px-3 py-4 text-[11px] text-muted-foreground/50 text-center italic">
             {isZh ? "无匹配模型" : "No model matches that"}
           </div>
         )}

@@ -19,6 +19,14 @@ export interface HealthStatus {
 
 // --- Books ---
 
+/**
+ * What GET /books actually returns.
+ *
+ * This used to name a dozen fields the endpoint never sent - `chapters`,
+ * `failedReview`, `recentRunStatus`, a numeric `pendingReviewChapters` - so
+ * anything trusting it read `undefined` and rendered "chapter undefined of
+ * undefined". The server now sends the counts, and this says only what arrives.
+ */
 export interface BookSummary {
   readonly id: string;
   readonly title: string;
@@ -26,23 +34,28 @@ export interface BookSummary {
   readonly platform: string;
   readonly genre: string;
   readonly targetChapters: number;
-  readonly chapters: number;
+  readonly chapterWordCount: number;
+  readonly language?: "zh" | "en";
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly fanficMode?: string;
+  /** Chapters that have been written: the next chapter number, minus one. */
+  readonly chaptersWritten: number;
   readonly chapterCount: number;
   readonly lastChapterNumber: number;
   readonly totalWords: number;
   readonly approvedChapters: number;
   readonly pendingReview: number;
-  readonly pendingReviewChapters: number;
-  readonly failedReview: number;
+  /** Which chapters are at the gate, so a row can name them. */
+  readonly pendingReviewChapters: readonly number[];
   readonly failedChapters: number;
-  readonly recentRunStatus?: string | null;
-  readonly updatedAt: string;
 }
 
-export interface BookDetail extends BookSummary {
-  readonly createdAt: string;
-  readonly chapterWordCount: number;
-  readonly language: "zh" | "en" | null;
+/* Everything the list carries, plus nothing extra today: the two fields that
+   used to be added here are on the summary now. `language` widens to allow an
+   explicit null, which is how "asked and answered: no language" is stored. */
+export interface BookDetail extends Omit<BookSummary, "language"> {
+  readonly language?: "zh" | "en" | null;
 }
 
 // --- Chapters ---

@@ -17,6 +17,7 @@ import {
   resolveSessionActiveBook,
   listBookSessions,
   loadBookSession,
+  summarizeSession,
   appendManualSessionMessages,
   createAndPersistBookSession,
   renameBookSession,
@@ -135,9 +136,31 @@ import {
   type AgentSessionAttachment,
   loadPublicationRegistry,
   listIssues,
+  advancePipeline,
+  approvePipelineGate,
+  ensurePipeline,
+  loadPipeline,
+  pipelineFor,
+  pipelineWaitingOn,
+  rejectPipelineGate,
+  stageSequence,
+  withdrawPipelineGate,
+  type PipelineGate,
+  type PipelineState,
+  type ProductionRef,
+  AGENT_JOBS,
+  AGENT_ROSTER,
+  AGENT_GROUP_LABELS,
+  getEndpoint,
+  normalizeOverrides,
+  resolveRoutingTable,
+  type ModelPin,
 } from "@actalk/quire-core";
 import { registerAuditRoutes } from "./audit.js";
+import { registerProductionContextRoutes } from "./production-context.js";
 import { isApproved, readAuditState } from "./audit-state.js";
+import { blockersFor, readFindings } from "./findings-store.js";
+import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
@@ -1689,6 +1712,17 @@ interface StudioBookListSummary {
   readonly genre: string;
   readonly status: string;
   readonly chaptersWritten: number;
+  /** How many chapters exist in the index, written or not. */
+  readonly chapterCount: number;
+  readonly lastChapterNumber: number;
+  readonly totalWords: number;
+  readonly approvedChapters: number;
+  /** Chapters sitting at the review gate. This is the Home queue's whole job. */
+  readonly pendingReview: number;
+  /** Which ones, so a row can say "chapter 9" rather than "a chapter". */
+  readonly pendingReviewChapters: readonly number[];
+  /** Audit-failed, rejected or state-degraded: stopped, not waiting. */
+  readonly failedChapters: number;
   readonly [key: string]: unknown;
 }
 
@@ -1805,7 +1839,39 @@ async function loadStudioBookListSummary(
 ): Promise<StudioBookListSummary> {
   const book = await state.loadBookConfig(bookId);
   const nextChapter = await state.getNextChapterNumber(bookId);
-  return { ...book, chaptersWritten: nextChapter - 1 };
+
+  /*
+   * The counts come from the chapter index, not from the book config, because
+   * the config does not carry them. This endpoint used to return the config
+   * plus a chapter count, while the shared BookSummary contract described a
+   * dozen fields it never sent - so anything reading `pendingReview` here got
+   * `undefined`, and a Home screen built on it would have reported an empty
+   * queue on a project with chapters waiting.
+   *
+   * One extra index read per book. There are tens of books, not thousands, and
+   * the alternative is a second round trip per row.
+   */
+  const chapters = await state.loadChapterIndex(bookId).catch(() => []);
+  const pendingReviewChapters = chapters
+    .filter((ch) => ch.status === "ready-for-review")
+    .map((ch) => ch.number)
+    .sort((a, b) => a - b);
+
+  return {
+    ...book,
+    chaptersWritten: nextChapter - 1,
+    chapterCount: chapters.length,
+    lastChapterNumber: chapters.reduce((n, ch) => Math.max(n, ch.number), 0),
+    totalWords: chapters.reduce((n, ch) => n + (ch.wordCount ?? 0), 0),
+    approvedChapters: chapters.filter(
+      (ch) => ch.status === "approved" || ch.status === "published",
+    ).length,
+    pendingReview: pendingReviewChapters.length,
+    pendingReviewChapters,
+    failedChapters: chapters.filter(
+      (ch) => ch.status === "audit-failed" || ch.status === "rejected" || ch.status === "state-degraded",
+    ).length,
+  };
 }
 
 function isCustomServiceId(serviceId: string): boolean {
@@ -2825,6 +2891,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         }
       : sseSink;
     const logger = createLogger({ tag: "studio", sinks: [scopedSseSink, consoleSink] });
+    touchRoutingSnapshot();
     return {
       client: overrides?.client ?? createLLMClient(currentConfig.llm),
       model: overrides?.model ?? currentConfig.llm.model,
@@ -2835,6 +2902,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       chapterReviewMode,
       revisionGate: overrides?.revisionGate ?? revisionGate,
       modelOverrides: currentConfig.modelOverrides,
+      // The two halves of a pin the engine cannot work out for itself: whether
+      // the service is up, and where it lives. Without these a pin naming
+      // another vendor resolved to its model id on the project's own client,
+      // which is a different model than the one that was asked for.
+      serviceEndpoints,
+      isModelAvailable: (target) =>
+        !target.service || reachableServices === null || reachableServices.has(target.service),
       notifyChannels: currentConfig.notify,
       logger,
       onContextCompression: (event) => {
@@ -2852,6 +2926,21 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           elapsedMs: progress.elapsedMs,
           totalChars: progress.totalChars,
           chineseChars: progress.chineseChars,
+        });
+      },
+      /**
+       * Per-agent spend, out to whoever is watching.
+       *
+       * Usage was computed on every completion and thrown away: nothing summed
+       * it and no event carried it, so the chat could show tokens for one model
+       * at best and never say which agent spent them. Now that a run may cross
+       * four models, the breakdown is the number worth having.
+       */
+      onUsage: (event) => {
+        broadcast("session:usage", {
+          ...(overrides?.sessionIdForSSE ? { sessionId: overrides.sessionIdForSSE } : {}),
+          ...sseExecutionTag,
+          ...event,
         });
       },
       externalContext: overrides?.externalContext,
@@ -2888,6 +2977,54 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return c.json({ error: `Book "${id}" not found` }, 404);
     }
   });
+
+  /**
+   * Where this book is, and what it needs from a person.
+   *
+   * A magazine has had this since Phase 4 and a book never did: the chapter
+   * index carried twelve different status strings and nothing turned them into
+   * stages, or said which gate was shut and why. The approve route already
+   * refuses over a contradicting finding - this is how the screen can say so
+   * before the button is pressed instead of as a 409 afterwards.
+   */
+  app.get("/api/v1/books/:id/workflow", async (c) => {
+    const id = c.req.param("id");
+    try {
+      const book = await state.loadBookConfig(id);
+      const chapters = await state.loadChapterIndex(id).catch(() => []);
+      const findings = await readFindings(root);
+      /* Resolved once for the whole book rather than per chapter: the same
+         directory listing answers every chapter's question. */
+      const paths = await chapterPaths(id);
+      return c.json({
+        workflow: bookWorkflow({
+          chapters,
+          targetChapters: typeof book.targetChapters === "number" ? book.targetChapters : undefined,
+          findings,
+          pathOf: (n) => paths.get(n) ?? null,
+          running: false,
+        }),
+      });
+    } catch {
+      return c.json({ error: `Book "${id}" not found` }, 404);
+    }
+  });
+
+  /** Every chapter's markdown path, as the findings store spells them. */
+  async function chapterPaths(bookId: string): Promise<Map<number, string>> {
+    const out = new Map<number, string>();
+    try {
+      const dir = join(state.bookDir(bookId), "chapters");
+      for (const name of await readdir(dir)) {
+        const m = /^(\d{2,4})/.exec(name);
+        if (!m || !name.endsWith(".md")) continue;
+        out.set(Number(m[1]), relative(root, join(dir, name)).split("\\").join("/"));
+      }
+    } catch {
+      /* No chapters directory yet. An empty map is the honest answer. */
+    }
+    return out;
+  }
 
   // --- Genres ---
 
@@ -3487,25 +3624,97 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   });
 
+  /*
+   * Approve: sign the chapter off, unless the audit found a contradiction.
+   *
+   * A blocking finding is one the check made because the chapter contradicts
+   * something the book already established — a name, a number, a rule the work
+   * set for itself. Approving over one is how a book ends up with a keeper who
+   * limps on a different leg in chapter 9 than in chapter 3, and nothing
+   * downstream will ever catch it again: approval is the last read.
+   *
+   * It is a refusal, not a prohibition. `force: true` signs it off anyway,
+   * because the reviewer is the authority here and a checker is sometimes
+   * wrong — but they have to say so, and the refusal names the findings so the
+   * choice is made knowing what is in them.
+   */
   app.post("/api/v1/books/:id/chapters/:num/approve", async (c) => {
     const id = c.req.param("id");
     const num = parseInt(c.req.param("num"), 10);
+    const body = await c.req.json().catch(() => ({})) as { force?: boolean };
 
     try {
+      const path = await chapterPath(id, num);
+      const blockers = path ? blockersFor(await readFindings(root), path) : [];
+      if (blockers.length > 0 && body.force !== true) {
+        return c.json({
+          error: blockers.length === 1
+            ? "the audit found something in this chapter that contradicts the book"
+            : `the audit found ${blockers.length} things in this chapter that contradict the book`,
+          blockers: blockers.map((f) => ({
+            id: f.id, title: f.title, category: f.category, description: f.description,
+          })),
+        }, 409);
+      }
+
       const index = await state.loadChapterIndex(id);
       const updated = index.map((ch) =>
         ch.number === num ? { ...ch, status: "approved" as const } : ch,
       );
       await state.saveChapterIndex(id, updated);
-      return c.json({ ok: true, chapterNumber: num, status: "approved" });
+      return c.json({
+        ok: true, chapterNumber: num, status: "approved",
+        ...(blockers.length > 0 ? { forcedOver: blockers.length } : {}),
+      });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
     }
   });
 
+  /**
+   * Where a chapter's markdown is, as the findings store spells it.
+   *
+   * The chapter number is what every route takes and the filename carries the
+   * title after it, so the two need joining somewhere. Returns null rather
+   * than throwing: a chapter with no file on disk yet has no findings either,
+   * and that is not a reason to refuse an approval.
+   */
+  async function chapterPath(bookId: string, num: number): Promise<string | null> {
+    try {
+      const dir = join(state.bookDir(bookId), "chapters");
+      const padded = String(num).padStart(4, "0");
+      const match = (await readdir(dir)).find((f) => f.startsWith(padded) && f.endsWith(".md"));
+      return match ? relative(root, join(dir, match)).split("\\").join("/") : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /*
+   * Reject: send it back, keep the words.
+   *
+   * This used to roll the book back to the previous chapter, which deleted the
+   * rejected chapter's markdown, every chapter after it, and their snapshots -
+   * from a button sitting next to Approve, with no confirmation and no warning
+   * in its label. Saying "no, not like that" is the most ordinary thing a
+   * reviewer does and it must not be the most destructive.
+   *
+   * The note is the instruction for the rewrite, which is why it is written
+   * rather than picked from a list of reasons. `reviewNote` has been in
+   * ChapterMeta the whole time; nothing was writing it.
+   *
+   * Rolling the book back is still here, because rejecting chapter 3 while 4
+   * exists does leave 4 written on top of a chapter nobody accepted. It is
+   * opt-in now - `discardDownstream: true` - so the caller has to mean it.
+   */
   app.post("/api/v1/books/:id/chapters/:num/reject", async (c) => {
     const id = c.req.param("id");
     const num = parseInt(c.req.param("num"), 10);
+    const body = await c.req.json().catch(() => ({}));
+    const note = typeof (body as { note?: unknown }).note === "string"
+      ? (body as { note: string }).note.trim()
+      : "";
+    const discardDownstream = (body as { discardDownstream?: unknown }).discardDownstream === true;
 
     try {
       const index = await state.loadChapterIndex(id);
@@ -3514,14 +3723,33 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         return c.json({ error: `Chapter ${num} not found` }, 404);
       }
 
-      const rollbackTarget = num - 1;
-      const discarded = await state.rollbackToChapter(id, rollbackTarget);
+      if (discardDownstream) {
+        const rollbackTarget = num - 1;
+        const discarded = await state.rollbackToChapter(id, rollbackTarget);
+        return c.json({
+          ok: true,
+          chapterNumber: num,
+          status: "rejected",
+          rolledBackTo: rollbackTarget,
+          discarded,
+        });
+      }
+
+      const updated = index.map((ch) =>
+        ch.number === num
+          ? { ...ch, status: "rejected" as const, ...(note ? { reviewNote: note } : {}) }
+          : ch,
+      );
+      await state.saveChapterIndex(id, updated);
+      /* Downstream chapters were written on top of one nobody accepted, so the
+         caller is told which they are rather than left to work it out. */
+      const downstream = index.filter((ch) => ch.number > num).map((ch) => ch.number);
       return c.json({
         ok: true,
         chapterNumber: num,
         status: "rejected",
-        rolledBackTo: rollbackTarget,
-        discarded,
+        note: note || null,
+        downstream,
       });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
@@ -3568,13 +3796,22 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * On no answer the set is empty, which is the honest reading — no shim means
    * no CLI can be reached anyway.
    */
-  async function shimAgents(): Promise<Map<string, { enabled: boolean; fallback: string[] }>> {
+  /**
+   * What the shim says about this machine's agent CLIs.
+   *
+   * `null` means the shim did not answer, which is deliberately different from
+   * an empty map. "No opinion" and "every CLI is switched off" look identical
+   * in a Map and mean opposite things to the caller: treating the first as the
+   * second emptied the provider list whenever the shim was slow to start, so
+   * the app came up claiming the user had no models at all.
+   */
+  async function shimAgents(): Promise<Map<string, { enabled: boolean; fallback: string[] }> | null> {
     const port = process.env.SHIM_PORT || "8787";
     try {
       const r = await fetch(`http://127.0.0.1:${port}/agents`, {
         signal: AbortSignal.timeout(4000),
       });
-      if (!r.ok) return new Map();
+      if (!r.ok) return null;
       const body = await r.json() as {
         agents?: { id: string; enabled: boolean; fallback?: string[] }[];
       };
@@ -3584,26 +3821,105 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         { enabled: a.enabled, fallback: a.fallback ?? [] },
       ]));
     } catch {
-      return new Map();
+      return null;
     }
   }
 
-  async function enabledCliIds(): Promise<Set<string>> {
+  /** `null` when the shim has no opinion: every CLI endpoint is then offered. */
+  async function enabledCliIds(): Promise<Set<string> | null> {
     const agents = await shimAgents();
+    if (!agents) return null;
     return new Set([...agents].filter(([, a]) => a.enabled).map(([id]) => id));
   }
 
   // --- Model discovery ---
 
-  app.get("/api/v1/services", async (c) => {
+  /**
+   * A snapshot of what is reachable, kept for the runner.
+   *
+   * The routing page can await the service list; a run cannot. `resolveOverride`
+   * picks a client synchronously in the middle of a chapter, so the two things
+   * it needs from this layer — is this pin still reachable, and where does that
+   * service live — are refreshed here and read from memory there.
+   *
+   * Stale in one direction only, and harmlessly: a service that came up since
+   * the last refresh reads as unreachable and the agent falls back to the
+   * project default for one run. Refreshed on boot and after every write that
+   * could change the answer.
+   */
+  // Null until the first refresh lands. That distinction matters: an empty set
+  // would read as "nothing is reachable" and drop every service pin, which is
+  // the opposite of the intent. Nothing known means nothing claimed.
+  let reachableServices: Set<string> | null = null;
+  let serviceEndpoints: Record<string, { baseUrl: string; apiKey?: string }> = {};
+  let refreshing: Promise<void> | null = null;
+
+  async function refreshRoutingSnapshot(): Promise<void> {
+    try {
+      const services = await serviceAvailability();
+      const secrets = await loadSecrets(root);
+      const next: Record<string, { baseUrl: string; apiKey?: string }> = {};
+      for (const service of services) {
+        if (!service.connected) continue;
+        const baseUrl = resolveServicePreset(service.service)?.baseUrl
+          ?? getEndpoint(service.service)?.baseUrl;
+        if (!baseUrl) continue;
+        const apiKey = secrets.services[service.service]?.apiKey;
+        next[service.service] = { baseUrl, ...(apiKey ? { apiKey } : {}) };
+      }
+      reachableServices = new Set(services.filter((s) => s.connected).map((s) => s.service));
+      serviceEndpoints = next;
+    } catch {
+      // A snapshot that cannot be taken must not stop a run: availability stays
+      // unknown, every pin is trusted, and behaviour is what it was before.
+    }
+  }
+
+  /**
+   * Kick a refresh unless one is in flight. Deliberately not called while the
+   * server is being constructed: taking the snapshot reads the endpoint
+   * registry, and doing that eagerly consumed a one-shot mock in the tests
+   * before the request under test could — a fair warning that a constructor
+   * doing background I/O is a constructor with a side effect.
+   */
+  function touchRoutingSnapshot(): void {
+    if (refreshing) return;
+    refreshing = refreshRoutingSnapshot().finally(() => { refreshing = null; });
+  }
+
+  /**
+   * Every way a model can be reached, and whether it is reachable now.
+   *
+   * Lifted out of the route because the routing table needs the same answer: a
+   * pin to a service that is off must fall back to the project default, and it
+   * has to fall back on the same rule the picker used to offer that service in
+   * the first place. Two copies of this rule is how the service list and the
+   * model list last disagreed.
+   */
+  async function serviceAvailability() {
+
     const secrets = await loadSecrets(root);
-    // Quire is CLI-first: the only providers offered are the agent CLIs this
-    // machine actually has and the user has left switched on. The upstream
-    // bank of API vendors is still registered for lookup, so a project that
-    // already names one keeps resolving, but it is not put in front of anyone.
+    // One list, every way a model can be reached: an agent CLI on this machine,
+    // a vendor API, a model served locally by Ollama or LM Studio. They are all
+    // already the same `InkosEndpoint` and all resolve through the same client,
+    // so there is nothing to gain by offering only one kind of them.
+    //
+    // This used to filter to `group === "cli"`. The other forty providers stayed
+    // registered — a project that named one kept running — but nothing put them
+    // in front of anyone, so reaching a local Ollama meant retyping it as a
+    // "custom" service with a hand-written base URL, and its own endpoint card
+    // (models, capabilities, protocol) was skipped. That was a second way to do
+    // the one thing this route exists to do.
+    //
+    // A CLI is different in one respect only: an uninstalled one is not a
+    // choice at all, so the shim's roster still gates that group. Everything
+    // else is reachable over the network and is listed whether or not a key is
+    // set yet — `connected` below says which are usable, and the picker shows
+    // only those.
     const allowed = await enabledCliIds();
     const endpoints = getAllEndpoints()
-      .filter((ep) => ep.id !== "custom" && ep.group === "cli" && allowed.has(ep.id));
+      .filter((ep) => ep.id !== "custom")
+      .filter((ep) => ep.group !== "cli" || allowed === null || allowed.has(ep.id));
     let configuredServices: ReturnType<typeof normalizeServiceConfig> = [];
     try {
       const config = await loadRawConfig(root);
@@ -3637,6 +3953,22 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       };
     }).sort(compareServiceListItems);
 
+    // A local server's "connected" is a question only it can answer. Needing no
+    // key made Ollama and LM Studio permanently connected on a machine where
+    // neither was installed, and the picker offered their shipped catalogues.
+    // Asking costs one cached probe, and the cache is the same one the model
+    // list uses, so the two cannot disagree.
+    const localChecks = await Promise.all(
+      services
+        .filter((entry) => entry.group === "local" && entry.connected)
+        .map(async (entry) => [entry.service, ((await probeLiveModels(entry.service)) ?? []).length > 0] as const),
+    );
+    const localUp = new Map(localChecks);
+    for (let i = 0; i < services.length; i += 1) {
+      const entry = services[i]!;
+      if (localUp.has(entry.service)) services[i] = { ...entry, connected: localUp.get(entry.service)! };
+    }
+
     // Add custom services from inkos.json
     for (const svc of configuredServices) {
       if (svc.service === "custom") {
@@ -3655,7 +3987,11 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       }
     }
 
-    return c.json({ services });
+    return services;
+  }
+
+  app.get("/api/v1/services", async (c) => {
+    return c.json({ services: await serviceAvailability() });
   });
 
   app.get("/api/v1/services/config", async (c) => {
@@ -4003,31 +4339,48 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     });
   });
 
-  /** The CLI providers, whose catalogue lives in the CLI rather than in code. */
-  const isCliEndpoint = (service: string): boolean =>
-    getAllEndpoints().find((ep) => ep.id === service)?.group === "cli";
+  /**
+   * Providers whose catalogue is decided on this machine, not in this repo.
+   *
+   * A CLI's list changes with every `devin update`; a local server's list is
+   * whatever the user has pulled into Ollama or loaded into LM Studio. Neither
+   * can be known from a card compiled in here, so both are asked. A remote
+   * vendor is the opposite case — its card carries context windows and
+   * capabilities that its /models route does not report — so it keeps its seed.
+   */
+  const hasLiveCatalogue = (service: string): boolean => {
+    const group = getAllEndpoints().find((ep) => ep.id === service)?.group;
+    return group === "cli" || group === "local";
+  };
 
   /**
-   * One live catalogue per CLI, shared by every surface that offers a model.
+   * One live catalogue per provider, shared by every surface that offers a model.
    *
    * Same cache as the service page's own probe, so picking a model in the chat
    * and looking at the service list cannot disagree, and a cold CLI is only
-   * paid for once. A probe that fails returns null and the caller falls back
-   * to the seed — an empty picker would be worse than a short one.
+   * paid for once.
+   *
+   * What an empty answer means depends on the kind. A CLI that will not talk
+   * still has the aliases the shim keeps, and an empty picker would be worse
+   * than a short one — so it falls back. A local server is on loopback: if it
+   * did not answer, it is not running, and every model in the seed would fail
+   * the moment it was picked. There it returns empty and means it.
    */
-  async function probeCliModels(
+  async function probeLiveModels(
     service: string,
   ): Promise<Array<{ id: string; name: string; maxOutput?: number; contextWindow?: number; capabilities?: unknown }> | null> {
+    const isLocal = getAllEndpoints().find((ep) => ep.id === service)?.group === "local";
     const cacheKey = `${service}::cli`;
     const cached = modelListCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.models;
     try {
       const enriched = filterTextChatModels(await listModelsForService(service, ""));
       if (enriched.length === 0) {
+        if (isLocal) return [];
         // Nothing compiled in to fall back to any more. The shim carries the
         // aliases each CLI keeps stable across releases, so ask it rather than
         // hand back an empty picker.
-        const fallback = (await shimAgents()).get(service)?.fallback ?? [];
+        const fallback = (await shimAgents())?.get(service)?.fallback ?? [];
         return fallback.length ? fallback.map((id) => ({ id, name: id })) : null;
       }
       const models = enriched.map((m) => ({
@@ -4040,7 +4393,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       modelListCache.set(cacheKey, { models, at: Date.now() });
       return models;
     } catch {
-      return null;
+      return isLocal ? [] : null;
     }
   }
 
@@ -4078,7 +4431,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       // there so the app has something to show before a probe answers — it is
       // not the list. Serving it as the list is why the chat picker offered
       // ten devin models while the service page, which probes, offered 183.
-      const probed = isCliEndpoint(ep.id) ? await probeCliModels(ep.id) : null;
+      const probed = hasLiveCatalogue(ep.id) ? await probeLiveModels(ep.id) : null;
       const live = probed ?? staticModels.map((model) => ({
         id: model.id,
         name: model.id,
@@ -4130,6 +4483,15 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const apiKey = c.req.query("apiKey") || secrets.services[service]?.apiKey || "";
     const configuredEntry = await resolveConfiguredServiceEntry(root, service);
     const configuredModels = configuredEntry?.models ?? [];
+
+    // Refreshing here has to drop the picker's copy too. This route caches by
+    // service + base URL + key fingerprint, because a different key can be a
+    // different catalogue; probeLiveModels caches the same provider under
+    // `<service>::cli`. Two entries, one provider — so pressing Refresh after a
+    // `devin update` re-listed the new models on this page while the picker
+    // went on serving the old list until its own ten minutes ran out. Which is
+    // exactly the moment someone presses Refresh.
+    if (refresh) modelListCache.delete(`${service}::cli`);
 
     const resolvedBaseUrl = await resolveConfiguredServiceBaseUrl(root, service);
     const baseService = isCustomServiceId(service) ? "custom" : service;
@@ -4264,6 +4626,11 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
     broadcast,
   });
+
+  // What a conversation is about, when it is about a short or an issue rather
+  // than a book. The chat column could only describe a book, so every session
+  // that made anything else showed an empty rail.
+  registerProductionContextRoutes(app, root);
 
   app.get("/api/v1/prompt-packs", async (c) => {
     const prompts = await Promise.all(
@@ -4755,7 +5122,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   app.get("/api/v1/sessions", async (c) => {
     const bookId = c.req.query("bookId");
-    const sessions = await listBookSessions(root, bookId === undefined ? null : bookId === "null" ? null : bookId);
+    /* "all" is the only way to reach a conversation that was never opened
+       inside a book. Every other value, including an absent one, filters to
+       exactly one shelf, which is what every existing caller wants. */
+    const sessions = await listBookSessions(
+      root,
+      bookId === "all" ? undefined : bookId === undefined || bookId === "null" ? null : bookId,
+    );
     return c.json({ sessions });
   });
 
@@ -4764,7 +5137,18 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const session = await loadBookSession(root, sessionId);
     if (!session) return c.json({ error: "Session not found" }, 404);
     const task = await loadReconciledTaskSnapshot(sessionId);
-    return c.json({ session, ...(task ? { task } : {}) });
+    /*
+     * Which model actually wrote this.
+     *
+     * The session shape is a message list, and it drops the `provider`,
+     * `model` and `usage` every assistant message in the transcript carries.
+     * So the panel could only show whichever model the picker was set to —
+     * the model the *next* turn would use, not the one that produced the words
+     * on screen. Two different things, and after a model switch mid-session
+     * they disagree.
+     */
+    const summary = await summarizeSession(root, sessionId);
+    return c.json({ session, summary, ...(task ? { task } : {}) });
   });
 
   app.post("/api/v1/sessions", async (c) => {
@@ -5751,6 +6135,238 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   // --- Model overrides ---
 
+  // --- Productions: the stage graph, the gates, and moving between them ---
+
+  /**
+   * One shape for every kind of run.
+   *
+   * Books, magazines, scripts and translations each reported progress in their
+   * own file with their own vocabulary, so a screen that wanted to show what
+   * needs attention had to know all of them - and therefore showed none. These
+   * routes are the same four questions for all of them: what is the graph,
+   * where is this run, approve, send back.
+   */
+  const productionRefFrom = (c: { req: { param: (k: string) => string } }): ProductionRef => ({
+    type: c.req.param("type"),
+    id: c.req.param("id"),
+  });
+
+  const asGate = (value: string): PipelineGate | null =>
+    value === "content" || value === "design" || value === "build" ? value : null;
+
+  app.get("/api/v1/productions", async (c) => {
+    const productions = await Promise.all(PRODUCTIONS.map(async (spec) => {
+      const pipeline = spec.pipeline;
+      return {
+        id: spec.id,
+        label: spec.label,
+        outDir: spec.outDir,
+        auditable: spec.auditable,
+        images: spec.images,
+        pipeline: pipeline
+          ? {
+              ...pipeline,
+              // The flat walk, gates included, so a caller never has to
+              // reassemble the order from three arrays and guess where the
+              // gates sit.
+              sequence: stageSequence(pipeline),
+            }
+          : null,
+      };
+    }));
+    return c.json({ productions });
+  });
+
+  app.get("/api/v1/productions/:type/:id/pipeline", async (c) => {
+    const ref = productionRefFrom(c);
+    if (!pipelineFor(ref.type)) {
+      return c.json({ error: `${ref.type} does not run a pipeline` }, 400);
+    }
+    const state = await loadPipeline(root, ref);
+    // Absent is not an error: a production that has never been advanced simply
+    // has no run yet, and the caller needs to tell that from a failure.
+    return c.json({ ref, state });
+  });
+
+  app.post("/api/v1/productions/:type/:id/pipeline", async (c) => {
+    const ref = productionRefFrom(c);
+    const body = await c.req.json<{ totalUnits?: number }>().catch(() => ({} as { totalUnits?: number }));
+    const totalUnits = typeof body.totalUnits === "number" && body.totalUnits > 0
+      ? Math.floor(body.totalUnits)
+      : 1;
+    try {
+      const state = await ensurePipeline({ projectRoot: root, ref, totalUnits });
+      return c.json({ ref, state });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  app.post("/api/v1/productions/:type/:id/advance", async (c) => {
+    const ref = productionRefFrom(c);
+    try {
+      const result = await advancePipeline({
+        projectRoot: root, ref,
+        emit: (event) => broadcast("pipeline:stage", event),
+      });
+      return c.json({ ref, ...result });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  app.post("/api/v1/productions/:type/:id/gates/:gate/approve", async (c) => {
+    const ref = productionRefFrom(c);
+    const gate = asGate(c.req.param("gate"));
+    if (!gate) return c.json({ error: "Unknown gate" }, 400);
+    const body = await c.req.json<{ units?: number[]; by?: string }>()
+      .catch(() => ({} as { units?: number[]; by?: string }));
+    try {
+      // Approving is the whole instruction. Whatever the approval unblocks
+      // starts here, without a second call anyone has to know to make.
+      const result = await approvePipelineGate({
+        projectRoot: root, ref, gate,
+        ...(Array.isArray(body.units) ? { units: body.units } : {}),
+        ...(body.by ? { by: body.by } : {}),
+        emit: (event) => broadcast("pipeline:stage", event),
+      });
+      return c.json({ ref, ...result });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  app.post("/api/v1/productions/:type/:id/gates/:gate/reject", async (c) => {
+    const ref = productionRefFrom(c);
+    const gate = asGate(c.req.param("gate"));
+    if (!gate) return c.json({ error: "Unknown gate" }, 400);
+    const body = await c.req.json<{ units?: number[]; note?: string; backTo?: string }>()
+      .catch(() => ({} as { units?: number[]; note?: string; backTo?: string }));
+    if (!Array.isArray(body.units) || body.units.length === 0) {
+      return c.json({ error: "units is required" }, 400);
+    }
+    const backTo = body.backTo ? asGate(body.backTo) : null;
+    try {
+      const state = await rejectPipelineGate({
+        projectRoot: root, ref, gate, units: body.units,
+        ...(body.note ? { note: body.note } : {}),
+        ...(backTo ? { backTo } : {}),
+      });
+      return c.json({ ref, state });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  /**
+   * Undo an approval.
+   *
+   * There was no way to do this. A signed-off chapter stayed signed off,
+   * because the flag only ever moved one way, and changing your mind meant
+   * editing JSON by hand.
+   */
+  app.post("/api/v1/productions/:type/:id/gates/:gate/withdraw", async (c) => {
+    const ref = productionRefFrom(c);
+    const gate = asGate(c.req.param("gate"));
+    if (!gate) return c.json({ error: "Unknown gate" }, 400);
+    const body = await c.req.json<{ units?: number[] }>().catch(() => ({} as { units?: number[] }));
+    try {
+      const state = await withdrawPipelineGate({
+        projectRoot: root, ref, gate,
+        ...(Array.isArray(body.units) ? { units: body.units } : {}),
+      });
+      return c.json({ ref, state });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  /** Every run that cannot move until a person acts - the "waiting on you" list. */
+  app.get("/api/v1/productions/waiting", async (c) => {
+    const found: Array<{ ref: ProductionRef; state: PipelineState }> = [];
+    for (const spec of PRODUCTIONS) {
+      if (!spec.pipeline) continue;
+      let ids: string[] = [];
+      try {
+        ids = (await readdir(join(root, spec.outDir), { withFileTypes: true }))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name);
+      } catch {
+        continue; // No folder for this kind yet.
+      }
+      for (const id of ids) {
+        const ref: ProductionRef = { type: spec.id, id };
+        const state = await loadPipeline(root, ref);
+        if (state) found.push({ ref, state });
+      }
+    }
+    return c.json({ waiting: pipelineWaitingOn(found) });
+  });
+
+  /**
+   * The routing table: one global model, and a pin per agent that wants
+   * something else.
+   *
+   * Kept apart from `/services` on purpose, and the separation is the point.
+   * `/services` answers "what can this machine reach" — providers, keys, base
+   * URLs. This answers "who uses what". Putting both on one screen is how they
+   * last disagreed: the shell pill read the shim and showed a model selected
+   * while the picker read the service list and refused to send.
+   *
+   * Every agent gets a row whether or not it is pinned, because "uses the
+   * default" is an answer a person needs to see. A pin naming a service that is
+   * currently unreachable is reported as dropped rather than hidden — the run
+   * will use the global model either way, and a silent demotion is the failure
+   * this route exists to make visible.
+   */
+  app.get("/api/v1/project/model-routing", async (c) => {
+    const raw = await loadRawConfig(root);
+    const llm = raw.llm && typeof raw.llm === "object" && !Array.isArray(raw.llm)
+      ? raw.llm as Record<string, unknown>
+      : {};
+    const globalModel = typeof llm.defaultModel === "string" && llm.defaultModel.trim()
+      ? llm.defaultModel
+      : typeof llm.model === "string" ? llm.model : "";
+    const globalService = typeof llm.service === "string" ? llm.service : undefined;
+    const overrides = normalizeOverrides(
+      (raw as { modelOverrides?: Record<string, ModelPin> }).modelOverrides,
+    );
+
+    const reachable = new Set(
+      (await serviceAvailability()).filter((s) => s.connected).map((s) => s.service),
+    );
+    const isAvailable = (target: { service?: string }) =>
+      !target.service || reachable.has(target.service);
+
+    return c.json({
+      roster: AGENT_ROSTER,
+      jobs: AGENT_JOBS,
+      groups: AGENT_GROUP_LABELS,
+      global: { service: globalService ?? null, model: globalModel || null },
+      overrides,
+      routes: resolveRoutingTable({
+        agents: AGENT_ROSTER.map((role) => role.id),
+        overrides,
+        global: { ...(globalService ? { service: globalService } : {}), model: globalModel },
+        isAvailable,
+      }),
+    });
+  });
+
+  app.put("/api/v1/project/model-routing", async (c) => {
+    const body = await c.req.json<{ overrides?: Record<string, ModelPin> }>()
+      .catch(() => ({} as { overrides?: Record<string, ModelPin> }));
+    // Normalised on the way in, so the file converges on one spelling per agent
+    // instead of accumulating `stateValidator` beside `state-validator`.
+    const overrides = normalizeOverrides(body.overrides);
+    const configPath = join(root, "inkos.json");
+    const raw = JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
+    raw.modelOverrides = overrides;
+    await writeFile(configPath, JSON.stringify(raw, null, 2), "utf-8");
+    touchRoutingSnapshot();
+    return c.json({ ok: true, overrides });
+  });
+
   app.get("/api/v1/project/model-overrides", async (c) => {
     const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
     return c.json({ overrides: raw.modelOverrides ?? {} });
@@ -5784,7 +6400,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   app.put("/api/v1/project/default-model", async (c) => {
-    const body = await c.req.json<{ defaultModel?: string; service?: string }>();
+    const body = await c.req.json<{ defaultModel?: string; service?: string; contextWindow?: number }>();
     const defaultModel = typeof body.defaultModel === "string" ? body.defaultModel.trim() : "";
     if (!defaultModel) return c.json({ error: "defaultModel is required" }, 400);
     const raw = await loadRawConfig(root);
@@ -5794,6 +6410,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     if (typeof body.service === "string" && body.service.trim()) {
       llm.service = body.service.trim();
     }
+    // Recorded with the choice, because this is the moment it is known. The
+    // picker has just read the catalogue, and for a local server that listing
+    // is the only place the real context window appears. Cleared rather than
+    // left behind when the new model does not carry one, or a number belonging
+    // to the model chosen before this one would be applied to this one.
+    const contextWindow = typeof body.contextWindow === "number"
+      && Number.isFinite(body.contextWindow) && body.contextWindow > 0
+      ? Math.floor(body.contextWindow)
+      : null;
+    if (contextWindow) llm.contextWindow = contextWindow;
+    else delete llm.contextWindow;
     syncTopLevelLlmMirror(llm);
     await saveRawConfig(root, raw);
     return c.json({

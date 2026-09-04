@@ -1,9 +1,21 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { setAppLanguage } from "../../../../lib/app-language";
 import { createStore } from "zustand/vanilla";
 import type { ChatStore } from "../../types";
 import { initialChatState } from "../../initialState";
 import { createCreateSlice } from "../create/action";
 import { createMessageSlice } from "./action";
+
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
 
 const { fetchJson } = vi.hoisted(() => ({
   fetchJson: vi.fn(),

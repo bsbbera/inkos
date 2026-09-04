@@ -14,6 +14,24 @@ import {
 export interface AgentContext {
   readonly client: LLMClient;
   readonly model: string;
+  /**
+   * Which agent this context belongs to, as the routing table names it.
+   *
+   * The model was known and the spender was not, so usage could only ever be
+   * one number for the whole app. With routing in place the interesting
+   * question is who spent it: the writer on an expensive model and the fact
+   * checker on a cheap one is the decision, and a single total hides it.
+   */
+  readonly agent?: string;
+  /** Called once per completion, with whatever the provider reported. */
+  readonly onUsage?: (event: {
+    readonly agent: string;
+    readonly service?: string | undefined;
+    readonly model: string;
+    readonly input: number;
+    readonly output: number;
+    readonly reported: boolean;
+  }) => void;
   readonly projectRoot: string;
   readonly bookId?: string;
   readonly logger?: Logger;
@@ -33,15 +51,41 @@ export abstract class BaseAgent {
     return this.ctx.logger;
   }
 
+  /**
+   * Report what a completion cost, then hand it back untouched.
+   *
+   * Every agent's spend passes through here, so the ledger is complete by
+   * construction rather than by remembering to instrument each call site.
+   * A provider that does not count sends zero — the shim no longer invents an
+   * estimate — and zero is what tells the panel to print a blank instead of a
+   * number nobody measured.
+   */
+  private meter(response: LLMResponse): LLMResponse {
+    const sink = this.ctx.onUsage;
+    if (sink && this.ctx.agent) {
+      const input = response.usage?.promptTokens ?? 0;
+      const output = response.usage?.completionTokens ?? 0;
+      sink({
+        agent: this.ctx.agent,
+        service: this.ctx.client.service,
+        model: this.ctx.model,
+        input,
+        output,
+        reported: input + output > 0,
+      });
+    }
+    return response;
+  }
+
   protected async chat(
     messages: ReadonlyArray<LLMMessage>,
     options?: { readonly temperature?: number; readonly maxTokens?: number },
   ): Promise<LLMResponse> {
-    return runWorkerAgent(this.ctx.client, this.ctx.model, await this.appendTaskSkillGuidance(messages), {
+    return this.meter(await runWorkerAgent(this.ctx.client, this.ctx.model, await this.appendTaskSkillGuidance(messages), {
       ...options,
       onStreamProgress: this.ctx.onStreamProgress,
       signal: this.ctx.signal,
-    });
+    }));
   }
 
   protected async submitStructured<TParameters extends TSchema>(
@@ -110,7 +154,7 @@ export abstract class BaseAgent {
       modelSearchesWeb(this.ctx.client.service ?? "", this.ctx.model)
       && supportsNativeWebSearch(this.ctx.client)
     ) {
-      return runWorkerAgent(this.ctx.client, this.ctx.model, appendActivatedSkillGuidance(
+      return this.meter(await runWorkerAgent(this.ctx.client, this.ctx.model, appendActivatedSkillGuidance(
         messages,
         this.ctx.activatedSkills,
       ), {
@@ -118,7 +162,7 @@ export abstract class BaseAgent {
         webSearch: true,
         onStreamProgress: this.ctx.onStreamProgress,
         signal: this.ctx.signal,
-      });
+      }));
     }
 
     // Other providers: self-hosted search → inject results into prompt

@@ -117,9 +117,37 @@ describe("hash route", () => {
       expect(decodeURIComponent(hash)).toContain("自定义");
     });
 
-    it("non-hash pages return empty string", () => {
-      expect(routeToHash({ page: "daemon" })).toBe("");
-      expect(routeToHash({ page: "logs" })).toBe("");
+    // Every page has an address now. They used to be on an allowlist, so the
+    // ones left off were unreachable by link, lost on reload, and invisible to
+    // the command palette - which navigates by address and nothing else.
+    it("gives every page an address, and round-trips it", () => {
+      const pages = [
+        { page: "daemon" },
+        { page: "logs" },
+        { page: "genres" },
+        { page: "style" },
+        { page: "radar" },
+        { page: "doctor" },
+        { page: "audit" },
+        { page: "books" },
+        { page: "magazines" },
+        { page: "new" },
+        { page: "run" },
+        { page: "styleguide" },
+        { page: "truth", bookId: "lamp" },
+        { page: "analytics", bookId: "lamp" },
+        { page: "chapter", bookId: "lamp", chapterNumber: 9 },
+      ] as const;
+      for (const route of pages) {
+        const hash = routeToHash(route);
+        expect(hash).not.toBe("");
+        expect(parseHash(hash)).toEqual(route);
+      }
+    });
+
+    it("keeps a run id when there is one", () => {
+      expect(routeToHash({ page: "run", runId: "r7" })).toBe("#/run/r7");
+      expect(parseHash("#/run/r7")).toEqual({ page: "run", runId: "r7" });
     });
   });
 });

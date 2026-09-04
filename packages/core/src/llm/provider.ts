@@ -19,6 +19,7 @@ import { fetchWithProxy } from "../utils/proxy-fetch.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 import { isLlmStubEnabled, stubChatCompletion } from "../agent/llm-stub.js";
 import { createLeadingThinkTagStripper, stripLeadingThinkBlock } from "./think-tag-stripper.js";
+import { classifyLLMError, describeLLMError, isRetryableCode, type LLMErrorCode } from "./error-codes.js";
 import {
   agentTrajectoryHeaders,
   beginAgentModelCall,
@@ -351,7 +352,13 @@ export function createLLMClient(config: LLMConfig): LLMClient {
     reasoning: (config.thinkingBudget ?? 0) > 0,
     input: ["text"] as ("text" | "image")[],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: modelCard?.contextWindowTokens ?? 128_000,
+    // Order matters. A locally served model's window is whatever LM Studio or
+    // Ollama loaded it with, which only that server knows and which the picker
+    // recorded when the model was chosen; it beats a card, which describes the
+    // model as published rather than the copy that will answer. 128k stays the
+    // last resort for a model nothing has anything to say about - and it is a
+    // guess, which is why anything that can do better goes first.
+    contextWindow: config.contextWindow ?? modelCard?.contextWindowTokens ?? 128_000,
     maxTokens: modelCard?.maxOutput ?? UNKNOWN_MODEL_FALLBACK_MAX_TOKENS,
     ...(extraHeaders ? { headers: extraHeaders } : {}),
     ...(compat ? { compat } : {}),
@@ -432,6 +439,7 @@ export class PartialResponseError extends Error {
 }
 
 export class ContextWindowExceededError extends Error {
+  readonly code: LLMErrorCode;
   readonly estimatedInputTokens: number;
   readonly reservedOutputTokens: number;
   readonly contextWindow: number;
@@ -449,6 +457,8 @@ export class ContextWindowExceededError extends Error {
       `Quire will not truncate semantic text automatically.`,
     );
     this.name = "ContextWindowExceededError";
+    // Declared, so the classifier reads it rather than guessing from the text.
+    this.code = "context-window";
     this.estimatedInputTokens = params.estimatedInputTokens;
     this.reservedOutputTokens = params.reservedOutputTokens;
     this.contextWindow = params.contextWindow;
@@ -629,7 +639,54 @@ export function assertWithinContextWindow(params: {
 
 // === Error Wrapping ===
 
-function wrapLLMError(error: unknown, context?: { readonly baseUrl?: string; readonly model?: string; readonly service?: string }): Error {
+interface LLMErrorContext {
+  readonly baseUrl?: string;
+  readonly model?: string;
+  readonly service?: string;
+}
+
+/**
+ * The failure, said plainly, with its code attached.
+ *
+ * Everything below this line was written against HTTP status codes in the
+ * error text — 400, 401, 403, 429 — which is most of what a direct API returns
+ * and none of what a CLI does. An exhausted devin quota is not a 429; it is
+ * `{"code":-32011,"message":"Your weekly usage quota has been exhausted."}`
+ * over a JSON-RPC pipe, and it fell through every branch to be shown raw. So
+ * did a missing binary, and a model the CLI had dropped.
+ *
+ * The classifier already reads both shapes — it decides retries — so it goes
+ * first here and speaks for the cases the status-code chain cannot see. Where
+ * that chain does have something to say it is left alone: its 400 branch names
+ * three specific causes, which beats any sentence written from a code alone.
+ *
+ * Either way the code is attached to the thrown error, so a caller can act on
+ * the kind of failure instead of matching substrings again further up.
+ */
+function wrapLLMError(error: unknown, context?: LLMErrorContext): Error {
+  const code = classifyLLMError(error);
+  const wrapped = code === "rate-limit" || code === "model-unavailable"
+    || code === "cli-missing" || code === "cli-exit" || code === "context-window"
+    ? describedLLMError(error, code, context)
+    : wrapLLMErrorByStatus(error, context);
+  (wrapped as Error & { code?: LLMErrorCode }).code = code;
+  return wrapped;
+}
+
+function describedLLMError(error: unknown, code: LLMErrorCode, context?: LLMErrorContext): Error {
+  // Both languages, because the surfaces that show this are mixed and the
+  // reader is one person who reads one of them.
+  const lines = [
+    describeLLMError(error, "zh").summary,
+    describeLLMError(error, "en").summary,
+  ];
+  const { detail } = describeLLMError(error, "en");
+  if (detail) lines.push(detail);
+  if (context?.model) lines.push(`  (${code}, model: ${context.model})`);
+  return new Error(lines.join("\n"));
+}
+
+function wrapLLMErrorByStatus(error: unknown, context?: LLMErrorContext): Error {
   const msg = String(error);
   const ctxLine = context
     ? `\n  (baseUrl: ${context.baseUrl}, model: ${context.model})`
@@ -800,10 +857,20 @@ function isIncompleteLLMResponseError(error: unknown): boolean {
 }
 
 function isRetryableLLMError(error: unknown): boolean {
+  // A cancel outranks every other reading of the error. Killing a child process
+  // leaves "terminated" in the text, which the transport matcher below counts
+  // as a transient network fault — so stopping a run used to start it again,
+  // twice, before giving up. The shim now says `code: "cancelled"` outright.
+  const code = classifyLLMError(error);
+  if (code === "cancelled") return false;
+
   // PartialResponseError = 流在生成中途被掐断（网关切长连接等）。重试会完整
   // 重新生成一次，比把半截内容当成功交付（截断的章节/设定文件）要正确。
   return error instanceof PartialResponseError
     || isIncompleteLLMResponseError(error)
+    // What the backend itself decided, where it had the evidence to decide.
+    || isRetryableCode(code)
+    // The text heuristics stay for direct-API providers, which send no code.
     || isTransientLLMTransportError(error)
     || isTransientLLMHttpError(error);
 }
@@ -1432,6 +1499,18 @@ async function chatCompletionViaCustomOpenAICompatible(
           continue;
         }
         const json = JSON.parse(event.data);
+        /* An error delivered inside the stream, which is the only way a failure
+           can reach a client that has already had its 200. The shim reports a
+           dead CLI, an exhausted quota or a rejected model this way and then
+           closes with [DONE]; nothing here read it, so every one of them
+           arrived as "empty response from stream" with the actual reason
+           dropped on the floor. Thrown here, while the cause is still in hand. */
+        if (json?.error) {
+          const detail = typeof json.error === "string"
+            ? json.error
+            : json.error.message ?? json.error.detail ?? JSON.stringify(json.error);
+          throw wrapLLMError(new Error(String(detail)), errorCtx);
+        }
         if (json?.choices?.[0]?.finish_reason) {
           sawTerminal = true;
           terminalFinishReason = String(json.choices[0].finish_reason);

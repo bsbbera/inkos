@@ -1,5 +1,17 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { setAppLanguage } from "../lib/app-language";
 import { buildApiUrl, deriveInvalidationPaths, fetchJson } from "./use-api";
+
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
 
 describe("buildApiUrl", () => {
   it("returns null for blank paths so callers can skip requests", () => {

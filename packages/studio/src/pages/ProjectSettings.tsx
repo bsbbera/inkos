@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Bell, Bot, FileText, FolderUp, MessageSquare, Radar, RotateCcw, Search, Settings2, Plus, Trash2 } from "lucide-react";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import { usePreferencesStore } from "../store/preferences";
-import type { Theme } from "../hooks/use-theme";
+import { useTheme, type Theme, type ThemeMode } from "../hooks/use-theme";
+import { Seg } from "../components/ui/vermilion";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import {
@@ -15,7 +16,6 @@ import {
   type DetectionDraft,
   type NotifyChannelDraft,
   type NotifyType,
-  type OverrideRow,
 } from "./project-settings-model";
 import {
   serializeSkillFolder,
@@ -100,8 +100,8 @@ const fieldClass = "w-full text-sm";
 export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
   const c = useColors(theme);
   const isZh = t("nav.connected") === "\u5DF2\u8FDE\u63A5";
-  const { data: overridesData, refetch: refetchOverrides } = useApi<{ overrides: Record<string, unknown> }>("/project/model-overrides");
-  const { data: defaultModelData, refetch: refetchDefaultModel } = useApi<{ service: string | null; defaultModel: string | null }>("/project/default-model");
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { data: defaultModelData } = useApi<{ service: string | null; defaultModel: string | null }>("/project/default-model");
   const { data: researchSearchData, refetch: refetchResearchSearch } = useApi<{ researchSearch: Partial<ResearchSearchDraft> }>("/project/research-search");
   const { data: notifyData, refetch: refetchNotify } = useApi<{ channels: unknown[] }>("/project/notify");
   const { data: detectionData, refetch: refetchDetection } = useApi<{ detection: unknown | null }>("/project/detection");
@@ -110,7 +110,6 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
   const [defaultService, setDefaultService] = useState("");
   const [defaultModel, setDefaultModel] = useState("");
   const [researchSearch, setResearchSearch] = useState<ResearchSearchDraft>({ ...DEFAULT_RESEARCH_SEARCH });
-  const [overrideRows, setOverrideRows] = useState<OverrideRow[]>([]);
   const [notifyChannels, setNotifyChannels] = useState<NotifyChannelDraft[]>([]);
   const [det, setDet] = useState<DetectionDraft>({ ...DEFAULT_DETECTION });
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(null);
@@ -125,15 +124,6 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
   const promptList = promptPacksData?.prompts ?? [];
   const selectedPrompt = promptList.find((prompt) => prompt.id === selectedPromptId) ?? null;
   const promptDirty = Boolean(selectedPrompt && promptDraft !== (selectedPrompt.content ?? ""));
-
-  useEffect(() => {
-    if (!overridesData) return;
-    setOverrideRows(Object.entries(overridesData.overrides ?? {}).map(([agent, val]) => {
-      if (typeof val === "string") return { agent, model: val };
-      const { model, ...rest } = (val ?? {}) as { model?: string };
-      return { agent, model: model ?? "", rest };
-    }));
-  }, [overridesData]);
 
   useEffect(() => {
     if (!defaultModelData) return;
@@ -204,12 +194,6 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
-        <span className="text-border">/</span>
-        <span>{t("settings.title")}</span>
-      </div>
-
       <header className="q-head">
         <p className="q-label flex items-center gap-2">
           <Settings2 size={13} aria-hidden="true" />
@@ -233,6 +217,46 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
           {notice.message}
         </div>
       )}
+
+      {/*
+        * Appearance.
+        *
+        * Theme and language used to be two controls in the window header, on
+        * every screen, competing with the crumbs and the waiting count for the
+        * one row that has to answer "where am I" and "what needs me". They are
+        * preferences: they belong on the preferences screen, set once.
+        */}
+      <SettingsCard
+        title={t("settings.appearance")}
+        description={t("settings.appearanceHint")}
+        icon={<Settings2 size={18} />}
+      >
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="q-field">
+            <label>{t("settings.theme")}</label>
+            <Seg<ThemeMode>
+              options={[
+                { value: "light", label: t("settings.themeLight") },
+                { value: "system", label: t("settings.themeSystem") },
+                { value: "dark", label: t("settings.themeDark") },
+              ]}
+              value={themeMode}
+              onChange={setThemeMode}
+            />
+          </div>
+          <div className="q-field">
+            <label>{t("settings.language")}</label>
+            <Seg<"en" | "zh">
+              options={[
+                { value: "en", label: "English" },
+                { value: "zh", label: t("settings.languageZh") },
+              ]}
+              value={isZh ? "zh" : "en"}
+              onChange={(next) => { void putApi("/project", { language: next }); }}
+            />
+          </div>
+        </div>
+      </SettingsCard>
 
       {/* Chat UI preferences — applied immediately, persisted in this browser's localStorage */}
       <SettingsCard title={t("settings.chatUi")} description={t("settings.chatUiHint")} icon={<MessageSquare size={18} />}>
@@ -452,174 +476,6 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
         </div>
       </SettingsCard>
 
-      {/* Model routing — per-agent model overrides */}
-      <SettingsCard title={t("settings.modelOverrides")} description={t("settings.modelOverridesHint")} icon={<Bot size={18} />}>
-        <div className="rounded-xl border border-border/60 bg-secondary/20 p-3 space-y-2">
-          <div>
-            <div className="text-sm font-semibold">{t("settings.globalDefaultModel")}</div>
-            <p className="mt-1 text-xs text-muted-foreground">{t("settings.globalDefaultModelHint")}</p>
-          </div>
-          <div className="grid gap-2 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
-            <input
-              value={defaultService}
-              onChange={(e) => setDefaultService(e.target.value)}
-              placeholder={t("settings.serviceId")}
-              className={`${fieldClass} font-mono`}
-            />
-            <input
-              value={defaultModel}
-              onChange={(e) => setDefaultModel(e.target.value)}
-              placeholder={t("settings.modelId")}
-              className={`${fieldClass} font-mono`}
-            />
-            <button
-              onClick={() => runSave("default-model", async () => {
-                await putApi("/project/default-model", {
-                  service: defaultService.trim() || undefined,
-                  defaultModel: defaultModel.trim(),
-                });
-                await refetchDefaultModel();
-              }, t("settings.saved"))}
-              disabled={saving === "default-model" || !defaultModel.trim()}
-              className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
-            >
-              {saving === "default-model" ? t("config.saving") : t("config.save")}
-            </button>
-          </div>
-        </div>
-        <div className="space-y-2">
-          {overrideRows.length === 0 && (
-            <p className="text-xs text-muted-foreground italic">{t("settings.noOverrides")}</p>
-          )}
-          {overrideRows.map((row, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input
-                value={row.agent}
-                onChange={(e) => setOverrideRows((prev) => prev.map((r, j) => (j === i ? { ...r, agent: e.target.value } : r)))}
-                placeholder={t("settings.agentName")}
-                className={`${fieldClass} flex-1`}
-              />
-              <span className="text-muted-foreground">→</span>
-              <input
-                value={row.model}
-                onChange={(e) => setOverrideRows((prev) => prev.map((r, j) => (j === i ? { ...r, model: e.target.value } : r)))}
-                placeholder={t("settings.modelId")}
-                className={`${fieldClass} flex-1 font-mono`}
-              />
-              <button
-                onClick={() => setOverrideRows((prev) => prev.filter((_, j) => j !== i))}
-                className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                aria-label="remove"
-              >
-                <Trash2 size={15} />
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setOverrideRows((prev) => [...prev, { agent: "", model: "" }])}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${c.btnSecondary}`}
-          >
-            <Plus size={14} /> {t("settings.addOverride")}
-          </button>
-          <button
-            onClick={() => runSave("overrides", async () => {
-              const overrides: Record<string, unknown> = {};
-              for (const r of overrideRows) {
-                const agent = r.agent.trim();
-                const model = r.model.trim();
-                if (!agent || !model) continue;
-                overrides[agent] = r.rest && Object.keys(r.rest).length > 0 ? { ...r.rest, model } : model;
-              }
-              await putApi("/project/model-overrides", { overrides });
-              await refetchOverrides();
-            }, t("settings.saved"))}
-            disabled={saving === "overrides"}
-            className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
-          >
-            {saving === "overrides" ? t("config.saving") : t("config.save")}
-          </button>
-          <button onClick={nav.toServices} className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnSecondary}`}>
-            {t("settings.openModelConfig")}
-          </button>
-        </div>
-      </SettingsCard>
-
-      <SettingsCard
-        title={isZh ? "联网研究搜索服务" : "Research Search Provider"}
-        description={isZh ? "给 research_web 配置外部搜索 API。未配置时仍可用服务器环境变量 TAVILY_API_KEY 作为兜底。" : "Configure the external search API used by research_web. If unset, the server may still use TAVILY_API_KEY as a fallback."}
-        icon={<Search size={18} />}
-      >
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={researchSearch.enabled}
-            onChange={(e) => setResearchSearch((prev) => ({ ...prev, enabled: e.target.checked }))}
-          />
-          {isZh ? "启用项目级搜索配置" : "Enable project-level search config"}
-        </label>
-        <Collapse open={researchSearch.enabled}>
-          <div className="grid gap-2 pt-1 md:grid-cols-2">
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span>{isZh ? "搜索服务" : "Provider"}</span>
-              <select
-                value={researchSearch.provider}
-                onChange={(e) => setResearchSearch((prev) => ({ ...prev, provider: e.target.value === "custom" ? "custom" : "tavily" }))}
-                className={fieldClass}
-              >
-                <option value="tavily">Tavily</option>
-                <option value="custom">Custom / Tavily-compatible</option>
-              </select>
-            </label>
-            <label className="space-y-1 text-xs text-muted-foreground">
-              <span>{isZh ? "API Key 环境变量名" : "API key env var"}</span>
-              <input
-                value={researchSearch.apiKeyEnv}
-                onChange={(e) => setResearchSearch((prev) => ({ ...prev, apiKeyEnv: e.target.value }))}
-                placeholder="TAVILY_API_KEY"
-                className={`${fieldClass} font-mono`}
-              />
-            </label>
-            <label className="space-y-1 text-xs text-muted-foreground md:col-span-2">
-              <span>{isZh ? "Base URL（可选，自定义兼容端点）" : "Base URL (optional custom compatible endpoint)"}</span>
-              <input
-                value={researchSearch.baseUrl}
-                onChange={(e) => setResearchSearch((prev) => ({ ...prev, baseUrl: e.target.value }))}
-                placeholder="https://api.tavily.com/search"
-                className={`${fieldClass} font-mono`}
-              />
-            </label>
-            <label className="space-y-1 text-xs text-muted-foreground md:col-span-2">
-              <span>{isZh ? "API Key（可选；留空则读环境变量）" : "API key (optional; leave blank to use env var)"}</span>
-              <input
-                value={researchSearch.apiKey}
-                onChange={(e) => setResearchSearch((prev) => ({ ...prev, apiKey: e.target.value }))}
-                type="password"
-                placeholder={isZh ? "可直接填 key，或只填环境变量名" : "Paste key, or use env var only"}
-                className={`${fieldClass} font-mono`}
-              />
-            </label>
-          </div>
-        </Collapse>
-        <button
-          onClick={() => runSave("research-search", async () => {
-            const next = {
-              enabled: researchSearch.enabled,
-              provider: researchSearch.provider,
-              ...(researchSearch.baseUrl.trim() ? { baseUrl: researchSearch.baseUrl.trim() } : {}),
-              ...(researchSearch.apiKey.trim() ? { apiKey: researchSearch.apiKey.trim() } : {}),
-              ...(researchSearch.apiKeyEnv.trim() ? { apiKeyEnv: researchSearch.apiKeyEnv.trim() } : {}),
-            };
-            await putApi("/project/research-search", { researchSearch: next });
-            await refetchResearchSearch();
-          }, t("settings.saved"))}
-          disabled={saving === "research-search"}
-          className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
-        >
-          {saving === "research-search" ? t("config.saving") : t("config.save")}
-        </button>
-      </SettingsCard>
 
       {/* Notification channels */}
       <SettingsCard title={t("settings.notify")} description={t("settings.notifyHint")} icon={<Bell size={18} />}>

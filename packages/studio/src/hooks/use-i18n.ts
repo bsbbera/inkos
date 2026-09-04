@@ -323,6 +323,14 @@ const strings = {
   "settings.detectionThreshold": { zh: "阈值", en: "Threshold" },
   "settings.detectionMaxRetries": { zh: "最大重试", en: "Max retries" },
   "settings.detectionAutoRewrite": { zh: "命中后自动反检测改写", en: "Auto anti-detect rewrite on hit" },
+  "settings.appearance": { zh: "外观", en: "Appearance" },
+  "settings.appearanceHint": { zh: "主题与界面语言。主题保存在当前浏览器，语言写入项目配置。", en: "Theme and interface language. The theme is stored in this browser; the language is part of the project." },
+  "settings.theme": { zh: "主题", en: "Theme" },
+  "settings.themeLight": { zh: "浅色", en: "Light" },
+  "settings.themeSystem": { zh: "跟随系统", en: "System" },
+  "settings.themeDark": { zh: "深色", en: "Dark" },
+  "settings.language": { zh: "语言", en: "Language" },
+  "settings.languageZh": { zh: "中文", en: "中文" },
   "settings.chatUi": { zh: "对话界面", en: "Chat Interface" },
   "settings.chatUiHint": { zh: "控制对话页里操作详情的展示方式。该偏好保存在当前浏览器，不写入项目配置。", en: "Controls how operation details render on the chat page. Stored in this browser, not in project config." },
   "settings.toolDetailsDefaultOpen": { zh: "操作详情默认展开", en: "Expand operation details by default" },
@@ -400,7 +408,10 @@ export type TFunction = (key: StringKey) => string;
 
 export function useI18n() {
   const { data } = useApi<{ language: string }>("/project");
-  const lang: Lang = data?.language === "en" ? "en" : "zh";
+  // English unless the project says otherwise. This used to default to zh, so
+  // every screen rendered Chinese for the moment before /project answered, and
+  // for good on any project whose config never named a language.
+  const lang: Lang = data?.language === "zh" ? "zh" : "en";
 
   function t(key: StringKey): string {
     return strings[key][lang];

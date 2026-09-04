@@ -39,6 +39,10 @@ export function getProjectChatSessionId(): string | null {
   return globalThis.localStorage?.getItem(PROJECT_CHAT_SESSION_KEY) ?? null;
 }
 
+export function clearProjectChatSessionId(): void {
+  globalThis.localStorage?.removeItem(PROJECT_CHAT_SESSION_KEY);
+}
+
 export function setProjectChatSessionId(sessionId: string): void {
   globalThis.localStorage?.setItem(PROJECT_CHAT_SESSION_KEY, sessionId);
 }
@@ -61,12 +65,54 @@ export function filterModelGroups(
     .filter((group) => group.models.length > 0);
 }
 
+/**
+ * Which model this tab should be on, or null when it is already right.
+ *
+ * The project config wins. `chooseModel` writes every chat pick straight to
+ * `/project/default-model`, and every pipeline - audit, de-AI, a chapter, a
+ * short - reads its model from there, so that file is the one place the choice
+ * lives. This used to keep whatever the tab last remembered whenever that
+ * model still existed, which meant a model set on the setup page left the chat
+ * bar naming the old one while the runs used the new one: two models in use at
+ * once and no way to tell from either screen which was which.
+ *
+ * The remembered selection is now only a fallback, for a project that has not
+ * recorded a choice yet.
+ */
 export function pickModelSelection(
   groupedModels: ReadonlyArray<ChatPageModelGroup>,
   selectedModel: string | null,
   selectedService: string | null,
   preference?: ChatPageModelPreference | null,
 ): { model: string; service: string } | null {
+  /** Null when the tab is on this pair already, so nothing re-renders. */
+  const settle = (model: string, service: string) =>
+    selectedModel === model && selectedService === service ? null : { model, service };
+
+  const preferredService = preference?.service?.trim();
+  const preferredModel = preference?.model?.trim();
+
+  if (preferredService) {
+    const preferredGroup = groupedModels.find((group) => group.service === preferredService);
+    const exactModel = preferredModel
+      ? preferredGroup?.models.find((model) => model.id === preferredModel)
+      : undefined;
+    if (preferredGroup && exactModel) return settle(exactModel.id, preferredGroup.service);
+    // The service is still the answer even when the exact model has rotted off
+    // its catalogue - a stale pin should not drop the whole choice.
+    const firstPreferredModel = preferredGroup?.models[0];
+    if (preferredGroup && firstPreferredModel) {
+      return settle(firstPreferredModel.id, preferredGroup.service);
+    }
+  }
+
+  if (preferredModel) {
+    for (const group of groupedModels) {
+      const exactModel = group.models.find((model) => model.id === preferredModel);
+      if (exactModel) return settle(exactModel.id, group.service);
+    }
+  }
+
   const selectedStillAvailable = selectedModel && selectedService
     ? groupedModels.some((group) =>
         group.service === selectedService
@@ -75,33 +121,10 @@ export function pickModelSelection(
     : false;
   if (selectedStillAvailable) return null;
 
-  const preferredService = preference?.service?.trim();
-  const preferredModel = preference?.model?.trim();
-  if (preferredService) {
-    const preferredGroup = groupedModels.find((group) => group.service === preferredService);
-    const exactModel = preferredModel
-      ? preferredGroup?.models.find((model) => model.id === preferredModel)
-      : undefined;
-    if (preferredGroup && exactModel) {
-      return { model: exactModel.id, service: preferredGroup.service };
-    }
-    const firstPreferredModel = preferredGroup?.models[0];
-    if (preferredGroup && firstPreferredModel) {
-      return { model: firstPreferredModel.id, service: preferredGroup.service };
-    }
-  }
-
-  if (preferredModel) {
-    for (const group of groupedModels) {
-      const exactModel = group.models.find((model) => model.id === preferredModel);
-      if (exactModel) return { model: exactModel.id, service: group.service };
-    }
-  }
-
   const firstGroup = groupedModels.find((group) => group.models.length > 0);
   const firstModel = firstGroup?.models[0];
   if (!firstGroup || !firstModel) return null;
-  return { model: firstModel.id, service: firstGroup.service };
+  return settle(firstModel.id, firstGroup.service);
 }
 
 export function pickProjectChatSessionId(

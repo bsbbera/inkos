@@ -1,5 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
+import { setAppLanguage } from "./app-language";
 import { localizeKnownRuntimeMessage } from "./error-copy";
+
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
 
 describe("localizeKnownRuntimeMessage", () => {
   it("localizes the state-degraded continuation blocker", () => {

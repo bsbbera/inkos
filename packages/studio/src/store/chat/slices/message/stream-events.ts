@@ -1,4 +1,5 @@
 import type { StateCreator } from "zustand";
+import { addUsage } from "@actalk/quire-core/llm/session-usage";
 import type { ChatStore, Message, MessageActions, MessagePart, PipelineStage, ToolExecution } from "../../types";
 import { shouldRefreshSidebarForTool } from "../../message-policy";
 import { tr } from "../../../../lib/app-language";
@@ -446,6 +447,32 @@ export function attachSessionStreamListeners({
       const data = event.data ? JSON.parse(event.data) : null;
       if (!sessionMatchesEvent(sessionId, data) || !data?.text) return;
       textDeltaBatcher.enqueue({ kind: "text", text: data.text as string });
+    } catch {
+      // ignore
+    }
+  });
+
+  /**
+   * One completion's spend, folded into this session's ledger.
+   *
+   * Every agent in a run reports here — a forty-page magazine sends one per
+   * stage per page — so the fold is a pure reducer in core and this listener
+   * only routes. The panel reads the ledger; nothing recomputes it.
+   */
+  streamEs.addEventListener("session:usage", (event: MessageEvent) => {
+    try {
+      const data = event.data ? JSON.parse(event.data) : null;
+      if (!sessionMatchesEvent(sessionId, data) || !data?.agent) return;
+      set((state) => {
+        const session = state.sessions[sessionId];
+        if (!session) return state;
+        return {
+          sessions: {
+            ...state.sessions,
+            [sessionId]: { ...session, usage: addUsage(session.usage ?? {}, data) },
+          },
+        };
+      });
     } catch {
       // ignore
     }

@@ -224,6 +224,7 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
 function PanelView({ bookId, theme: _theme, t, sse }: BookSidebarProps) {
   const isZh = t("nav.connected") === "\u5DF2\u8FDE\u63A5";
 
+  const activeSessionId = useChatStore((state) => state.activeSessionId);
   // Show writing indicator only during pipeline operations (write/audit/revise)
   const [activeOp, setActiveOp] = useState<string | null>(null);
   useEffect(() => {

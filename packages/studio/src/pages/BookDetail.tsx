@@ -6,6 +6,7 @@ import type { SSEMessage } from "../hooks/use-sse";
 import { useColors } from "../hooks/use-colors";
 import { deriveBookActivity, shouldRefetchBookView } from "../hooks/use-book-activity";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { GateCard, WorkflowBar, type Workflow } from "../components/workflow";
 import {
   ChevronLeft,
   Zap,
@@ -97,6 +98,10 @@ export function BookDetail({
 }) {
   const c = useColors(theme);
   const { data, loading, error, refetch } = useApi<BookData>(`/books/${bookId}`);
+  /* Derived server-side from the chapter index and the findings store, so it
+     cannot drift from either the way a stored status string does. */
+  const { data: flow } = useApi<{ workflow: Workflow }>(`/books/${bookId}/workflow`);
+  const workflow = flow?.workflow ?? null;
   const [writeRequestPending, setWriteRequestPending] = useState(false);
   const [draftRequestPending, setDraftRequestPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -444,18 +449,6 @@ export function BookDetail({
   return (
     <div className="space-y-8 fade-in">
       {/* Breadcrumbs */}
-      <nav className="flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
-        <button
-          onClick={nav.toDashboard}
-          className="hover:text-primary transition-colors flex items-center gap-1"
-        >
-          <ChevronLeft size={14} />
-          {t("bread.books")}
-        </button>
-        <span className="text-border">/</span>
-        <span className="text-foreground">{book.title}</span>
-      </nav>
-
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/40 pb-8">
         <div className="space-y-2">
@@ -541,6 +534,32 @@ export function BookDetail({
           )}
         </div>
       )}
+
+      {/*
+       * Where this book has got to, and what is holding the next decision.
+       *
+       * A magazine has had stages and named gate blockers since Phase 4; a
+       * book had twelve chapter status strings and nothing that turned them
+       * into an answer. The approve route already refuses over a finding that
+       * contradicts the book - this is where that is said before the button is
+       * pressed rather than as a 409 after it.
+       */}
+      {workflow ? (
+        <WorkflowBar workflow={workflow} label="be called finished">
+          <div className="cols cols-2">
+            {workflow.gates.map((g) => (
+              <GateCard
+                key={g.name}
+                gate={g}
+                /* Only the copy gate is a decision a person makes here. The
+                   audit gate is cleared by settling findings on the audit
+                   screen, so a button on it would be a button that lies. */
+                onApprove={g.name === "copy" && reviewCount > 0 ? handleApproveAll : undefined}
+              />
+            ))}
+          </div>
+        </WorkflowBar>
+      ) : null}
 
       {/* Tool Strip */}
       <div className="flex flex-wrap items-center gap-2 py-1">

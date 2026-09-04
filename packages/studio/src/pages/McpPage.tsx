@@ -116,12 +116,6 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
-        <span className="text-border">/</span>
-        <span>MCP</span>
-      </div>
-
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="q-title text-3xl flex items-center gap-3">

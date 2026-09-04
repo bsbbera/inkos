@@ -1,0 +1,1891 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   VERMILION — the Quire design system, as one file.
+
+   This is the whole language. Every mockup screen imports this and adds no
+   CSS of its own. When it ships, this file moves into the app unchanged and
+   the JSX carries the same class names, so the port is a copy rather than a
+   translation. The last port was a translation, and it drifted on colour,
+   proportion and section order inside a single screen.
+
+   Two rules keep that true:
+     1. No screen file may contain a <style> block. If a screen needs
+        something, it belongs here, named, and every other screen gets it.
+     2. Nothing in here knows what screen it is on.
+
+   Extracted from design/vermilion-mockup.html and design/audit-redesign.html,
+   corrected against PRODUCT.md and design/vermilion-redesign-plan.md.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Faces ──────────────────────────────────────────────────────────────────
+   Geist is the interface, per PRODUCT.md brand commitments, which name it as
+   pinned and confirmed against a saturated-pattern warning. The redesign plan
+   said Archivo; the brand commitment outranks the plan. One family carries
+   headings, buttons, labels, body and data — an Operate surface does not need
+   a display/body pair, and a second UI face here would be noise.
+
+   Literata is the manuscript, and only the manuscript. It was drawn for long
+   reading on screens, which is the one job in this app that lasts hours. UI
+   text is never Literata; prose is never Geist.
+
+   Geist Mono is measurement: ids, paths, model names, token counts, seeds.
+
+   IN THE APP this block is replaced by the bundled @fontsource imports.
+   PRODUCT.md forbids loading any asset from a CDN because the product runs
+   offline. It is a link here only so a mockup opens by itself. */
+/* In the app the faces are bundled: see the @fontsource imports at the top of
+   index.css. PRODUCT.md forbids a CDN because the product runs offline. */
+
+/* ══════════════════════════════════════════════════════════════════ TOKENS
+   Four workers and three states. Nothing else may be a colour.
+
+     --putty     the page behind everything. No other background wash.
+     --paper     light panels, tiles, inputs.
+     --char      the dark card. Reserved for THE WORK ITSELF: manuscript, run
+                 threads, focused passages. Charcoal means "you are looking at
+                 the book now."
+     --vermilion the one accent. Discs, primary buttons, numerals, focus,
+                 active rail, progress. Nothing else is ever red-adjacent.
+     --ok/warn/bad   state only. Never decorative, never in illustration.
+
+   Dark is declared twice on purpose. The default OS setting stamps nothing on
+   the root, so a viewer on system-dark only matches prefers-color-scheme; the
+   explicit toggle stamps data-theme and has to win in both directions. A
+   colour defined only inside one of those blocks is the classic unreadable
+   page bug.
+
+   SHAPE LOCK  controls 6px · cards 18px · screens 22px · pills full round.
+   No other radius may exist.
+
+   TYPE LOCK   11 · 14 · 17.5 · 22 · 27.5 · 34 · 43 · 54 · 68. Ratio 1.25 the
+   whole way up. No other size may exist. This replaced thirty-two sizes that
+   had accumulated between 8 and 88, fourteen of them inside the 10–16.5 band
+   at half-pixel granularity — distinctions no reader can see, and a hierarchy
+   that therefore did not exist. Anything that used to be a half-pixel apart
+   is now a weight or a colour apart, which is a difference that reads.     */
+:root {
+  --putty:      #E7DFD7;
+  --putty-2:    #DDD3C9;
+  --ink:        #23201D;
+  --ink-2:      #4A433D;
+  --ink-3:      #635B55;
+
+  --vermilion:  #DE5140;
+  --vermilion-2:#C8412F;
+  /* Vermilion is a fill colour. At 3.67:1 on paper it cannot carry text, so
+     small type that must be red uses the ink variant, and text on charcoal
+     uses the soft one. The bright hue stays for discs, arcs and borders,
+     which is the job it was picked for. */
+  --vermilion-ink:  #AC2D1E;
+  --vermilion-soft: #E78074;
+  --accent-fill: var(--vermilion-2);
+  --on-accent:   #FFFFFF;
+
+  --char:       #2A2724;
+  --char-2:     #383430;
+  --on-char:    #F0EAE3;
+  --on-char-2:  #A8A099;
+
+  --paper:      #FAF7F3;
+  /* The one tinted ground in the app: it means "this is the open one".
+     Explicit rather than mixed - see the note by .subj-open. */
+  --vermilion-wash: rgba(222, 81, 64, .10);
+  --vermilion-edge: rgba(222, 81, 64, .30);
+  --line:       rgba(35,32,29,.14);
+  --line-soft:  rgba(35,32,29,.07);
+  --line-char:  rgba(240,234,227,.16);
+
+  /* State has to survive two grounds. One value tuned for paper goes
+     illegible the moment the same status is printed in a charcoal log, so
+     each state carries a charcoal twin and the surface picks. */
+  --ok:   #3E6541;
+  --warn: #7A551E;
+  --bad:  #A2392E;
+  --ok-char:   #73A976;
+  --warn-char: #CE9238;
+  --bad-char:  #DA867C;
+
+  --r-ctl: 6px;
+  --r-card: 18px;
+  --r-screen: 22px;
+
+  --e1: 0 1px 2px rgba(35,32,29,.07);
+  --e2: 0 10px 26px -12px rgba(35,32,29,.30);
+  --e3: 0 30px 64px -28px rgba(35,32,29,.45);
+
+  --fast: 150ms;
+  --med:  300ms;
+  --slow: 640ms;
+  --ease: cubic-bezier(.16,1,.3,1);
+
+  --font-ui:   "Geist Variable", Geist, "Segoe UI", system-ui, sans-serif;
+  --font-read: Literata, "Iowan Old Style", Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --putty:   #181513;
+    --putty-2: #211D1A;
+    --ink:     #EFE8E1;
+    --ink-2:   #B0A69E;
+    --ink-3:   #8D847D;
+
+    --vermilion:  #EF6551;
+    --vermilion-2:#FF7A66;
+    --vermilion-ink:  #EF6551;
+    --vermilion-soft: #EF6551;
+    --accent-fill: var(--vermilion);
+    --on-accent:   #1A1614;
+
+    --char:    #100E0D;
+    --char-2:  #1C1917;
+    --on-char: #F0EAE3;
+    --on-char-2: #9E958E;
+
+    --paper:   #221E1B;
+  --vermilion-wash: rgba(239, 101, 81, .15);
+  --vermilion-edge: rgba(239, 101, 81, .34);
+    --vermilion-wash: rgba(239, 101, 81, .15);
+    --vermilion-edge: rgba(239, 101, 81, .34);
+    --line:      rgba(239,232,225,.13);
+    --line-soft: rgba(239,232,225,.07);
+    --line-char: rgba(240,234,227,.13);
+
+    --ok: #6FA872;  --warn: #D2A055;  --bad: #E3705F;
+    --ok-char: #6FA872; --warn-char: #D2A055; --bad-char: #E3705F;
+
+    --e1: 0 1px 2px rgba(0,0,0,.55);
+    --e2: 0 10px 26px -12px rgba(0,0,0,.7);
+    --e3: 0 30px 64px -28px rgba(0,0,0,.85);
+  }
+}
+/* `.dark` is here because the app stamps that class on <html> for Tailwind's
+   dark variant. Both selectors name the same theme, so they carry the same
+   tokens; without it the utilities would flip and the system would not. */
+:root[data-theme="dark"], :root.theme-dark {
+  --putty:   #181513;
+  --putty-2: #211D1A;
+  --ink:     #EFE8E1;
+  --ink-2:   #B0A69E;
+  --ink-3:   #8D847D;
+
+  --vermilion:  #EF6551;
+  --vermilion-2:#FF7A66;
+  --vermilion-ink:  #EF6551;
+  --vermilion-soft: #EF6551;
+  --accent-fill: var(--vermilion);
+  --on-accent:   #1A1614;
+
+  --char:    #100E0D;
+  --char-2:  #1C1917;
+  --on-char: #F0EAE3;
+  --on-char-2: #9E958E;
+
+  --paper:   #221E1B;
+  --line:      rgba(239,232,225,.13);
+  --line-soft: rgba(239,232,225,.07);
+  --line-char: rgba(240,234,227,.13);
+
+  --ok: #6FA872;  --warn: #D2A055;  --bad: #E3705F;
+  --ok-char: #6FA872; --warn-char: #D2A055; --bad-char: #E3705F;
+
+  --e1: 0 1px 2px rgba(0,0,0,.55);
+  --e2: 0 10px 26px -12px rgba(0,0,0,.7);
+  --e3: 0 30px 64px -28px rgba(0,0,0,.85);
+}
+
+/* ════════════════════════════════════════════════════════════════════ BASE */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--putty);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+h1, h2, h3, h4, h5 { margin: 0; letter-spacing: -.025em; text-wrap: balance; font-weight: 600; }
+p, figure, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+button, input, select, textarea { font: inherit; color: inherit; }
+a { color: inherit; text-decoration-color: color-mix(in oklab, currentColor 35%, transparent); text-underline-offset: 2px; }
+svg { display: block; }
+:focus-visible { outline: 2px solid var(--vermilion); outline-offset: 3px; border-radius: 3px; }
+::selection { background: color-mix(in oklab, var(--vermilion) 28%, transparent); }
+
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.tnum { font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink-2); }
+.dim   { color: var(--ink-3); }
+.grow  { flex: 1; min-width: 0; }
+.trunc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Panel-dense and Windows-only, so the default 17px light-grey bar starts
+   reading as an extra column between panels. Thin, inset, in the ink tone.
+   This is the one standard affordance the system restyles. */
+.scroll-y { overflow-y: auto; min-height: 0; }
+.scroll-x { overflow-x: auto; }
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--ink-3) 45%, transparent) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in oklab, var(--ink-3) 38%, transparent);
+  border: 3px solid transparent; background-clip: content-box; border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--ink-3) 62%, transparent); background-clip: content-box; }
+
+/* ═══════════════════════════════════════════════════════════ GEOMETRY LAYER
+   The identity. Flat discs, outlined discs and halftone discs, cropped hard
+   by the panel they live in. Decorative only, never under a paragraph, and
+   never more than two per panel with at most one filled.
+
+   Halftone is reserved for print-related surfaces — magazine, images, the
+   layout build — where the texture quietly means ink on paper.            */
+.disc { position: absolute; border-radius: 50%; pointer-events: none; }
+.disc.fill     { background: var(--vermilion); }
+.disc.stroke   { border: 1.5px solid var(--vermilion); }
+.disc.stroke-l { border: 1.5px solid var(--line); }
+.disc.dots {
+  color: var(--ink);
+  background-image: radial-gradient(currentColor 1.35px, transparent 1.45px);
+  background-size: 6px 6px;
+  opacity: .8;
+}
+.disc.dots-light { color: var(--on-char); opacity: .5; }
+
+/* Discs sit behind everything in their panel. This was once done by lifting
+   every other child to position:relative, which quietly beat the absolute
+   positioning of anything else in the panel — placeholders and brushed
+   regions collapsed into thin strips. Sending the discs to -1 inside an
+   isolated stacking context does the same job without touching siblings. */
+.crop { position: relative; overflow: hidden; isolation: isolate; }
+/* Only a decorative disc dropped straight into the crop goes behind. A mark
+   used inline as a title's identity is content and must stay in front. */
+.crop > .disc, .crop > .mark { z-index: -1; }
+
+/* ── Disc as identity ───────────────────────────────────────────────────────
+   Production type is readable by silhouette before any text is read, which
+   is what makes a shelf scannable at a glance rather than a list of titles
+   in the same box. Book = filled. Magazine = halftone, because halftone is
+   print. Storybook = a pair of rings. Short = one small fill. Script = two
+   rules instead of a disc, since a script is ruled paper, not a disc. */
+.mark { position: absolute; inset: 0; pointer-events: none; }
+.mark-book   .d1 { position: absolute; width: 104px; height: 104px; border-radius: 50%; right: -40px; top: -38px; background: var(--vermilion); opacity: .13; }
+.mark-book   .d2 { position: absolute; width: 52px; height: 52px; border-radius: 50%; right: -14px; top: -10px; border: 1.5px solid var(--vermilion); opacity: .42; }
+.mark-mag    .d1 { position: absolute; width: 98px; height: 98px; border-radius: 50%; right: -34px; top: -32px; color: var(--ink); background-image: radial-gradient(currentColor 1.35px, transparent 1.45px); background-size: 6px 6px; opacity: .42; }
+.mark-story  .d1 { position: absolute; width: 88px; height: 88px; border-radius: 50%; right: -30px; top: -28px; border: 1.5px solid var(--vermilion); opacity: .45; }
+.mark-story  .d2 { position: absolute; width: 56px; height: 56px; border-radius: 50%; right: -6px; top: -4px; border: 1.5px solid var(--line); }
+.mark-short  .d1 { position: absolute; width: 46px; height: 46px; border-radius: 50%; right: -12px; top: -10px; background: var(--vermilion); opacity: .2; }
+.mark-script .d1 { position: absolute; right: -14px; top: 16px; width: 92px; height: 1.5px; background: var(--vermilion); opacity: .4; }
+.mark-script .d2 { position: absolute; right: -14px; top: 27px; width: 62px; height: 1.5px; background: var(--line); }
+
+/* The rest of the thirteen. Each silhouette says something true about the
+   form rather than being a different arrangement of the same circle:
+   a derived work orbits the thing it derives from, a translation is the
+   same shape twice, a branching play forks, an open world has no edge. */
+.mark-storyboard .d1 { position: absolute; right: -8px; top: -6px; width: 34px; height: 26px; border-radius: 3px; border: 1.5px solid var(--vermilion); opacity: .5; }
+.mark-storyboard .d2 { position: absolute; right: 30px; top: 14px; width: 34px; height: 26px; border-radius: 3px; border: 1.5px solid var(--line); }
+
+.mark-film .d1 { position: absolute; right: -22px; top: -20px; width: 74px; height: 74px; border-radius: 50%; background: var(--vermilion); opacity: .14; }
+.mark-film .d2 { position: absolute; right: 8px; top: -8px; width: 10px; height: 46px; border-radius: 2px; border: 1.5px solid var(--vermilion); opacity: .45; }
+
+.mark-fanfic .d1 { position: absolute; right: -6px; top: -4px; width: 40px; height: 40px; border-radius: 50%; background: var(--vermilion); opacity: .2; }
+.mark-fanfic .d2 { position: absolute; right: -24px; top: -22px; width: 84px; height: 84px; border-radius: 50%; border: 1.5px dashed var(--vermilion); opacity: .42; }
+
+.mark-side .d1 { position: absolute; right: -26px; top: -24px; width: 82px; height: 82px; border-radius: 50%; border: 1.5px solid var(--line); }
+.mark-side .d2 { position: absolute; right: 46px; top: 30px; width: 22px; height: 22px; border-radius: 50%; background: var(--vermilion); opacity: .45; }
+
+.mark-imitation .d1 { position: absolute; right: -18px; top: -16px; width: 66px; height: 66px; border-radius: 50%; border: 1.5px solid var(--vermilion); opacity: .5; }
+.mark-imitation .d2 { position: absolute; right: 4px; top: 6px; width: 66px; height: 66px; border-radius: 50%; border: 1.5px solid var(--line); }
+
+.mark-continuation .d1 { position: absolute; right: -30px; top: -28px; width: 88px; height: 88px; border-radius: 50%; background: var(--vermilion); opacity: .13; }
+.mark-continuation .d2 { position: absolute; right: 26px; top: 8px; width: 44px; height: 44px; border-radius: 50%; border: 1.5px solid var(--vermilion); border-left-color: transparent; border-bottom-color: transparent; opacity: .6; }
+
+.mark-translation .d1 { position: absolute; right: 16px; top: -14px; width: 60px; height: 60px; border-radius: 50%; background: var(--vermilion); opacity: .16; }
+.mark-translation .d2 { position: absolute; right: -18px; top: 12px; width: 60px; height: 60px; border-radius: 50%; border: 1.5px solid var(--vermilion); opacity: .45; }
+
+.mark-branch .d1 { position: absolute; right: 30px; top: -18px; width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--vermilion); opacity: .5; }
+.mark-branch .d2 { position: absolute; right: -20px; top: 18px; width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--line); }
+
+.mark-world .d1 { position: absolute; right: -34px; top: -32px; width: 104px; height: 104px; border-radius: 50%; color: var(--ink); background-image: radial-gradient(currentColor 1.35px, transparent 1.45px); background-size: 6px 6px; opacity: .4; }
+.mark-world .d2 { position: absolute; right: -6px; top: -4px; width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid var(--vermilion); opacity: .5; }
+
+/* ════════════════════════════════════════════════════════════════════ TYPE
+   Fixed rem-ish scale, not fluid: a tool is viewed at one consistent DPI all
+   day, and a heading that shrinks inside a narrower panel looks broken, not
+   responsive. Ratio stays near 1.18 — there are many type elements on these
+   screens and exaggerated contrast becomes noise.                         */
+.label {
+  font-size: 11px; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600;
+}
+.on-char .label, .dark .label { color: var(--on-char-2); }
+
+/* This used to be a kicker, defended here on the grounds that it "always
+   carries a real datum, never a decorative restatement of the heading."
+   That defence was false. It sat over nineteen headings, and on thirteen of
+   them the eyebrow carried the meaning while the heading repeated a label
+   the topbar crumb had already printed — "Which of these is actually doing
+   work" over the word "Providers". Those headings now say the thing and the
+   eyebrow is gone, which is what the ban was protecting against.
+
+   What survives is provenance: which book a chapter belongs to, when it was
+   drafted. That is metadata about the object below, not a pitch for it. */
+.dual { line-height: 1.14; }
+.dual .provenance {
+  display: block; font-size: .46em; font-weight: 500; color: var(--ink-2);
+  letter-spacing: -.005em; margin-bottom: .28em;
+}
+.dark .dual .provenance, .on-char .dual .provenance { color: var(--on-char-2); }
+
+.numeral {
+  font-weight: 600; letter-spacing: -.05em; line-height: .82;
+  font-variant-numeric: tabular-nums; color: var(--vermilion-ink);
+}
+.numeral.ghost { color: var(--ink-3); opacity: .38; }
+
+.h-page  { font-size: 27.5px; letter-spacing: -.032em; }
+.h-panel { font-size: 17.5px; }
+.h-sub   { font-size: 14px; font-weight: 600; }
+
+.head { max-width: 62ch; margin-bottom: 22px; }
+.head h2 { font-size: 27.5px; }
+.head p  { margin-top: 8px; color: var(--ink-2); font-size: 14px; max-width: 58ch; }
+
+/* ═════════════════════════════════════════════════════════════════ CONTROLS
+   Every control ships default, hover, focus, active and disabled. Half a set
+   is not a component.                                                     */
+.btn {
+  --bg: var(--accent-fill); --fg: var(--on-accent);
+  appearance: none; border: 1.5px solid transparent; cursor: pointer;
+  font-size: 14px; font-weight: 500; padding: 9px 16px; border-radius: var(--r-ctl);
+  background: var(--bg); color: var(--fg); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 8px;
+  transition: transform var(--fast) var(--ease), background-color var(--fast) var(--ease),
+              border-color var(--fast) var(--ease), color var(--fast) var(--ease),
+              box-shadow var(--fast) var(--ease), opacity var(--fast) var(--ease);
+}
+.btn:hover  { background: var(--vermilion-2); transform: translateY(-1px); box-shadow: var(--e2); }
+.btn:active { transform: translateY(0) scale(.985); box-shadow: var(--e1); }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.btn .ico { transition: transform var(--med) var(--ease); }
+.btn:hover .ico { transform: translateX(3px); }
+.btn-line  { --bg: transparent; --fg: var(--ink); border-color: var(--line); }
+.btn-line:hover  { --bg: transparent; --fg: var(--vermilion); border-color: var(--vermilion); box-shadow: none; }
+.btn-quiet { --bg: transparent; --fg: var(--ink-2); }
+.btn-quiet:hover { --bg: var(--putty-2); --fg: var(--ink); box-shadow: none; }
+.btn-bad   { --bg: transparent; --fg: var(--bad); border-color: color-mix(in oklab, var(--bad) 45%, transparent); }
+.btn-bad:hover   { --bg: var(--bad); --fg: #FFF; border-color: var(--bad); }
+.btn-sm { font-size: 11px; padding: 6px 11px; gap: 6px; }
+.dark .btn-line, .on-char .btn-line { --fg: var(--on-char); border-color: var(--line-char); }
+.dark .btn-quiet, .on-char .btn-quiet { --fg: var(--on-char-2); }
+.dark .btn-quiet:hover, .on-char .btn-quiet:hover { --bg: var(--char-2); --fg: var(--on-char); }
+
+/* The arrow-in-a-ring. Every "go" action in the app is this shape, and the
+   ring fills from the left so the motion reads as departure. */
+.arrow {
+  --sz: 42px;
+  width: var(--sz); height: var(--sz); border-radius: 50%; flex: none;
+  border: 1.5px solid var(--vermilion); background: transparent; cursor: pointer;
+  display: grid; place-items: center; position: relative; overflow: hidden;
+  color: var(--vermilion); padding: 0;
+  transition: color var(--fast) var(--ease);
+}
+.arrow::before {
+  content: ""; position: absolute; inset: 0; background: var(--accent-fill);
+  transform: scaleX(0); transform-origin: left center;
+  transition: transform var(--med) var(--ease);
+}
+.arrow svg { position: relative; z-index: 1; transition: transform var(--med) var(--ease); }
+.arrow:hover { color: var(--on-accent); }
+.arrow:hover::before { transform: scaleX(1); }
+.arrow:hover svg { transform: translateX(3px); }
+.arrow-sm { --sz: 32px; }
+.arrow-lg { --sz: 54px; }
+
+.seg {
+  display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--r-ctl);
+  border: 1px solid var(--line); background: var(--putty-2);
+}
+.seg button {
+  appearance: none; border: 0; cursor: pointer; font-size: 14px; font-weight: 500;
+  padding: 5px 11px; border-radius: 4px; background: transparent; color: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+.dark .seg, .on-char .seg { border-color: var(--line-char); background: transparent; }
+.dark .seg button, .on-char .seg button { color: var(--on-char-2); }
+.dark .seg button:hover, .on-char .seg button:hover { color: var(--on-char); }
+/* The charcoal rule above out-specifies the pressed state, so the selected
+   segment was painting muted grey on the accent fill — 1.92:1, the least
+   readable thing in the app and it was the control saying which mode you
+   are in. */
+.dark .seg button[aria-pressed="true"],
+.on-char .seg button[aria-pressed="true"] { color: var(--on-accent); }
+
+.field { display: grid; gap: 6px; }
+.field > label { font-size: 11px; font-weight: 500; color: var(--ink-2); }
+.input {
+  font-size: 14px; color: var(--ink); background: var(--paper);
+  border: 1.5px solid var(--line); border-radius: var(--r-ctl);
+  padding: 9px 12px; width: 100%;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.input::placeholder { color: var(--ink-3); }
+.input:focus { outline: none; border-color: var(--vermilion); box-shadow: 0 0 0 3px color-mix(in oklab, var(--vermilion) 22%, transparent); }
+.input[disabled] { opacity: .5; cursor: not-allowed; }
+.input.is-bad  { border-color: var(--bad); }
+.input.is-good { border-color: var(--ok); }
+textarea.input { resize: vertical; min-height: 88px; line-height: 1.55; }
+
+.hint { font-size: 14px; color: var(--ink-3); }
+.hint.is-bad  { color: var(--bad); }
+.hint.is-good { color: var(--ok); }
+.hint.is-warn { color: var(--warn); }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+  letter-spacing: .04em; padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap;
+}
+.pill-fill { background: var(--accent-fill); border-color: transparent; color: var(--on-accent); }
+.pill-ok   { color: var(--ok);   border-color: color-mix(in oklab, var(--ok) 45%, transparent); }
+.pill-warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 45%, transparent); }
+.pill-bad  { color: var(--bad);  border-color: color-mix(in oklab, var(--bad) 45%, transparent); }
+.dark .pill, .on-char .pill { color: var(--on-char-2); border-color: var(--line-char); }
+.dark .pill-fill, .on-char .pill-fill { color: var(--on-accent); }
+
+/* A filter pill is a button that reads as a pill, so it needs the states a
+   pill never has. */
+button.pill { cursor: pointer; background: transparent; transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), background-color var(--fast) var(--ease); }
+button.pill:hover { color: var(--ink); border-color: var(--ink-3); }
+button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color: transparent; color: var(--on-accent); }
+
+/* A checkbox, because choosing what to audit is a multi-select over files and
+   nothing else in the system does that job. Square, so it is never confused
+   with the round state dots that sit beside it in the same row. */
+.check {
+  appearance: none; width: 15px; height: 15px; flex: none; cursor: pointer;
+  border: 1.5px solid var(--line); border-radius: 4px; background: var(--paper);
+  display: grid; place-items: center; margin: 0;
+  transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+.check:hover { border-color: var(--ink-3); }
+.check:checked { background: var(--accent-fill); border-color: var(--accent-fill); }
+.check:checked::after {
+  content: ""; width: 7px; height: 4px; border: 1.5px solid #FFF;
+  border-top: 0; border-right: 0; transform: rotate(-45deg) translate(1px, -1px);
+}
+.check:indeterminate { background: var(--accent-fill); border-color: var(--accent-fill); }
+.check:indeterminate::after { content: ""; width: 7px; height: 1.5px; background: #FFF; }
+
+/* A file's state is a round dot; your intent is a square box. Different
+   shapes on purpose, because they sit next to each other in every row. */
+.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: block; border: 1.5px solid var(--line); }
+.dot-clean { background: var(--ok); border-color: var(--ok); }
+.dot-warn  { background: var(--warn); border-color: var(--warn); }
+.dot-bad   { background: var(--bad); border-color: var(--bad); }
+.dot-never { background: transparent; }
+
+.kbd {
+  font-family: var(--font-mono); font-size: 11px; padding: 2px 6px;
+  border-radius: 4px; border: 1px solid var(--line); background: var(--putty-2);
+  color: var(--ink-2); box-shadow: 0 1px 0 var(--line);
+}
+.dark .kbd, .on-char .kbd { background: var(--char-2); border-color: var(--line-char); color: var(--on-char-2); box-shadow: none; }
+
+.slider {
+  -webkit-appearance: none; appearance: none; width: 104px; height: 3px;
+  border-radius: 2px; background: var(--line); cursor: pointer;
+}
+.dark .slider, .on-char .slider { background: var(--line-char); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--vermilion); cursor: pointer; border: 0; }
+.slider::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: var(--vermilion); cursor: pointer; }
+
+/* On/off as a two-button segment rather than a toggle switch: this app has
+   many of them in Setup, and a labelled pair states the current value
+   without the reader decoding which end is on. */
+.onoff { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r-ctl); overflow: hidden; }
+
+/* A checkbox with a word beside it is not a segmented control, and wrapping
+   one in .onoff collapsed the gap and clipped the box. */
+.checkline {
+  display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+  font-size: 14px; color: var(--ink-2); user-select: none;
+}
+.checkline:hover { color: var(--ink); }
+.onoff button {
+  appearance: none; border: 0; cursor: pointer; font-size: 11px; font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase; padding: 5px 10px;
+  background: transparent; color: var(--ink-3);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.onoff button:hover { color: var(--ink); }
+.onoff button[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+.onoff button[aria-pressed="true"].off { background: var(--ink-3); }
+
+/* ════════════════════════════════════════════════════════════ THE APP FRAME
+   Rail, topbar, stage. Every screen file is one .screen and nothing else, so
+   the chrome is identical everywhere by construction rather than by care. */
+.screen {
+  border-radius: var(--r-screen); border: 1px solid var(--line);
+  background: var(--putty); box-shadow: var(--e3); overflow: hidden;
+  display: grid; grid-template-columns: 196px 1fr; grid-template-rows: 34px 1fr;
+  height: 100%; min-height: 0;
+}
+.screen.rail-thin { grid-template-columns: 64px 1fr; }
+/* Shut. The rail is 196px of navigation on a screen whose whole job is three
+   panels of work, and on audit that is a fifth of the manuscript. The toggle
+   is in the topbar, which is on every screen, so it can always be reopened. */
+.screen.rail-off { grid-template-columns: 0 1fr; }
+.screen.rail-off > .rail { display: none; }
+
+/* Tauri overlay titlebar. Draggable putty, with the window controls where
+   Windows puts them, because Windows is the only target that ships. */
+.titlebar {
+  grid-column: 1 / -1; display: flex; align-items: center; gap: 10px;
+  padding: 0 0 0 14px; background: var(--putty-2); border-bottom: 1px solid var(--line);
+  font-size: 11px; color: var(--ink-3); user-select: none;
+}
+.titlebar .wincontrols { margin-left: auto; display: flex; }
+.titlebar .wincontrols button {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  width: 44px; height: 33px; display: grid; place-items: center; color: var(--ink-2);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.titlebar .wincontrols button:hover { background: var(--line-soft); color: var(--ink); }
+.titlebar .wincontrols button.close:hover { background: var(--bad); color: var(--paper); }
+
+.rail {
+  border-right: 1px solid var(--line); padding: 14px 11px 12px;
+  display: flex; flex-direction: column; gap: 1px; background: var(--putty-2);
+  min-height: 0;
+}
+.rail-thin .rail { padding: 14px 8px 12px; align-items: center; }
+.rail-thin .nav { justify-content: center; padding: 9px 0; width: 44px; }
+.rail-thin .nav span, .rail-thin .rail-label span, .rail-thin .wordmark b { display: none; }
+
+[data-go] { cursor: pointer; }
+.wordmark { display: flex; align-items: center; gap: 9px; padding: 4px 8px 16px; }
+
+/* Starting something is the most common first action in the app, and there
+   are thirteen ways to do it. Thirteen rail items would drown the four
+   places you go every day, so the rail carries one door and the choosing
+   happens on a screen with room to explain each one. */
+.railnew {
+  display: flex; align-items: center; gap: 9px; width: 100%; cursor: pointer;
+  padding: 9px 12px; margin-bottom: 10px; border: 1.5px solid transparent;
+  border-radius: var(--r-ctl); background: var(--accent-fill); color: var(--on-accent);
+  font-size: 14px; font-weight: 600; text-align: left;
+  transition: background-color var(--fast) var(--ease), transform var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.railnew:hover { background: var(--vermilion-2); transform: translateY(-1px); box-shadow: var(--e2); }
+.railnew:active { transform: none; }
+.railnew svg { transition: transform var(--med) var(--ease); }
+.railnew:hover svg { transform: rotate(90deg); }
+.rail-thin .railnew { justify-content: center; padding: 9px 0; }
+.rail-thin .railnew span { display: none; }
+.wordmark b { font-size: 17.5px; font-weight: 600; letter-spacing: -.03em; }
+.wordmark svg { color: var(--vermilion); }
+
+.nav {
+  position: relative; display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 13px; border-radius: var(--r-ctl);
+  font-size: 14px; color: var(--ink-2); cursor: pointer; font-weight: 500;
+  background: transparent; border: 0; text-align: left; width: 100%;
+  transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+/* The bar grows from its centre on a scale, not a height: same picture,
+   compositor only. */
+.nav::before {
+  content: ""; position: absolute; left: 3px; top: 50%; width: 3px; height: 20px;
+  border-radius: 2px; background: var(--vermilion);
+  transform: translateY(-50%) scaleY(0); transform-origin: center;
+  transition: transform var(--med) var(--ease);
+}
+.nav:hover { color: var(--ink); background: color-mix(in oklab, var(--vermilion) 8%, transparent); }
+.nav:hover::before { transform: translateY(-50%) scaleY(.75); }
+.nav[aria-current="page"] { color: var(--ink); }
+.nav[aria-current="page"]::before { transform: translateY(-50%) scaleY(1); }
+.nav .tail { margin-left: auto; font-size: 11px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.nav[aria-current="page"] .tail { color: var(--vermilion-ink); }
+.rail-label {
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; padding: 18px 10px 6px;
+}
+
+/* The run is visible from every screen. Bottom of the rail, always, so
+   walking back to the desk after an hour away starts with one glance. */
+.railrun {
+  margin-top: auto; display: flex; align-items: center; gap: 10px;
+  padding: 10px; border-radius: var(--r-ctl); cursor: pointer;
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink); text-align: left;
+}
+.railrun:hover { border-color: var(--vermilion); box-shadow: var(--e1); }
+.railrun .what { display: block; font-size: 11px; font-weight: 500; line-height: 1.25; }
+.railrun .where { display: block; font-size: 11px; color: var(--ink-3); }
+.railrun .attrib { font-size: 11px; color: var(--ink-3); line-height: 1.3; }
+
+.topbar {
+  display: flex; align-items: center; gap: 9px; padding: 10px 18px;
+  border-bottom: 1px solid var(--line); background: var(--putty);
+  min-height: 0;
+}
+.crumbs { display: flex; align-items: center; gap: 7px; font-size: 14px; color: var(--ink-3); min-width: 0; }
+.crumbs a { text-decoration: none; }
+.crumbs a:hover { color: var(--ink); }
+.crumbs b { color: var(--ink); font-weight: 600; }
+.crumbs .sep { opacity: .5; }
+
+/* The heartbeat. This pill is the count of gates that need a human, and it
+   is the only element allowed to be loud in the topbar. */
+.gatepill {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 11px; font-weight: 600; padding: 5px 12px 5px 8px;
+  border-radius: 999px; border: 1.5px solid var(--vermilion);
+  background: color-mix(in oklab, var(--vermilion) 12%, transparent);
+  color: var(--vermilion);
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.gatepill:hover { background: var(--accent-fill); color: var(--on-accent); }
+.gatepill .n {
+  display: grid; place-items: center; width: 19px; height: 19px; border-radius: 50%;
+  background: var(--accent-fill); color: var(--on-accent); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.gatepill:hover .n { background: #FFF; color: var(--vermilion); }
+.gatepill.quiet { border-color: var(--line); background: transparent; color: var(--ink-3); }
+.gatepill.quiet:hover { border-color: var(--ink-3); background: transparent; color: var(--ink-2); }
+.gatepill.quiet .n { background: var(--line); color: var(--ink-2); }
+
+/* The rail owns column 1, the main column owns column 2, and only the stage
+   scrolls. Declared here rather than left to utility classes: a stage whose
+   children are shrinkable flex items gets squashed to fit instead of
+   overflowing, and a scroller with nothing overflowing shows no bar and does
+   not scroll. That exact bug shipped once. */
+.main { grid-column: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.stage {
+  flex: 1; padding: clamp(18px, 3vw, 30px); position: relative;
+  min-height: 0; overflow-y: auto;
+}
+.stage > * { flex: none; }
+
+/* Command palette. Charcoal, because it is a surface you are working inside
+   rather than a menu you are reading. */
+.scrim {
+  position: absolute; inset: 0; z-index: 15;
+  background: color-mix(in oklab, var(--char) 46%, transparent);
+  display: grid; place-items: start center; padding-top: 12vh;
+}
+.palette {
+  width: min(560px, 92%); border-radius: var(--r-card); overflow: hidden;
+  background: var(--char); color: var(--on-char); box-shadow: var(--e3);
+  border: 1px solid var(--line-char);
+}
+.palette .q { display: flex; align-items: center; gap: 11px; padding: 15px 18px; border-bottom: 1px solid var(--line-char); }
+.palette .q input {
+  flex: 1; background: transparent; border: 0; outline: none;
+  font-size: 17.5px; color: var(--on-char);
+}
+.palette .q input::placeholder { color: var(--on-char-2); }
+.palette .grp { padding: 8px 8px 10px; }
+.palette .grp > .label { padding: 8px 10px 5px; }
+.pitem {
+  display: flex; align-items: center; gap: 11px; width: 100%; text-align: left;
+  padding: 9px 10px; border: 0; background: transparent; border-radius: var(--r-ctl);
+  color: var(--on-char-2); font-size: 14px; cursor: pointer;
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.pitem:hover, .pitem[aria-selected="true"] { background: var(--char-2); color: var(--on-char); }
+.pitem[aria-selected="true"] { box-shadow: inset 2px 0 0 var(--vermilion); }
+.pitem .tailk { margin-left: auto; }
+.wrap { max-width: 1200px; margin: 0 auto; }
+/* A reading surface is narrower than a working one. At stage width the
+   column sits against the left edge of a very wide card and the rest of
+   the charcoal reads as a void rather than a margin. */
+.wrap-read { max-width: 900px; margin: 0 auto; }
+.stack { display: flex; flex-direction: column; gap: 16px; }
+.stack-lg { display: flex; flex-direction: column; gap: 26px; }
+/* For lists that are one subject rather than several sections: stage rows,
+   the blockers under a gate. 16px between them reads as separate things. */
+.stack-xs { display: flex; flex-direction: column; gap: 6px; }
+.rowflex { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.spread { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+
+/* ═══════════════════════════════════════════════════════════════ SURFACES */
+.panel {
+  border-radius: var(--r-card); border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink); padding: 20px 22px; position: relative; overflow: hidden;
+}
+.panel > h3 { font-size: 17.5px; margin-bottom: 4px; }
+.panel > .note { font-size: 14px; color: var(--ink-2); max-width: 56ch; }
+.panel-flush { padding: 0; }
+.panel-head {
+  display: flex; align-items: center; gap: 12px; padding: 15px 20px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-body { padding: 16px 20px; }
+
+.dark {
+  background: var(--char); color: var(--on-char); border-radius: var(--r-card);
+  position: relative; overflow: hidden;
+}
+/* Charcoal is a different ground, so the tokens that carry meaning are
+   re-pointed at their charcoal twins here rather than at every call site.
+   Anything already written as var(--ok) inside the work surface becomes
+   legible on it without the screen file knowing. */
+.dark, .on-char {
+  --ok: var(--ok-char); --warn: var(--warn-char); --bad: var(--bad-char);
+  --vermilion-ink: var(--vermilion-soft);
+  --ink-3: var(--on-char-2);
+}
+.dark h1, .dark h2, .dark h3, .dark h4 { color: var(--on-char); }
+.dark .muted, .on-char .muted { color: var(--on-char-2); }
+.dark .dim, .on-char .dim { color: var(--on-char-2); }
+.dark .input, .on-char .input { background: var(--char-2); border-color: var(--line-char); color: var(--on-char); }
+
+.cols { display: grid; gap: 16px; }
+@media (min-width: 900px) {
+  .cols-2 { grid-template-columns: 1fr 1fr; }
+  .cols-3 { grid-template-columns: repeat(3, 1fr); }
+  .cols-a { grid-template-columns: 7fr 5fr; }
+  .cols-b { grid-template-columns: 5fr 7fr; }
+  .split  { grid-template-columns: 4fr 6fr; }
+}
+/* Scope, queue, passage. The plan drew audit as two columns and left nowhere
+   to say WHAT is being audited, which is the first decision anyone makes on
+   this screen. The third column is the fix. */
+/* `--cols` is set inline by the drag handles. It is read only here, so a
+   narrow window keeps its single stacked column instead of being forced into
+   pixel widths chosen on a wide monitor. */
+@media (min-width: 1024px) {
+  /* Three equal columns: the files, where the work stands, and the page.
+     `minmax(0, 1fr)`, not `1fr`. A bare `1fr` is `minmax(auto, 1fr)`, so a
+     column whose content cannot wrap is allowed to push past its share — and
+     `a-line-that-feeds-ants-and-baffles-mathematicians.md` has nowhere to
+     break, so the file list took about 70px off the other two and the columns
+     were visibly unequal despite this rule saying they were equal.
+     Drag any seam to change it; `--cols` is only set once somebody has. */
+  .cols-audit {
+    grid-template-columns: var(--cols, minmax(0, 1fr) 6px minmax(0, 1fr) 6px minmax(0, 1fr));
+  }
+}
+
+.tiles { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); }
+.tile {
+  position: relative; overflow: hidden; border-radius: var(--r-card);
+  border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 16px;
+  cursor: pointer; min-height: 168px; display: flex; flex-direction: column;
+  text-align: left; width: 100%;
+  transition: transform var(--med) var(--ease), box-shadow var(--med) var(--ease), border-color var(--med) var(--ease);
+}
+.tile:hover { transform: translateY(-4px); box-shadow: var(--e2); border-color: color-mix(in oklab, var(--vermilion) 40%, transparent); }
+.tile h4 { font-size: 17.5px; margin-top: auto; }
+.tile .who { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
+.tile .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* New is a tile, not a floating button: it belongs in the shelf it adds to. */
+.tile-new {
+  border-style: dashed; background: transparent; align-items: center; justify-content: center;
+  gap: 12px; color: var(--ink-2);
+}
+.tile-new:hover { background: color-mix(in oklab, var(--vermilion) 5%, transparent); }
+
+/* One column that cannot exceed its container. A bare `display: grid` gives an
+   `auto` track, and an auto track grows to its item's min-content width — for
+   a row of nowrap text that is the whole untruncated string. The row then
+   inherited that width, `.trunc` had nothing to ellipsise against, and the
+   panel scrolled sideways. It only looked right while every title was short
+   enough to fit. */
+.rows { display: grid; grid-template-columns: minmax(0, 1fr); }
+.row {
+  display: flex; align-items: center; gap: 13px; padding: 13px 4px;
+  border-top: 1px solid var(--line); position: relative; text-align: left;
+  background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
+  width: 100%; min-width: 0;
+}
+.row:first-child { border-top: 0; }
+/* The row slides its contents rather than its padding. Same 8px move, but a
+   list of sixty rows does not relayout on every mouse crossing, and the rule
+   above the row stays put instead of jumping with it. */
+.row > * { transition: transform var(--med) var(--ease); }
+.row:hover > * { transform: translateX(8px); }
+/* A trailing action is anchored to the right edge, so sliding it with the rest
+   of the row reads as the row breaking rather than responding. It fades in
+   where it stands. */
+.row > .row-act { transform: none !important; opacity: 0; transition: opacity var(--fast) var(--ease); }
+.row:hover > .row-act, .row:focus-within > .row-act { opacity: 1; }
+@media (hover: none) { .row > .row-act { opacity: 1; } }
+.row .glyph {
+  width: 32px; height: 32px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  border: 1.5px solid var(--line); font-size: 11px; font-weight: 700; color: var(--ink-2);
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.row:hover .glyph { border-color: var(--accent-fill); background: var(--accent-fill); color: var(--on-accent); }
+.row .name { font-size: 14px; font-weight: 500; display: block; }
+.row .meta { font-size: 14px; color: var(--ink-3); display: block; margin-top: 1px; }
+/* Fully hidden until hover meant a low-vision user scanning a sixty-row list
+   had to hover-hunt every action. It rests visible-but-quiet instead, and
+   comes to full strength on hover or focus. Still recedes; no longer hides. */
+.row .act { opacity: .42; display: flex; align-items: center; gap: 6px; transition: opacity var(--med) var(--ease); }
+.row:hover .act, .row:focus-within .act { opacity: 1; }
+.row:hover .act, .row:focus-within .act { opacity: 1; transform: none; }
+@media (hover: none) { .row .act { opacity: 1; } }
+.row .num { font-size: 14px; font-weight: 600; color: var(--vermilion-ink); font-variant-numeric: tabular-nums; width: 2.2em; flex: none; }
+/* The row you are already in. Every other row in a rail hands something to the
+   composer and leaves you where you are; a conversation row swaps the
+   transcript under you, so the one you are reading has to say so — marked the
+   way .nav marks the page you are on, and not offering to take you there. */
+.row[aria-current="true"] { cursor: default; }
+.row[aria-current="true"] .name { color: var(--vermilion-ink); font-weight: 600; }
+.row[aria-current="true"]:hover > * { transform: none; }
+/* The production you have open, in the audit rail's work list.
+
+   It sticks. Twenty-three pages hang off this row, so scrolling to page
+   nineteen used to carry the name of the thing you were in off the top of the
+   column - which is the whole problem nesting the pages was meant to solve.
+   Pinned, it stays answerable for what is under it, and it no longer has to
+   shout to be found: a tinted slab with a bar down its left read as an alert
+   and outweighed the page you had actually selected.
+
+   Scoped to `.row-work` rather than every `.row`: a conversation row marks the
+   transcript you are reading and wants the quieter treatment it has. */
+.row-work[aria-current="true"] {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Its pages. The sticky name above them already says whose they are, so the
+   indent is optical alignment and nothing more - no rule, no second container.
+   Proximity is doing the grouping. */
+.work-files { min-width: 0; padding: 9px 0 14px 2px; }
+
+.dark .row, .on-char .row { border-color: var(--line-char); }
+.dark .row .meta, .on-char .row .meta { color: var(--on-char-2); }
+
+.spec { width: 100%; border-collapse: collapse; font-size: 14px; }
+.spec th { text-align: left; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 0 14px 9px 0; }
+.spec td { padding: 9px 14px 9px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.spec td:first-child { color: var(--ink-3); white-space: nowrap; }
+.dark .spec td, .on-char .spec td { border-color: var(--line-char); }
+.dark .spec td:first-child, .on-char .spec td:first-child { color: var(--on-char-2); }
+.sw { width: 26px; height: 26px; border-radius: 50%; display: inline-block; vertical-align: middle; border: 1px solid var(--line); }
+
+/* ══════════════════════════════════════════════════════════════════ READING
+   The one surface tuned for hours rather than seconds. Measure, leading and
+   size are the reader adjustables; nothing animates near the column. */
+.read {
+  font-family: var(--font-read);
+  font-size: var(--rs, 16.5px); line-height: var(--rl, 1.72); max-width: var(--rm, 64ch);
+  text-wrap: pretty; font-optical-sizing: auto;
+  /* The measure is deliberately not transitioned. It is dragged on a slider,
+     and reflowing a long column on every frame of a drag is the one place in
+     this app where motion makes the text harder to read, not easier. */
+  transition: font-size var(--med) var(--ease), line-height var(--med) var(--ease);
+}
+.read p + p { margin-top: .8em; text-indent: 1.3em; }
+.read p.lead { text-indent: 0; }
+/* The drop cap was set in the interface face and the brand colour, which put
+   the tool's signature on the first letter of the writer's own paragraph.
+   It is their sentence. The cap is the reading face, in ink. */
+.read p.lead::first-letter {
+  float: left; font-family: var(--font-read); font-size: 3.1em; line-height: .78;
+  font-weight: 600; color: var(--ink); margin: .06em .09em 0 0;
+}
+.dark .read p.lead::first-letter, .on-char .read p.lead::first-letter { color: var(--on-char); }
+.read mark {
+  background: color-mix(in oklab, var(--vermilion) 22%, transparent);
+  color: inherit; border-radius: 2px; padding: .06em .12em; cursor: pointer;
+  box-decoration-break: clone;
+}
+.read mark:hover { background: color-mix(in oklab, var(--vermilion) 36%, transparent); }
+.read mark[aria-current="true"] { background: color-mix(in oklab, var(--vermilion) 42%, transparent); }
+/* Severity, on the page rather than only in the list beside it. A blocking
+   finding and a note look the same in vermilion, and one of them stops a
+   sign-off. The current one still wins, whatever it is. */
+.read mark.m-bad  { background: color-mix(in oklab, var(--bad) 26%, transparent); }
+.read mark.m-warn { background: color-mix(in oklab, var(--warn) 26%, transparent); }
+.read mark.m-bad:hover  { background: color-mix(in oklab, var(--bad) 40%, transparent); }
+.read mark.m-warn:hover { background: color-mix(in oklab, var(--warn) 40%, transparent); }
+/* Settled. Green, and quieter than anything still open — it is there to show
+   the page was worked, not to ask for anything. */
+.read mark.m-ok { background: color-mix(in oklab, var(--ok) 20%, transparent); }
+.read mark.m-ok:hover { background: color-mix(in oklab, var(--ok) 34%, transparent); }
+.read mark[aria-current="true"].m-bad,
+.read mark[aria-current="true"].m-warn,
+.read mark[aria-current="true"].m-ok {
+  background: color-mix(in oklab, var(--vermilion) 42%, transparent);
+  outline: 1.5px solid var(--vermilion);
+}
+
+.readhead { display: flex; align-items: flex-start; gap: 16px; padding: 22px 26px 0; }
+.readbar {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  padding: 11px 26px; border-top: 1px solid var(--line-char); border-bottom: 1px solid var(--line-char);
+  margin-top: 18px;
+}
+.ctl { display: flex; align-items: center; gap: 9px; }
+.ctl > span, .ctl > label { font-size: 11px; color: var(--on-char-2); }
+
+/* The reading measure is padding, never a width on the field itself: a
+   narrowed field takes its scrollbar in with it and parks it in the middle
+   of the paper. */
+.read-field {
+  width: 100%; display: block; resize: none; border: 0; background: transparent;
+  color: inherit; font-family: var(--font-read);
+  font-size: var(--rs, 16.5px); line-height: var(--rl, 1.72);
+  padding: 0 max(0px, calc((100% - var(--rm, 64ch)) / 2));
+  scrollbar-gutter: stable; text-wrap: pretty;
+}
+.read-field:focus { outline: none; }
+
+/* The review bar inside the reading card. Sticky to the card, not the page,
+   so approving never means scrolling back up to find the control. */
+.verdict {
+  position: sticky; bottom: 0; display: flex; align-items: center; gap: 10px;
+  padding: 13px 26px; border-top: 1px solid var(--line-char);
+  background: color-mix(in oklab, var(--char) 92%, transparent);
+  backdrop-filter: blur(6px);
+}
+
+/* ═══════════════════════════════════════════════════════════ RUN AND STATE
+   Everything a run passes through: waiting, working, answering, failing,
+   done. This thread is the universal surface for every pipeline stage —
+   draft, audit, research, art brief, destyle — so a user learns it once. */
+.thread { display: grid; gap: 15px; }
+.msg { display: flex; gap: 12px; align-items: flex-start; }
+.who-av {
+  width: 29px; height: 29px; border-radius: 50%; flex: none; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700; letter-spacing: .02em;
+}
+.who-av.human { border: 1.5px solid var(--line-char); color: var(--on-char-2); }
+.who-av.model { background: var(--accent-fill); color: var(--on-accent); }
+.msg .body { min-width: 0; flex: 1; }
+.msg .tag {
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--on-char-2); font-weight: 600; margin-bottom: 6px;
+}
+
+.thinking { display: inline-flex; gap: 5px; align-items: center; height: 20px; }
+.thinking i { width: 7px; height: 7px; border-radius: 50%; background: var(--vermilion); display: block; opacity: .45; }
+
+.caret {
+  display: inline-block; width: .4em; height: 1.05em; background: var(--vermilion);
+  vertical-align: -.15em; margin-left: .07em;
+}
+
+.tool {
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  border: 1px solid var(--line-char); border-radius: var(--r-ctl);
+  font-size: 14px; color: var(--on-char-2);
+}
+.tool .tick { color: var(--vermilion); }
+.spin { width: 15px; height: 15px; flex: none; }
+.spin circle { fill: none; stroke: var(--vermilion); stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 31; stroke-dashoffset: 13; }
+
+/* Failure always states what stopped, what survived, and the way forward.
+   "Error occurred" is banned; so is a dead end. */
+.fail {
+  display: flex; gap: 12px; align-items: flex-start; padding: 13px 15px;
+  border: 1.5px solid color-mix(in oklab, var(--bad) 55%, transparent);
+  border-radius: var(--r-ctl); font-size: 14px;
+}
+.fail b { display: block; color: var(--bad); font-size: 14px; margin-bottom: 3px; }
+.fail .kept { color: var(--ok); }
+
+/* The same bar, saying the opposite. A gate that is open is worth stating as
+   plainly as one that is shut - "every gate is open" is the sentence a person
+   is looking for, and leaving it implied by the absence of a red bar means
+   they have to infer it. */
+.pass {
+  display: flex; gap: 12px; align-items: flex-start; padding: 13px 15px;
+  border: 1.5px solid color-mix(in oklab, var(--ok) 50%, transparent);
+  border-radius: var(--r-ctl); font-size: 14px; color: var(--ink-2);
+}
+.pass .ico { color: var(--ok); flex: none; }
+
+/* ══════════════════════════════════════════════════════════════ WORKBENCH
+   A screen you work at rather than read down: it fills the window and each
+   column scrolls inside itself.
+
+   Without this the three audit columns were three lengths on one long page.
+   The files ran a thousand pixels, the passage ended after three hundred and
+   left a field of empty putty under it, and neither list could be seen whole
+   at any window size — the columns had `max-height: calc(100vh - 350px)`
+   hardcoded, which is a guess about a header this file cannot see. Nothing
+   here measures the viewport: the height comes down from the shell and the
+   part of each column that should take the slack says so. */
+/* `flex: 1` and `min-width: 0` are not decoration. `.stage-flush` is a
+   ROW flex box, so a child with the default `flex: 0 1 auto` is sized by its
+   own content: the grid inside asked for max-content, got it, and stopped —
+   three columns as wide as their longest unbreakable line, ending 900px short
+   of the right edge with putty after them. Every `minmax(0, 1fr)` below was
+   correct and none of it could be seen, because the box those tracks divide
+   was never the width of the screen. This is the line that makes them equal. */
+.workbench {
+  display: flex; flex-direction: column; gap: 14px;
+  flex: 1; min-width: 0; width: 100%;
+  height: 100%; min-height: 0;
+  padding: 16px 18px;
+}
+.workbench > .cols { flex: 1; min-height: 0; min-width: 0; }
+.workbench > .cols > * { min-height: 0; min-width: 0; height: 100%; }
+
+/* A column: a head, some fixed middles, and exactly one part that grows. */
+.colpanel { display: flex; flex-direction: column; min-height: 0; }
+.colpanel > .panel-head, .colpanel > .panel-body { flex: none; }
+/* After the rule above, deliberately. A column's scroller is usually written
+   `panel-body grows`, and those two selectors have the same specificity — so
+   whichever comes last decides. With `flex: none` winning, the one part that
+   is meant to take the slack took none of it and overflowed instead. */
+.colpanel > .grows { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+/* A slug with no spaces in it has nowhere to break, so it decides how wide
+   the column is unless it is told it may break anywhere. */
+.colpanel .name, .colpanel .meta, .colpanel .cat { overflow-wrap: anywhere; }
+
+/* The same files as tiles.
+   A list is the right shape for reading names in order and the wrong one for
+   answering "which of these twenty-two still needs work" — that is a scan, and
+   a scan wants a field, not a column. Both, then, and the choice is kept. */
+.ftiles { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+
+/* ── The pages of a production, as sheets ──────────────────────────────
+   Small, because the point of this grid is to hold a whole book at once,
+   and 3:4 because that is the shape of the thing being counted. The rest
+   of `.pg` is already defined further down with the issue pages; only the
+   grid, the ruled ghost of text, and the audit column's own states are
+   new. */
+.pgs { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); }
+.pgs .sheet { border-radius: 3px; }
+/* Prose, at the size prose reads as texture rather than words. */
+.pgs .sheet .rule {
+  position: absolute; inset: 9px 8px auto 8px; height: 34px;
+  background: repeating-linear-gradient(
+    to bottom, var(--ink-3) 0 1px, transparent 1px 5px);
+  opacity: .17;
+}
+.pgs .folio { font-size: 17px; right: 5px; bottom: 2px; }
+.pgs .pill { position: absolute; top: 5px; right: 5px; font-size: 9.5px; padding: 0 4px; line-height: 15px; }
+.pgs .cap { margin-top: 5px; gap: 5px; font-size: 10.5px; min-width: 0; }
+.pgs .cap .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The page you have open. A ring alone was too quiet to find in a grid of
+   twenty-three, so the sheet takes a tint and the ruled ghost warms with
+   it - the open page reads as a different piece of paper, not the same
+   paper with a line drawn round it. */
+
+.pg[aria-current="true"] .sheet .rule { opacity: .3; color: var(--vermilion); }
+.pg[aria-current="true"] .cap { color: var(--vermilion-ink); font-weight: 600; }
+.ftile {
+  display: flex; flex-direction: column; gap: 3px; text-align: left; min-width: 0;
+  padding: 9px 10px; min-height: 84px; border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--paper); color: var(--ink); cursor: pointer;
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.ftile:hover { border-color: color-mix(in oklab, var(--vermilion) 45%, transparent); }
+.ftile[aria-current="true"] {
+  border-color: var(--vermilion);
+  background: color-mix(in oklab, var(--vermilion) 7%, transparent);
+}
+.ftile .nm {
+  font-size: 12.5px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.ftile .ft-foot { display: flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 5px; }
+
+/* A row of counted facts: number over label, tabular, so the same block reads
+   the same whether it is counting a whole production or one page of it. */
+.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.stats > span { display: flex; flex-direction: column; line-height: 1.15; }
+.stats b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats b.is-bad { color: var(--bad); }
+.stats b.is-ok { color: var(--ok); }
+.stats em {
+  font-style: normal; font-size: 10px; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--ink-3);
+}
+
+/* The workflow, in one row.
+   Every screen that has stages and gates shows them here, and the drawer
+   under it holds the gates themselves. This replaced four stacked panels that
+   between them ate about 470px above the work — a status readout should cost
+   one row, and the room it was taking belongs to the manuscript. */
+.wfbar-wrap {
+  border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--paper); overflow: hidden;
+}
+.wfbar-wrap.is-open { border-color: var(--ink-3); }
+.wfbar {
+  display: flex; align-items: center; gap: 8px 20px;
+  padding: 0 8px 0 14px; min-height: 44px; flex-wrap: wrap;
+}
+.wfbar .st { font-size: 11.5px; gap: 7px; }
+.wfbar .st .wf-d {
+  font-style: normal; font-weight: 400; font-size: 11px;
+  color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.wf-state {
+  display: inline-flex; align-items: center; gap: 7px; max-width: 46ch;
+  font: inherit; font-size: 12px; padding: 6px 9px; border: 0;
+  border-radius: var(--r-ctl); background: none; color: var(--ink-2);
+  text-align: left;
+}
+button.wf-state { cursor: pointer; }
+button.wf-state:hover { background: var(--line-soft); }
+.wf-state .wf-say { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-state.is-held { color: var(--bad); }
+.wf-state.is-ok { color: var(--ok); }
+.wf-more {
+  flex: none; font-size: 10.5px; padding: 1px 6px; border-radius: 999px;
+  background: var(--line); color: var(--ink-2); font-variant-numeric: tabular-nums;
+}
+.wf-drop { border-top: 1px solid var(--line); padding: 14px; background: var(--line-soft); }
+
+/* The drag handle between two resizable columns. Invisible until it is worth
+   noticing: a permanent divider on every seam turns a reading screen into a
+   window manager. */
+.grip {
+  cursor: col-resize; align-self: stretch; position: relative;
+  border-radius: 3px; background: transparent;
+  transition: background var(--fast) var(--ease);
+  touch-action: none;
+}
+.grip::after {
+  content: ""; position: absolute; inset: 0 2px; border-radius: 3px;
+  background: var(--line); opacity: 0;
+  transition: opacity var(--fast) var(--ease);
+}
+.grip:hover::after, .grip:active::after { opacity: 1; background: var(--vermilion); }
+@media (pointer: coarse) { .grip::after { opacity: .5; } }
+
+.ring { width: 44px; height: 44px; flex: none; }
+.ring circle { fill: none; stroke-width: 3; stroke-linecap: round; }
+.ring .t { stroke: var(--line-char); }
+.ring .v { stroke: var(--vermilion); stroke-dasharray: 119; transform: rotate(-90deg); transform-origin: 50% 50%; transition: stroke-dashoffset 260ms linear; }
+.ring-sm { width: 30px; height: 30px; }
+.ring-lg { width: 64px; height: 64px; }
+.pct { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Wraps, because this card appears in the 5fr column on Setup as well as at
+   full width on Home, and the trailing action was being pushed off the edge. */
+.runcard { display: flex; align-items: center; gap: 15px; row-gap: 11px; padding: 15px 18px; flex-wrap: wrap; }
+
+.stages { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; }
+.st { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--ink-3); }
+.st i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line); display: block; flex: none; }
+.st.done { color: var(--ink-2); }
+.st.done i { background: var(--vermilion); border-color: var(--vermilion); }
+.st.now { color: var(--ink); font-weight: 500; }
+.st.now i { border-color: var(--vermilion); }
+.dark .st, .on-char .st { color: var(--on-char-2); }
+.dark .st i, .on-char .st i { border-color: var(--line-char); }
+.dark .st.now, .on-char .st.now { color: var(--on-char); }
+
+/* Skeletons are shaped like the content that replaces them. A spinner in the
+   middle of a panel says only that something is happening; a shaped skeleton
+   says what is coming. */
+.skel { border-radius: 5px; background: var(--line); position: relative; overflow: hidden; }
+.skel-line { height: 11px; }
+.skel-tile { height: 168px; border-radius: var(--r-card); }
+.skel-page { aspect-ratio: 3 / 4; border-radius: var(--r-ctl); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 26px; z-index: 20;
+  transform: translate(-50%, 18px); opacity: 0; pointer-events: none;
+  background: var(--char); color: var(--on-char); box-shadow: var(--e3);
+  padding: 10px 20px; border-radius: 999px; font-size: 14px; font-weight: 500;
+  display: flex; align-items: center; gap: 9px;
+  transition: opacity var(--med) var(--ease), transform var(--med) var(--ease);
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+.toast .tick { color: var(--vermilion); }
+
+/* ══════════════════════════════════════════════════════════════════ CHAT
+   The conversation is charcoal for the same reason the manuscript is: this
+   is the work, not a view of it. The composer is a card inside that dark,
+   so the thing you type into is the brightest object on the surface.
+
+   A second, book-scoped column sits between the rail and the conversation.
+   It is the book you are talking about, and it is putty rather than paper so
+   it reads as chrome rather than as content. */
+/* The rail itself no longer scrolls: its body does. The seam that resizes it
+   is absolutely positioned against this element, and inside a scroller it
+   would slide away with the content the moment the list got long. Keeping the
+   head fixed while the conversations scroll is the better behaviour anyway. */
+.subrail {
+  position: relative;
+  width: 236px; flex: none; border-right: 1px solid var(--line);
+  background: var(--putty-2); display: flex; flex-direction: column;
+  min-height: 0; overflow: hidden;
+}
+.subrail-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--line); flex: none; }
+/* Clears the seam, which is 9px of the rail's own right edge. Without this
+   the scrollbar lands under the grip and takes the drag. `overflow-x: hidden`
+   is not belt-and-braces: `overflow-y: auto` alone computes overflow-x to
+   auto, so anything too wide gets a sideways scrollbar instead of an ellipsis. */
+.subrail-body {
+  padding: 8px 14px 16px 12px; flex: 1;
+  min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden;
+}
+.chat > .subrail:last-child > .subrail-body { padding: 8px 12px 16px 14px; }
+.subrail .grp { margin-top: 14px; }
+.subrail .grp > .label { padding: 0 4px 6px; }
+
+/* ── Which creation this is, and that it is the parent ───────────────────
+   Three devices, one meaning each, so the column can be read rather than
+   decoded:
+
+     size  is depth       - the work is the largest type in the rail, and
+                            everything it contains is smaller than it
+     spine is containment - what sits inside the hairline belongs to the work
+     wash  is open        - a tinted ground appears exactly once, on the row
+                            you currently have open, and nowhere else
+
+   The work itself was a filled card, which broke the third rule: a fill that
+   means "parent" here and "selected" one group below means neither. It is a
+   heading now and carries no ground of its own. */
+.subj-card { display: flex; align-items: flex-start; gap: 10px; margin-top: 9px; }
+.subj-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 17px; height: 22px; flex: none; color: var(--ink-3);
+}
+.subj-title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; word-break: break-word;
+  font-size: 17px; font-weight: 700; line-height: 1.22;
+  letter-spacing: -0.014em; color: var(--ink);
+}
+.subj-id {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 5px; min-width: 0;
+  font-size: 11px; color: var(--ink-3);
+}
+/* The id is the identifier, so it is set as one. Vermilion because it is the
+   one word on this screen the reader is matching against everything else. */
+.subj-id .mono { color: var(--vermilion-ink); font-size: 11px; font-weight: 500; }
+.subj-id .sep { flex: none; }
+.subj-id .sep::before { content: "·"; margin-right: 6px; }
+.subj-switch { flex: none; color: var(--ink-3); line-height: 0; padding-top: 4px; }
+
+/* Everything the work contains, held by a hairline dropped from the heading.
+   1px: a heavier coloured rule on a list is the thing the craft floor bans,
+   and the indent is already carrying the relationship. */
+.of-work {
+  margin: 2px 0 0 8px; padding-left: 14px;
+  border-left: 1px solid var(--vermilion-edge);
+}
+.of-work .grp:first-child { margin-top: 12px; }
+
+/* A child is smaller than its parent. That is the whole depth cue, and it
+   has to reach the rows and not only the group labels - a 14px chapter title
+   under a 14px work title says they are peers. */
+.subrail .label { display: flex; align-items: center; gap: 6px; }
+.label-icon { display: inline-flex; color: var(--ink-3); opacity: .8; line-height: 0; }
+.of-work .grp > .label { font-size: 10px; letter-spacing: .17em; }
+.of-work .row { padding-top: 6px; padding-bottom: 6px; gap: 10px; }
+.of-work .row .name { font-size: 12.5px; }
+.of-work .row .meta { font-size: 10.5px; }
+.of-work .row .num { font-size: 11.5px; }
+.of-work .row .pill { font-size: 10px; }
+
+/* ── The switcher, below the subject entire ──────────────────────────────
+   Generous above, tight within: this block is navigation sitting under a
+   description, and the gap is what says they are not the same thing. Its
+   rows are quieter than the subject's for the same reason - sixteen of them
+   at full weight was the loudest region of a column about one story. */
+.subrail .grp-switch {
+  margin-top: 24px; padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.grp-switch .row { padding-top: 7px; padding-bottom: 7px; }
+.grp-switch .name { font-size: 12.5px; }
+
+/* The one you have open. Vermilion text alone put it a shade away from the
+   fifteen rows around it, all of which begin with the same six words. */
+.grp-switch .row[aria-current="true"] {
+  background: var(--vermilion-wash);
+  border-radius: 7px;
+  border-top-color: transparent;
+  margin: 3px -7px; padding-left: 7px; padding-right: 7px;
+}
+/* The disc, at row scale: the same filled mark the work carries above. */
+.grp-switch .row[aria-current="true"]::before {
+  content: ""; flex: none; align-self: center;
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--vermilion);
+}
+.grp-switch .row[aria-current="true"] + .row { border-top-color: transparent; }
+
+.composer { border-top: 1px solid var(--line-char); padding: 12px clamp(16px, 3vw, 32px) 16px; }
+.composer .box {
+  border: 1.5px solid var(--line-char); border-radius: var(--r-card);
+  background: var(--char-2); padding: 12px 14px 10px;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.composer .box:focus-within { border-color: var(--vermilion); box-shadow: 0 0 0 3px color-mix(in oklab, var(--vermilion) 18%, transparent); }
+.composer textarea {
+  background: transparent; border: 0; outline: none; resize: none;
+  color: var(--on-char); font-size: 14px; line-height: 1.55; min-height: 46px;
+}
+.composer textarea::placeholder { color: var(--on-char-2); }
+.composer .tools { display: flex; align-items: center; gap: 8px; }
+.quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.attach {
+  display: inline-flex; align-items: center; gap: 7px; padding: 5px 9px;
+  border-radius: var(--r-ctl); border: 1px solid var(--line-char);
+  font-size: 11px; color: var(--on-char-2);
+}
+
+/* Confirmations are charcoal, and carry exactly one vermilion action. Two
+   filled buttons in a dialog is a dialog that has not decided what it is
+   asking. Used sparingly: a modal for a task that needs neither interruption
+   nor protected focus is laziness. */
+.dialog {
+  width: min(460px, 92%); border-radius: var(--r-card); overflow: hidden;
+  background: var(--char); color: var(--on-char); box-shadow: var(--e3);
+  border: 1px solid var(--line-char); padding: 22px 24px;
+}
+.dialog h3 { font-size: 17.5px; }
+.dialog p { color: var(--on-char-2); font-size: 14px; margin-top: 8px; max-width: 44ch; }
+.dialog-foot { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
+
+/* Empty is never blank. A disc composition, one heading, one action. */
+.empty { position: relative; overflow: hidden; padding: 54px 30px; text-align: left; border-radius: var(--r-card); border: 1px solid var(--line); }
+.empty h3 { font-size: 27.5px; letter-spacing: -.03em; max-width: 18ch; }
+.empty p { margin-top: 10px; color: var(--ink-2); max-width: 42ch; font-size: 14px; }
+
+/* ══════════════════════════════════════════════════════════════════ GATES
+   A gate is where the pipeline stops and waits for a person. They are the
+   most important objects in the app, so they get their own component rather
+   than being a button somewhere in a panel. */
+.gate {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  flex-wrap: wrap; row-gap: 9px;
+  border-radius: var(--r-ctl); border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink);
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease);
+}
+.gate.is-open { border-color: var(--vermilion); box-shadow: 0 0 0 1px var(--vermilion); }
+.gate.is-done { opacity: .62; }
+.gate .what { font-size: 14px; font-weight: 500; }
+.gate .when { font-size: 11px; color: var(--ink-3); }
+
+.chain { display: flex; align-items: stretch; gap: 0; }
+.chain > * { flex: 1; }
+.link { display: flex; align-items: center; padding: 0 8px; color: var(--ink-3); flex: none; }
+
+.tally { display: flex; align-items: baseline; gap: 6px; font-size: 11px; color: var(--ink-3); }
+.tally b { font-size: 22px; font-weight: 600; letter-spacing: -.04em; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════════════════════════════ FINDINGS
+   The audit pattern, and it is a pattern: story audit, publication audit,
+   fact-check and destyle suggestions are the same component with different
+   nouns. */
+.finding {
+  border-left: 2px solid transparent; padding: 10px 12px; border-radius: var(--r-ctl);
+  cursor: pointer; display: block; width: 100%; text-align: left; background: transparent; border-top: 0; border-right: 0; border-bottom: 0;
+  transition: background-color var(--fast) var(--ease), border-color var(--fast) var(--ease), transform var(--fast) var(--ease);
+}
+.finding:hover { background: color-mix(in oklab, var(--vermilion) 9%, transparent); border-left-color: var(--vermilion); transform: translateX(2px); }
+.finding[aria-current="true"] { background: color-mix(in oklab, var(--vermilion) 13%, transparent); border-left-color: var(--vermilion); }
+.finding b { font-size: 14px; font-weight: 600; display: block; }
+.finding .cat { font-size: 11px; color: var(--ink-3); }
+.finding .sev { width: 6px; height: 6px; border-radius: 50%; flex: none; display: block; }
+.sev-bad  { background: var(--bad); }
+.sev-warn { background: var(--warn); }
+.sev-info { background: var(--ink-3); }
+.sev-ok   { background: var(--ok); }
+/* A settled row stays in the list, in green, so the page can say "eleven
+   found, nine dealt with" instead of emptying itself and claiming nothing was
+   ever wrong. Dimmer than an open one: read, not worked. */
+.finding.settled b { font-weight: 500; color: var(--ink-2); }
+.finding.settled { opacity: .72; }
+.finding.settled:hover { opacity: 1; }
+
+/* An accepted finding plays away rather than vanishing, so the eye keeps its
+   place in the list. */
+.finding.going {
+  height: 0; padding-top: 0; padding-bottom: 0; opacity: 0; overflow: hidden;
+  transition: height var(--med) var(--ease), padding var(--med) var(--ease), opacity var(--fast) var(--ease);
+}
+
+/* ══════════════════════════════════════════════════════════ MAGAZINE WORK
+   Tabs are the pipeline. A done tab carries the filled dot, the current one
+   carries the halo. */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.tab {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  display: flex; align-items: center; gap: 8px; padding: 11px 15px;
+  font-size: 14px; font-weight: 500; color: var(--ink-3); position: relative;
+  transition: color var(--fast) var(--ease);
+}
+.tab i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--line); display: block; flex: none; }
+.tab.done i { background: var(--vermilion); border-color: var(--vermilion); }
+.tab.done { color: var(--ink-2); }
+.tab::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
+  background: var(--vermilion); transform: scaleX(0); transition: transform var(--med) var(--ease);
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); }
+.tab[aria-selected="true"]::after { transform: scaleX(1); }
+.tab[aria-selected="true"] i { border-color: var(--vermilion); }
+
+.board { display: grid; gap: 12px; grid-auto-flow: column; grid-auto-columns: minmax(210px, 1fr); align-items: start; }
+.col-sec { border-radius: var(--r-card); border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 12px; }
+.col-sec > h4 { font-size: 14px; margin-bottom: 10px; }
+.chip {
+  display: flex; align-items: center; gap: 8px; padding: 7px 9px; margin-top: 6px;
+  border-radius: var(--r-ctl); border: 1px solid var(--line); font-size: 11px;
+  background: var(--putty-2); cursor: grab;
+}
+.chip:active { cursor: grabbing; }
+.chip .n { color: var(--vermilion-ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.flat { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); }
+.pg { display: block; text-align: left; background: transparent; border: 0; padding: 0; cursor: pointer; }
+.pg .sheet {
+  /* display:block is load-bearing. aspect-ratio has no effect on an inline
+     box, so the page sheets collapsed to nothing and the placeholder text
+     inside them piled up on the caption. */
+  display: block;
+  aspect-ratio: 3 / 4; border-radius: var(--r-ctl); border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink); position: relative; overflow: hidden;
+  transition: border-color var(--fast) var(--ease), transform var(--med) var(--ease), box-shadow var(--med) var(--ease);
+}
+.pg:hover .sheet { transform: translateY(-3px); box-shadow: var(--e2); border-color: var(--vermilion); }
+.pg[aria-current="true"] .sheet {
+  border-color: var(--vermilion);
+  /* Ring and wash in one declaration: a second `box-shadow` rule anywhere
+     replaces this one whole rather than adding to it, which is how the open
+     page's tint was live in the stylesheet and invisible on screen. */
+  box-shadow: 0 0 0 1px var(--vermilion), inset 0 0 0 999px var(--vermilion-wash);
+}
+.pg .folio { position: absolute; right: 6px; bottom: 4px; font-size: 22px; font-weight: 600; letter-spacing: -.04em; color: var(--ink-3); opacity: .35; font-variant-numeric: tabular-nums; }
+.pg .cap { display: flex; align-items: center; gap: 6px; margin-top: 7px; font-size: 11px; color: var(--ink-3); }
+.pg .dens { font-weight: 700; color: var(--ink-2); }
+
+/* ══════════════════════════════════════════════════════════ IMAGE WORK
+   Candidates are images, so the grid gets out of the way and the recipe
+   only appears on hover. */
+.cands { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); }
+.cand {
+  position: relative; overflow: hidden; border-radius: var(--r-card); cursor: pointer;
+  border: 1.5px solid transparent; background: var(--putty-2); aspect-ratio: 1 / 1; padding: 0;
+  transition: border-color var(--fast) var(--ease), transform var(--med) var(--ease);
+}
+.cand:hover { transform: translateY(-3px); }
+.cand[aria-pressed="true"] { border-color: var(--vermilion); }
+.cand .recipe {
+  position: absolute; inset: auto 0 0 0; padding: 8px 10px; font-size: 11px;
+  background: color-mix(in oklab, var(--char) 88%, transparent); color: var(--on-char-2);
+  transform: translateY(100%); transition: transform var(--med) var(--ease);
+  text-align: left;
+}
+.cand:hover .recipe, .cand:focus-visible .recipe { transform: none; }
+
+/* A drawer, not a modal. Tweaking is a side task on top of the grid you came
+   from, and the grid stays visible so the take being tweaked can still be
+   compared with the others. Modals are usually laziness; this one earns its
+   overlay because it holds a brush. */
+.drawer {
+  position: absolute; inset: 0 0 0 auto; width: min(760px, 92%); z-index: 16;
+  background: var(--paper); border-left: 1px solid var(--line);
+  box-shadow: var(--e3); display: flex; flex-direction: column; min-height: 0;
+}
+.drawer-head { display: flex; align-items: center; gap: 12px; padding: 15px 20px; border-bottom: 1px solid var(--line); }
+.drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px; }
+.drawer-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+
+/* A brushed region. Dashed because it is a selection, not a crop. */
+.region {
+  position: absolute; border: 1.5px dashed var(--vermilion); border-radius: var(--r-ctl);
+  background: color-mix(in oklab, var(--vermilion) 13%, transparent);
+}
+.region .tagd {
+  position: absolute; left: 0; top: -11px; font-size: 11px; font-weight: 600;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--vermilion-ink);
+  background: var(--paper); padding: 0 5px; border-radius: 3px;
+}
+
+/* Where an image came from. A kept image can be four tweaks deep, and the
+   parents have to stay reachable or the lineage is a story nobody can check. */
+.lineage { display: flex; align-items: center; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+.lineage .node {
+  width: 56px; height: 56px; border-radius: var(--r-ctl); flex: none; padding: 0;
+  border: 1px solid var(--line); position: relative; overflow: hidden; cursor: pointer;
+  transition: border-color var(--fast) var(--ease);
+}
+.lineage .node:hover { border-color: var(--ink-3); }
+.lineage .node[aria-current="true"] { border-color: var(--vermilion); box-shadow: 0 0 0 1px var(--vermilion); }
+.lineage .step { color: var(--ink-3); flex: none; }
+
+/* Stand-in art. No asset ships in a mockup, so the placeholder says what it
+   is rather than pretending to be a photograph. */
+.plate {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  background: var(--putty-2); color: var(--ink-3);
+}
+.plate::before {
+  content: ""; position: absolute; inset: 0; opacity: .5;
+  color: var(--ink-3);
+  background-image: radial-gradient(currentColor 1.1px, transparent 1.2px);
+  background-size: 7px 7px;
+}
+.plate span {
+  position: relative; font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  font-weight: 600; text-align: center; max-width: 84%; line-height: 1.5;
+  align-self: center; justify-self: center;
+}
+
+/* ═════════════════════════════════════════════════════════ THE LIVE LAYER
+   Where the geometry answers the pointer.
+
+   The rule the plan sets is that discs respond only on interactive tiles,
+   never on a panel you are merely reading. So the motion is attached to the
+   surfaces that actually do something, in one place, rather than being
+   remembered per component. A filled disc grows, a halftone drifts, a ring
+   opens outward: three different behaviours, so the silhouette that
+   identifies a production also identifies it in motion.                  */
+.disc, .mark > * {
+  transition: transform var(--med) var(--ease), opacity var(--med) var(--ease);
+}
+
+.tile:hover .mark .d1,
+.tile:focus-visible .mark .d1,
+[data-go]:hover > .mark .d1,
+.card:hover .mark .d1            { transform: scale(1.16); }
+.tile:hover .mark .d2,
+[data-go]:hover > .mark .d2      { transform: translate(-6px, -5px); }
+.mark-mag .d1, .mark-world .d1   { transform-origin: 70% 30%; }
+.tile:hover .mark-mag .d1,
+.tile:hover .mark-world .d1      { transform: translate(-7px, -5px) scale(1.04); }
+.tile:hover .mark-imitation .d2,
+.tile:hover .mark-branch .d2     { transform: translate(-9px, -7px); }
+.tile:hover .mark-script .d1     { transform: translateX(-12px); }
+.tile:hover .mark-script .d2     { transform: translateX(-6px); }
+
+/* Panels that are also destinations behave like tiles. A panel you can click
+   and a panel you can only read should never look identical at rest and
+   identical on hover. */
+.panel[data-go], .gate[data-go], .col-sec[data-go] {
+  transition: transform var(--med) var(--ease), box-shadow var(--med) var(--ease),
+              border-color var(--med) var(--ease);
+}
+.panel[data-go]:hover, .gate[data-go]:hover, .col-sec[data-go]:hover {
+  transform: translateY(-3px); box-shadow: var(--e2);
+  border-color: color-mix(in oklab, var(--vermilion) 38%, transparent);
+}
+.panel[data-go]:hover .disc.fill  { transform: scale(1.12); }
+.panel[data-go]:hover .disc.dots  { transform: translate(-6px, -5px); }
+.panel[data-go]:hover .disc.stroke, .panel[data-go]:hover .disc.stroke-l { transform: scale(1.09); }
+
+/* A page sheet in the flatplan lifts and its folio steps forward, so a
+   sixty-four page grid still answers the pointer one page at a time. */
+.pg .folio { transition: transform var(--med) var(--ease), opacity var(--med) var(--ease); }
+.pg:hover .folio { transform: translateY(-3px); opacity: .55; }
+
+/* Candidates are pictures. The plate lifts under the recipe rather than the
+   whole tile jumping, which keeps a grid of them from feeling twitchy. */
+.cand .plate { transition: transform var(--med) var(--ease); }
+.cand:hover .plate { transform: scale(1.04); }
+
+.chip { transition: transform var(--fast) var(--ease), border-color var(--fast) var(--ease), background-color var(--fast) var(--ease); }
+.chip:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--vermilion) 45%, transparent); }
+
+.tab i { transition: transform var(--med) var(--ease); }
+.tab:hover i { transform: scale(1.35); }
+
+.railrun .ring .v { transition: stroke-dashoffset 260ms linear, stroke var(--fast) var(--ease); }
+.railrun:hover { transform: translateY(-1px); }
+.railrun { transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease), transform var(--fast) var(--ease); }
+
+.spec tbody tr { transition: background-color var(--fast) var(--ease); }
+.spec tbody tr:hover { background: color-mix(in oklab, var(--vermilion) 5%, transparent); }
+
+.wordmark svg { transition: transform var(--med) var(--ease); }
+.wordmark:hover svg { transform: rotate(-14deg); }
+
+/* ════════════════════════════════════════════════════════════════ MOTION
+   One authored moment per screen, and it is always a state change: a run
+   advancing, a gate clearing, an approval leaving the list. No page-load
+   choreography — this is a tool someone opens forty times a day.
+
+   Reveals are for the front door only. A work screen that animates itself
+   in every time you return to it is a screen you learn to resent. */
+@media (prefers-reduced-motion: no-preference) {
+  .thinking i { animation: bob 1.1s var(--ease) infinite; }
+  .thinking i:nth-child(2) { animation-delay: .13s; }
+  .thinking i:nth-child(3) { animation-delay: .26s; }
+  .caret { animation: blink 1.05s steps(1) infinite; }
+  .spin  { animation: rot .85s linear infinite; }
+  .st.now i { animation: halo 1.5s var(--ease) infinite; }
+  .tab[aria-selected="true"] i { animation: halo 1.5s var(--ease) infinite; }
+  .skel::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--paper) 78%, transparent), transparent);
+    animation: sweep 1.5s linear infinite;
+  }
+  .reveal { opacity: 0; transform: translateY(16px); }
+  .reveal.in { opacity: 1; transform: none; transition: opacity var(--slow) var(--ease), transform var(--slow) var(--ease); }
+}
+@keyframes bob   { 0%,62%,100% { transform: translateY(0); opacity: .4; } 31% { transform: translateY(-5px); opacity: 1; } }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes rot   { to { transform: rotate(360deg); } }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes halo {
+  0%       { box-shadow: 0 0 0 0 color-mix(in oklab, var(--vermilion) 55%, transparent); }
+  70%,100% { box-shadow: 0 0 0 6px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:hover, .tile:hover, .finding:hover, .cand:hover, .pg:hover .sheet,
+  .panel[data-go]:hover, .gate[data-go]:hover, .col-sec[data-go]:hover,
+  .chip:hover, .railrun:hover, .pg:hover .folio, .cand:hover .plate,
+  .tab:hover i, .wordmark:hover svg,
+  .tile:hover .mark > *, [data-go]:hover > .mark > * { transform: none; }
+  .read, .read-field { transition: none; }
+  .row:hover > * { transform: none; }
+  .row .act { opacity: 1; }
+}
+
+/* ── THE RAIL GROWS ───────────────────────────────────────────────────────
+   The real sidebar carries a System group and a Tools group under the
+   working nav, which together outrun any laptop. So the rail is three
+   parts now: the wordmark and the one vermilion button never move, the
+   navigation scrolls, and the run pill stays pinned to the floor where a
+   glance can always find it. */
+.rail-scroll {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 1px;
+  margin: 0 -11px; padding: 0 11px;
+  scrollbar-width: thin;
+}
+.rail-scroll::-webkit-scrollbar { width: 6px; }
+.rail-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
+.rail-scroll::-webkit-scrollbar-track { background: transparent; }
+.rail-scroll .rail-label:first-child { padding-top: 4px; }
+/* A row cut flat by the scroll edge reads as a rendering fault. Fading it
+   reads as "there is more", which is the truth. */
+.rail-scroll {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 14px), transparent 100%);
+}
+
+/* A rail item that is drawn but has no route in the shipped app. Honest
+   rather than hidden: the dot says "mockup only" without a legend. */
+.nav.speculative > span:first-of-type::after {
+  content: ""; display: inline-block; vertical-align: middle;
+  width: 4px; height: 4px; margin-left: 6px; border-radius: 50%;
+  background: var(--ink-3); opacity: .5;
+}
+
+/* ── THE BRANCHING WORK ───────────────────────────────────────────────────
+   Three things the prose screens never needed: a choice the reader takes, a
+   node on a canvas, and a step in a lineage that carries a name. Each is its
+   own component because each was briefly faked with .plate, which is a
+   fill-your-parent art placeholder and does not survive being a button. */
+
+/* A choice, on the reader's side. Full measure, quiet until it is under the
+   cursor, because the reader is choosing and the interface is not. */
+.opt {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 18px 22px; border-radius: var(--r-card);
+  border: 1px solid var(--line-char); background: var(--char-2);
+  color: var(--on-char); font: inherit; font-size: 17.5px;
+  transition: border-color var(--med) var(--ease), transform var(--med) var(--ease),
+              background-color var(--med) var(--ease);
+}
+.opt:hover, .opt:focus-visible {
+  border-color: var(--vermilion); transform: translateX(4px);
+  background: color-mix(in oklab, var(--vermilion) 9%, var(--char-2));
+}
+.opt .eff { display: block; font-size: 11px; color: var(--ink-3); margin-top: 5px; }
+
+/* A node on the flow canvas. */
+.gnode {
+  display: block; text-align: left; cursor: pointer; padding: 10px 13px;
+  border-radius: var(--r-ctl); border: 1px solid var(--line-char);
+  background: var(--char-2); color: var(--on-char); font: inherit;
+  transition: border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease),
+              transform var(--fast) var(--ease);
+}
+.gnode b { display: block; font-size: 14px; font-weight: 550; }
+.gnode:hover { transform: translateY(-2px); border-color: var(--vermilion); box-shadow: var(--e2); }
+.gnode.on   { border-color: var(--vermilion); }
+.gnode.here { border-color: var(--vermilion); box-shadow: 0 0 0 3px color-mix(in oklab, var(--vermilion) 22%, transparent); }
+.gnode.cold { opacity: .42; border-style: dashed; }
+.gnode .label { color: currentColor; opacity: .6; }
+.gnode.here .label, .gnode.on .label { color: var(--vermilion); opacity: 1; }
+
+/* A named step in a lineage. The 56px .node is a thumbnail; this one holds
+   a title and a line about what it inherits. */
+.lineage .named {
+  display: flex; align-items: center; gap: 11px; width: auto; height: auto;
+  padding: 11px 14px; min-width: 190px; text-align: left;
+}
+.lineage .named b { display: block; font-size: 14px; }
+.lineage .named .dim { display: block; font-size: 11px; margin-top: 2px; }
+
+/* .mark is an overlay: it fills a tile and its discs bleed off the corner.
+   Used inline beside a title it needs a box of its own, so the same
+   silhouette can identify a thing in a header row without being a
+   background. Overflow is hidden because the discs are drawn to bleed. */
+.mark.badge {
+  position: relative; inset: auto; flex: none; overflow: hidden;
+  border-radius: var(--r-ctl); background: var(--putty-2);
+  border: 1px solid var(--line);
+}
+
+/* A finding's severity is a 6px dot when the list is long and scanned by
+   colour. On the screens where findings arrive one at a time and each has a
+   different kind, the severity carries a word instead, and a 6px box cannot
+   hold one. Same three colours, two densities. */
+.finding .sev:not(:empty) {
+  width: auto; height: auto; border-radius: 999px; padding: 2px 9px;
+  font-size: 11px; font-weight: 600; letter-spacing: .09em;
+  text-transform: uppercase; align-self: start; background: transparent;
+  border: 1px solid currentColor;
+}
+.finding .sev-bad:not(:empty)  { color: var(--bad); }
+.finding .sev-warn:not(:empty) { color: var(--warn); }
+.finding .sev-info:not(:empty) { color: var(--ink-3); }
+
+/* A finding that carries a word-severity is a row, not a stack. */
+.finding:has(.sev:not(:empty)) { display: flex; align-items: flex-start; gap: 11px; }
+.finding .meta { display: block; font-size: 14px; color: var(--ink-3); margin-top: 3px; line-height: 1.55; }
+
+/* .link is a flex nav item and cannot sit inside a sentence. This is the
+   inline one: a cross-reference in running prose, underlined on the
+   baseline so it reads as a link without borrowing the accent, which the
+   accent needs for actions. */
+.xref {
+  color: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-color: var(--ink-3);
+  text-underline-offset: 3px; text-decoration-thickness: 1px;
+  transition: text-decoration-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.xref:hover { color: var(--vermilion-ink); text-decoration-color: var(--vermilion-ink); }
+
+
+/* ── THE HEADING SPINE ────────────────────────────────────────────────────
+   Every screen names itself in the topbar crumb, and that name is now the
+   document's h1 rather than a bold span, so a screen reader lands somewhere
+   instead of opening at h2 with nothing above it. It must look exactly as it
+   did — the fix is structural, not visual. */
+.crumbs h1 {
+  font: inherit; font-weight: 600; color: var(--ink);
+  margin: 0; display: inline;
+}
+.dark .crumbs h1, .on-char .crumbs h1 { color: var(--on-char); }
+
+
+/* ── THE FRAME AT SMALLER WIDTHS ──────────────────────────────────────────
+   This is a Tauri app on Windows, and Windows users snap windows to half a
+   screen. At 900px the 196px rail plus a fixed subrail plus a fixed session
+   column overran .screen, which is overflow:hidden — so a button on the chat
+   composer was clipped with no way to scroll to it. Nothing was responsive
+   because the frame had no breakpoints at all; it had two, both for content
+   grids.
+
+   The order things go: the session column first (it is a record, not the
+   work), then the context subrail, then the rail collapses to its icons. The
+   conversation is the last thing to give up space because it is the app. */
+@media (max-width: 1040px) {
+  .cols-audit { grid-template-columns: 1fr; }
+}
+/* Stacked columns have no vertical seam to drag, so the handles are not a
+   control here - they would render as two 6px stripes between the panels. */
+@media (max-width: 1179px) {
+  .cols-audit > .grip { display: none; }
+}
+@media (max-width: 900px) {
+  .screen { grid-template-columns: 60px 1fr; }
+  .rail { padding: 12px 8px; align-items: center; }
+  .rail .wordmark b,
+  .rail .nav span:not(.tail),
+  .rail .railnew span,
+  .rail .rail-label,
+  .rail .railrun .grow,
+  .rail .attrib { display: none; }
+  .rail .nav, .rail .railnew { justify-content: center; padding: 9px 0; }
+  .rail .nav .tail {
+    position: absolute; margin: 0; transform: translate(12px, -10px);
+    font-size: 11px;
+  }
+  .rail .nav { position: relative; }
+  .rail-scroll { margin: 0; padding: 0; }
+  .topbar { padding: 10px 12px; gap: 7px; }
+  .topbar .pill:not(.pill-bad):not(.pill-warn) { display: none; }
+  .wrap, .wrap-read { padding-left: 16px; padding-right: 16px; }
+}
+
+
+/* ── THE CHAT LAYOUT, ONCE ────────────────────────────────────────────────
+   book-create, chat, book and interactive-film-authoring are one ChatPage in
+   the app with four mode props. The mockups had drifted into three different
+   container recipes for what is one component — the exact drift the shared
+   stylesheet exists to prevent. One class now, and the responsive behaviour
+   is written once instead of three times.
+
+   Columns: what the conversation is about · the conversation · what it made.
+   The middle one is the last to give up space, because it is the app. */
+/* `auto` on the rails, not fixed pixels: each one carries its own width now,
+   dragged and remembered per monitor by use-resizable, and a fixed track would
+   simply ignore it. The conversation is still the only column that grows. */
+.chat {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto;
+  height: 100%; min-height: 0; flex-direction: unset;
+}
+/* The seam. Wide enough to hit, invisible until the cursor is on it, and
+   inside the rail rather than between the columns because a grid gap cannot
+   hold a child. */
+/* The seam reads as the panel's edge at rest and as a control under the
+   cursor: a hairline that thickens into the accent, drawn with a gradient so
+   the 9px hit area stays wide while the mark stays 1px. An invisible handle is
+   not a handle — nothing on screen said the column could move. */
+.subrail-grip {
+  position: absolute; top: 0; right: 0; width: 9px; height: 100%;
+  cursor: col-resize; touch-action: none; z-index: 4;
+  background: linear-gradient(to right, transparent 8px, var(--line) 8px);
+  transition: background var(--fast) var(--ease);
+}
+.subrail-grip-start {
+  right: auto; left: 0;
+  background: linear-gradient(to left, transparent 8px, var(--line) 8px);
+}
+.subrail-grip:hover, .subrail-grip:active {
+  background: linear-gradient(to right, transparent 6px, var(--vermilion) 6px);
+}
+.subrail-grip-start:hover, .subrail-grip-start:active {
+  background: linear-gradient(to left, transparent 6px, var(--vermilion) 6px);
+}
+/* Starting a book has no left column yet — there is no book to point at. */
+.chat-2 { grid-template-columns: minmax(0, 1fr) 274px; }
+@media (max-width: 1040px) { .chat-2 { grid-template-columns: minmax(0, 1fr); } }
+
+.chat > .subrail:first-child { border-right: 1px solid var(--line); border-left: 0; }
+.chat > .subrail:last-child  { border-left: 1px solid var(--line); border-right: 0; }
+.chat > .convo {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+}
+.chat > .convo > .dark { flex: 1; min-height: 0; border-radius: 0; display: flex; flex-direction: column; }
+
+/* `auto`, not 236px: the rail carries its own dragged width as an inline
+   style, and a fixed track here silently overrode it — the seam moved, the
+   column did not. Only the third column goes; the first stays draggable. */
+@media (max-width: 1180px) { .chat { grid-template-columns: auto minmax(0, 1fr); }
+                             .chat > .subrail:last-child { display: none; } }
+@media (max-width: 1040px) { .chat { grid-template-columns: minmax(0, 1fr); }
+                             .chat > .subrail { display: none; } }

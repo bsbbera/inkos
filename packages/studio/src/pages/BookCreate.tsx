@@ -795,12 +795,6 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.books")}</button>
-        <span className="text-border">/</span>
-        <span>{t("bread.newBook")}</span>
-      </div>
-
       <header className="q-head">
         <p className="q-label">{t("bread.newBook")}</p>
         <h1 className="mt-3">{t("create.title")}</h1>

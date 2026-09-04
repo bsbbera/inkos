@@ -156,6 +156,9 @@ const listModelsForServiceMock = vi.fn(async (service: string, apiKey?: string, 
   }));
 });
 const endpointIdsByGroup = {
+  // The agent CLIs. Quire offers only these; the vendor bank below stays
+  // registered so a project that already names one keeps resolving.
+  cli: ["antigravityCli", "claudeCli", "codexCli", "devinCli"],
   overseas: ["anthropic", "google", "mistral", "openai", "xai"],
   china: [
     "ai360", "baichuan", "bailian", "deepseek", "hunyuan", "internlm", "longcat",
@@ -315,6 +318,14 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
   }
 
   return {
+    // Routing is pure and has its own tests; the server should exercise the
+    // real resolver, not a stand-in that cannot disagree with it.
+    AGENT_ROSTER: actual.AGENT_ROSTER,
+    AGENT_JOBS: actual.AGENT_JOBS,
+    AGENT_GROUP_LABELS: actual.AGENT_GROUP_LABELS,
+    normalizeOverrides: actual.normalizeOverrides,
+    resolveRoutingTable: actual.resolveRoutingTable,
+    getEndpoint: actual.getEndpoint,
     StateManager: MockStateManager,
     PipelineRunner: MockPipelineRunner,
     Scheduler: MockScheduler,
@@ -323,6 +334,24 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     evaluateBookQuality: evaluateBookQualityMock,
     computeAnalytics: vi.fn(() => ({})),
     isSafeBookId: actual.isSafeBookId,
+    safeChildPath: actual.safeChildPath,
+    // Reads the transcript the session store already writes in these tests,
+    // so a stub would only prove the stub returns what it was told to.
+    summarizeSession: actual.summarizeSession,
+    // The findings helpers are pure functions over text, and the approval gate
+    // and the store both call them. Stubbing them would mean testing whether
+    // the stub blocks an approval rather than whether a blocking finding does.
+    applyFix: actual.applyFix,
+    applyParagraph: actual.applyParagraph,
+    paragraphSpan: actual.paragraphSpan,
+    blocksApproval: actual.blocksApproval,
+    countBySeverity: actual.countBySeverity,
+    findingId: actual.findingId,
+    locate: actual.locate,
+    locateQuote: actual.locateQuote,
+    mergeFindings: actual.mergeFindings,
+    normalizeSeverity: actual.normalizeSeverity,
+    paragraphOf: actual.paragraphOf,
     // Registering the audit routes reads the production registry at import
     // time, so the mock has to carry it or every route in the file 500s.
     auditableRoots: actual.auditableRoots,
@@ -1133,7 +1162,7 @@ describe("createStudioServer daemon lifecycle", () => {
     });
   });
 
-  it("returns all bank services with group fields and custom services", async () => {
+  it("offers every way to reach a model, and every CLI when the shim is silent", async () => {
     await writeFile(join(root, "inkos.json"), JSON.stringify({
       ...projectConfig,
       llm: {
@@ -1157,22 +1186,35 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as { services: Array<{ service: string; group?: string; connected: boolean }> };
     const bank = body.services.filter((s) => !s.service.startsWith("custom"));
-    expect(bank.length).toBe(38);
-    expect(bank.every((s) => typeof s.group === "string")).toBe(true);
-    expect(bank.filter((s) => s.group === "overseas")).toHaveLength(5);
-    expect(bank.filter((s) => s.group === "china")).toHaveLength(18);
-    expect(bank.filter((s) => s.group === "aggregator")).toHaveLength(4);
-    expect(bank.filter((s) => s.group === "local")).toHaveLength(3);
-    expect(bank.filter((s) => s.group === "codingPlan")).toHaveLength(8);
-    expect(bank.filter((s) => s.group === "aggregator").map((s) => s.service)[0]).toBe("kkaiapi");
-    expect(body.services.find((s) => s.service === "moonshot")?.connected).toBe(true);
-    expect(body.services.find((s) => s.service === "lmstudio")).toMatchObject({
-      connected: true,
-      apiKeyOptional: true,
-    });
-    expect(body.services.find((s) => s.service === "custom:内网GPT")).toMatchObject({
-      connected: true,
-    });
+
+    // One list. A CLI on this machine, a vendor API, a model served locally -
+    // all three are ways of reaching a model and all three are offered here.
+    // This route used to return the CLI group alone, so the only route to a
+    // local Ollama was to retype it as a "custom" service with a hand-written
+    // base URL, skipping its own endpoint card.
+    for (const service of ["antigravityCli", "claudeCli", "codexCli", "devinCli"]) {
+      expect(bank.find((s) => s.service === service)).toBeDefined();
+    }
+    expect(bank.find((s) => s.service === "moonshot")).toBeDefined();
+    expect(bank.find((s) => s.service === "lmstudio")).toBeDefined();
+    expect(new Set(bank.map((s) => s.group))).toContain("local");
+
+    // Listed is not usable: `connected` is what the picker filters on, and it
+    // still answers per provider. Moonshot has a key in this fixture; openai
+    // has none.
+    expect(bank.find((s) => s.service === "moonshot")?.connected).toBe(true);
+    expect(bank.find((s) => s.service === "openai")?.connected).toBe(false);
+
+    // A local server is the one kind that cannot be taken on trust. Needing no
+    // API key is not the same as running, and treating it as such offered a
+    // dead LM Studio's shipped catalogue as pinnable models. Nothing is
+    // listening on loopback in this test, so it reports disconnected.
+    expect(bank.find((s) => s.service === "lmstudio")?.connected).toBe(false);
+
+    // No shim answered here. That is "no opinion", not "the user switched every
+    // CLI off" - reading it as the latter emptied the picker whenever the shim
+    // was slow to start, and the app came up claiming there were no models.
+    expect(bank.filter((s) => s.group === "cli").length).toBe(4);
   });
 
   it("returns connected bank model groups from the local bank", async () => {
@@ -1188,10 +1230,16 @@ describe("createStudioServer daemon lifecycle", () => {
     const response = await app.request("http://localhost/api/v1/services/models");
     expect(response.status).toBe(200);
     const body = await response.json() as { groups: Array<{ service: string; models: Array<{ id: string }> }> };
-    expect(body.groups.map((g) => g.service)).toEqual(["moonshot"]);
-    expect(body.groups[0]?.models).toEqual([
+    // The two local servers are offered alongside the keyed vendor: they need
+    // no key and no configuring, so "is it running" is the only question, and
+    // that is answered by the empty model list below rather than by hiding
+    // them. Nothing is listening on either port here.
+    expect(body.groups.map((g) => g.service).sort()).toEqual(["lmstudio", "moonshot", "ollama"]);
+    expect(body.groups.find((g) => g.service === "moonshot")?.models).toEqual([
       { id: "moonshot-model", name: "moonshot-model", maxOutput: 4096, contextWindow: 32768 },
     ]);
+    expect(body.groups.find((g) => g.service === "ollama")?.models).toEqual([]);
+    expect(body.groups.find((g) => g.service === "lmstudio")?.models).toEqual([]);
   });
 
   it("merges persisted discovered/user models ahead of the static fallback catalog", async () => {
@@ -2688,7 +2736,104 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(processProjectInteractionRequestMock).not.toHaveBeenCalled();
   });
 
-  it("uses rollback semantics for chapter rejection instead of only flipping status", async () => {
+  /*
+   * Approval is the last read a chapter gets. A blocking finding says the
+   * chapter contradicts something the book already established, and signing
+   * off over one is how a keeper ends up limping on a different leg in
+   * chapter 9 than in chapter 3 with nothing left to catch it.
+   */
+  async function chapterWithBlockingFinding(): Promise<void> {
+    const chapters = join(root, "books", "demo-book", "chapters");
+    await mkdir(chapters, { recursive: true });
+    const body = "He set the box down and favoured his right leg going up the last flight.";
+    await writeFile(join(chapters, "0009_nine.md"), body, "utf-8");
+
+    const { locate } = await import("@actalk/quire-core");
+    const finding = locate({
+      path: "books/demo-book/chapters/0009_nine.md",
+      severity: "blocking",
+      category: "continuity",
+      title: "The limp changed legs",
+      quote: "favoured his right leg",
+      fix: "favoured his left leg",
+      description: "Chapter 3 puts the weight on his left.",
+      suggestion: "Match chapter 3.",
+    }, body);
+
+    await mkdir(join(root, ".quire"), { recursive: true });
+    await writeFile(
+      join(root, ".quire", "findings.json"),
+      JSON.stringify({ version: 1, findings: [finding] }),
+      "utf-8",
+    );
+  }
+
+  const chapterIndex = [{
+    number: 9,
+    title: "Nine",
+    status: "ready-for-review",
+    wordCount: 3120,
+    createdAt: "2026-04-07T00:00:00.000Z",
+    updatedAt: "2026-04-07T00:00:00.000Z",
+    auditIssues: [],
+    lengthWarnings: [],
+  }];
+
+  it("refuses to approve a chapter the audit says contradicts the book", async () => {
+    loadChapterIndexMock.mockResolvedValue(chapterIndex);
+    await chapterWithBlockingFinding();
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const response = await app.request("http://localhost/api/v1/books/demo-book/chapters/9/approve", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(409);
+    const json = await response.json() as { error: string; blockers: ReadonlyArray<{ title: string }> };
+    expect(json.error).toContain("contradicts the book");
+    // Naming them is the point: a refusal the reviewer cannot see into is
+    // just a door that will not open.
+    expect(json.blockers.map((b) => b.title)).toEqual(["The limp changed legs"]);
+    expect(saveChapterIndexMock).not.toHaveBeenCalled();
+  });
+
+  it("signs it off anyway when the reviewer says so, and says it did", async () => {
+    loadChapterIndexMock.mockResolvedValue(chapterIndex);
+    await chapterWithBlockingFinding();
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const response = await app.request("http://localhost/api/v1/books/demo-book/chapters/9/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true, chapterNumber: 9, status: "approved", forcedOver: 1,
+    });
+    const saved = saveChapterIndexMock.mock.calls.at(-1)?.[1] as ReadonlyArray<{ status: string }>;
+    expect(saved[0]?.status).toBe("approved");
+  });
+
+  it("approves normally when nothing is blocking", async () => {
+    loadChapterIndexMock.mockResolvedValue(chapterIndex);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+    const response = await app.request("http://localhost/api/v1/books/demo-book/chapters/9/approve", {
+      method: "POST",
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true, chapterNumber: 9, status: "approved",
+    });
+  });
+
+  it("keeps the words on a plain reject, and names the chapters written on top of it", async () => {
     loadChapterIndexMock.mockResolvedValue([
       {
         number: 3,
@@ -2718,6 +2863,56 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const response = await app.request("http://localhost/api/v1/books/demo-book/chapters/3/reject", {
       method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note: "The limp swapped legs." }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      chapterNumber: 3,
+      status: "rejected",
+      note: "The limp swapped legs.",
+      downstream: [4],
+    });
+    // Saying "no, not like that" is the most ordinary thing a reviewer does.
+    // It used to delete the chapter's markdown, every chapter after it and
+    // their snapshots, from a button beside Approve with no confirmation.
+    expect(rollbackToChapterMock).not.toHaveBeenCalled();
+    const saved = saveChapterIndexMock.mock.calls.at(-1)?.[1] as ReadonlyArray<{
+      number: number; status: string; reviewNote?: string;
+    }>;
+    expect(saved.find((ch) => ch.number === 3)).toMatchObject({
+      status: "rejected",
+      reviewNote: "The limp swapped legs.",
+    });
+    expect(saved.find((ch) => ch.number === 4)?.status).toBe("ready-for-review");
+  });
+
+  // The rollback is still here: rejecting 3 while 4 exists does leave 4 written
+  // on top of a chapter nobody accepted. It just has to be asked for now.
+  it("rolls the book back only when the caller asks for it", async () => {
+    loadChapterIndexMock.mockResolvedValue([
+      {
+        number: 3,
+        title: "Broken Chapter",
+        status: "ready-for-review",
+        wordCount: 1800,
+        createdAt: "2026-04-07T00:00:00.000Z",
+        updatedAt: "2026-04-07T00:00:00.000Z",
+        auditIssues: ["continuity"],
+        lengthWarnings: [],
+      },
+    ]);
+    rollbackToChapterMock.mockResolvedValue([3, 4]);
+
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const response = await app.request("http://localhost/api/v1/books/demo-book/chapters/3/reject", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ discardDownstream: true }),
     });
 
     expect(response.status).toBe(200);
@@ -6526,6 +6721,43 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(raw.llm.service).toBe("kkaiapi");
     expect(raw.llm.defaultModel).toBe("deepseek-v4-flash");
     expect(raw.llm.model).toBe("deepseek-v4-flash");
+  });
+
+  it("gives every agent a routing row, pinned or not", async () => {
+    const { createStudioServer } = await import("./server.js");
+    const app = createStudioServer(cloneProjectConfig() as never, root);
+
+    const save = await app.request("http://localhost/api/v1/project/model-routing", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      // The old spelling, and a row emptied out. Both are handled on the way in.
+      body: JSON.stringify({
+        overrides: { stateValidator: "claude/haiku", writer: "claude/sonnet", auditor: "" },
+      }),
+    });
+    await expect(save.json()).resolves.toMatchObject({
+      ok: true,
+      overrides: { "state-validator": "claude/haiku", writer: "claude/sonnet" },
+    });
+
+    const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
+    expect(raw.modelOverrides).toEqual({
+      "state-validator": "claude/haiku",
+      writer: "claude/sonnet",
+    });
+
+    const read = await app.request("http://localhost/api/v1/project/model-routing");
+    const table = await read.json() as {
+      roster: ReadonlyArray<{ id: string; label: string; does: string }>;
+      routes: Record<string, { model: string; source: string }>;
+    };
+    // A row per agent, not per pin: "uses the default" is an answer.
+    expect(table.roster.length).toBeGreaterThan(20);
+    expect(Object.keys(table.routes).length).toBe(table.roster.length);
+    expect(table.routes.writer).toMatchObject({ model: "claude/sonnet", source: "pin" });
+    expect(table.routes.architect?.source).toBe("global");
+    // The de-AI pass is pinnable now; before this it had no name at all.
+    expect(table.routes.destyler).toBeDefined();
   });
 
   it("project advanced settings expose detection config", async () => {

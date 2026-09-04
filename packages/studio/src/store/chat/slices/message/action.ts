@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import type {
   AgentResponse,
   ChatAttachmentPayload,
+  MessageChip,
   ChatSessionKind,
   ChatStore,
   MessageActions,
@@ -67,14 +68,22 @@ function formatAttachmentSize(size: number): string {
   return `${size} B`;
 }
 
-function formatUserMessageForDisplay(text: string, attachments: ReadonlyArray<ChatAttachmentPayload>): string {
-  if (attachments.length === 0) return text;
-  const heading = tr("附件：", "Attachments:");
-  const lines = text ? [text, "", heading] : [heading];
-  for (const attachment of attachments) {
-    lines.push(`- ${attachment.filename} (${attachment.mediaType || "application/octet-stream"}, ${formatAttachmentSize(attachment.size)})`);
-  }
-  return lines.join("\n");
+/**
+ * What the turn carried, as chips rather than as prose.
+ *
+ * Attachments used to be appended to the message as an "Attachments:" list, so
+ * a person's own sentence ended in a paragraph they had not written — and the
+ * skills they turned on were not shown at all. The mock puts both under the
+ * turn as references, which is what they are.
+ */
+function messageChips(
+  attachments: ReadonlyArray<ChatAttachmentPayload>,
+  skills: ReadonlyArray<string>,
+): ReadonlyArray<MessageChip> {
+  return [
+    ...attachments.map((attachment) => ({ label: attachment.filename, kind: "file" as const })),
+    ...skills.map((skill) => ({ label: skill, kind: "skill" as const })),
+  ];
 }
 
 export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions> = (set, get) => {
@@ -106,10 +115,15 @@ export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions>
 
   setInput: (text) => set({ input: text }),
 
-  addUserMessage: (sessionId, content) =>
+  addUserMessage: (sessionId, content, chips) =>
     set((state) => ({
       sessions: updateSession(state.sessions, sessionId, (session) => ({
-        messages: [...session.messages, { role: "user", content, timestamp: Date.now() }],
+        messages: [...session.messages, {
+          role: "user",
+          content,
+          timestamp: Date.now(),
+          ...(chips && chips.length > 0 ? { chips } : {}),
+        }],
         lastError: null,
       })),
     })),
@@ -490,7 +504,7 @@ export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions>
     };
 
     if (!get().selectedModel) {
-      get().addUserMessage(sessionId, formatUserMessageForDisplay(userInstruction, attachments));
+      get().addUserMessage(sessionId, userInstruction, messageChips(attachments, []));
       get().addErrorMessage(sessionId, tr("请先选择一个模型", "Select a model first"));
       rememberFailedSend();
       return;
@@ -545,7 +559,7 @@ export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions>
       })),
     }));
 
-    get().addUserMessage(sessionId, formatUserMessageForDisplay(userInstruction, attachments));
+    get().addUserMessage(sessionId, userInstruction, messageChips(attachments, requestedSkills));
     // 单连接原则：任务恢复流等旧连接先关掉，换成本轮的新连接。
     // 运行中的任务卡不受影响——新连接建立时服务端会重放 running 快照，
     // 任务日志（log）与收尾（tool:end）都按 execution id 匹配，与 streamTs 无关。

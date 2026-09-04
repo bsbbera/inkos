@@ -44,6 +44,11 @@ export const LLMConfigSchema = z.object({
   stream: z.boolean().default(true),
   services: z.array(LLMServiceEntrySchema).optional(),
   defaultModel: z.string().min(1).optional(),
+  // The selected model's real context window, when the provider was able to
+  // say. Only a locally served model needs this: its window is a property of
+  // the copy running on this machine, not of a published model, so no card can
+  // carry it and the client would otherwise assume a generic 128k.
+  contextWindow: z.number().int().positive().optional(),
   cover: LLMCoverConfigSchema,
 });
 
@@ -113,6 +118,11 @@ export type WritingConfig = z.infer<typeof WritingConfigSchema>;
 
 export const AgentLLMOverrideSchema = z.object({
   model: z.string().min(1),
+  // Which registered endpoint serves this model. A pin used to have to spell out
+  // baseUrl and apiKeyEnv to reach anywhere but the project's own service, which
+  // no settings page could reasonably ask for; naming the service lets the same
+  // resolver that serves the global default serve a pin.
+  service: z.string().min(1).optional(),
   provider: z.enum(["anthropic", "openai", "custom"]).optional(),
   baseUrl: z.string().url().optional(),
   apiKeyEnv: z.string().optional(),

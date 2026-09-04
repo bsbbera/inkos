@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isApproved, withFileAudit, type AuditState } from "./audit-state.js";
+import { isApproved, passCounts, withFileAudit, type AuditState } from "./audit-state.js";
 
 const empty: AuditState = { files: {} };
 
@@ -42,5 +42,32 @@ describe("withFileAudit", () => {
     );
     expect(Object.keys(two.files).sort()).toEqual(["a.md", "b.md"]);
     expect(two.files["a.md"]?.checked).toBe("x");
+  });
+});
+
+/**
+ * The counts on a page were unreadable against each other: one press of
+ * "audit & revise" that rewrote the prose twice recorded one read and two
+ * rewrites, so a file claimed to have been rewritten more often than it had
+ * been read. The count was per request; the rewrites were per round.
+ */
+describe("passCounts", () => {
+  it("counts a read-only pass as one read and no rewrite", () => {
+    expect(passCounts(0, false)).toEqual({ reads: 1, revisions: 0, deslops: 0 });
+  });
+
+  it("never reports fewer reads than rewrites", () => {
+    for (const rounds of [0, 1, 2, 3]) {
+      const c = passCounts(rounds, false);
+      expect(c.reads).toBeGreaterThan(c.revisions);
+    }
+  });
+
+  it("counts the pass that ends the loop, so two rounds is three reads", () => {
+    expect(passCounts(2, false)).toEqual({ reads: 3, revisions: 2, deslops: 0 });
+  });
+
+  it("counts a de-AI pass that changed nothing, because it still ran", () => {
+    expect(passCounts(0, true)).toEqual({ reads: 1, revisions: 0, deslops: 1 });
   });
 });

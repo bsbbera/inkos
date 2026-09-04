@@ -16,6 +16,65 @@
  * know about it, not a framework for building one.
  */
 
+
+/**
+ * How a finished thing of this kind gets onto a page.
+ *
+ * Not a file format - a renderer. `page-shaped` work is composed page by page
+ * and placed at fixed positions, which is what the existing Affinity flatplan
+ * build does. `reflow-shaped` work is one long text poured through master
+ * pages, needing autoflow, running heads and widow control instead - a
+ * different script, not a parameter to the same one. Conflating them is why
+ * books have no build at all today: the only build that existed was the
+ * magazine's, and a novel is not a magazine with more pages.
+ */
+export type BuildShape =
+  | "page-shaped"
+  | "reflow-shaped"
+  /** Ships as a runtime, not a document. The design spec still drives it. */
+  | "not-paper"
+  /** Industry format, deliberately not art-directed. */
+  | "screenplay"
+  | "none";
+
+/** What a run of this kind produces at the end. A book makes two. */
+export type BuildOutput = "epub" | "print-pdf" | "screenplay-pdf" | "panel-sheet" | "html";
+
+export type PipelineGate = "content" | "design" | "build";
+
+/**
+ * The stage graph every production of this kind walks.
+ *
+ * One shape for all of them - content, then design, then build, with a gate
+ * between each - and only the sub-stages inside differ. That uniformity is the
+ * point: the orchestrator owns sequencing, hand-off, resume and events once,
+ * and a new production type is a row here rather than a new runner.
+ *
+ * An empty macro-stage is skipped along with its gate, which is how a script
+ * (no art direction) and a translation (no art at all) walk the same rails as
+ * a magazine without special cases.
+ */
+export interface ProductionPipeline {
+  readonly content: ReadonlyArray<string>;
+  readonly design: ReadonlyArray<string>;
+  readonly build: ReadonlyArray<string>;
+  readonly gates: ReadonlyArray<PipelineGate>;
+  readonly buildShape: BuildShape;
+  /**
+   * Every artifact the build produces, not one.
+   *
+   * A book ships an epub and a print PDF from the same approved text; naming a
+   * single build target cannot say that, and picking one would have quietly
+   * dropped the other.
+   */
+  readonly outputs: ReadonlyArray<BuildOutput>;
+  /**
+   * What gets approved one at a time. Gates hold per unit, not per production,
+   * so a reader can sign off chapter 3 while chapter 4 is still being written.
+   */
+  readonly unit: "chapter" | "page" | "spread" | "panel" | "scene" | "work";
+}
+
 export interface ProductionSpec {
   readonly id: string;
   readonly label: string;
@@ -29,6 +88,15 @@ export interface ProductionSpec {
   readonly images: boolean;
   /** Whether finished work of this kind can be audited as prose. */
   readonly auditable: boolean;
+  /**
+   * The stage graph, or null for a kind that does not run one.
+   *
+   * `images` and `factCheck` above were declared and read by nothing - a play
+   * world said `images: false` while `play/play-image.ts` sat in the tree
+   * generating them. They stay because they describe the kind honestly, and
+   * the graph below is now the thing that actually decides what runs.
+   */
+  readonly pipeline: ProductionPipeline | null;
 }
 
 export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
@@ -40,6 +108,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: true,
     auditable: true,
+    pipeline: {
+      content: ["plan", "write", "audit", "destyle"],
+      design: ["artplan", "generate", "review"],
+      build: ["layout", "export"],
+      gates: ["content", "design", "build"],
+      buildShape: "reflow-shaped",
+      outputs: ["epub", "print-pdf"],
+      unit: "chapter",
+    },
   },
   {
     id: "short",
@@ -49,6 +126,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: true,
     auditable: true,
+    pipeline: {
+      content: ["write", "audit", "destyle"],
+      design: ["artplan", "generate", "review"],
+      build: ["layout", "export"],
+      gates: ["content", "design", "build"],
+      buildShape: "reflow-shaped",
+      outputs: ["print-pdf"],
+      unit: "work",
+    },
   },
   {
     id: "script",
@@ -59,6 +145,18 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: false,
     auditable: true,
+    // No design macro-stage on purpose. A screenplay is set to an industry
+    // format that is the opposite of art-directed, so it walks content then
+    // build and its design gate simply does not exist.
+    pipeline: {
+      content: ["plan", "write", "audit", "destyle"],
+      design: [],
+      build: ["layout", "export"],
+      gates: ["content", "build"],
+      buildShape: "screenplay",
+      outputs: ["screenplay-pdf"],
+      unit: "scene",
+    },
   },
   {
     id: "storyboard",
@@ -68,6 +166,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: true,
     auditable: true,
+    pipeline: {
+      content: ["plan", "write", "audit"],
+      design: ["artplan", "generate", "review"],
+      build: ["layout", "export"],
+      gates: ["content", "design", "build"],
+      buildShape: "page-shaped",
+      outputs: ["panel-sheet"],
+      unit: "panel",
+    },
   },
   {
     id: "interactive-film",
@@ -77,6 +184,17 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: true,
     auditable: true,
+    // Ships as a runtime rather than a document, so there is nothing to build
+    // to paper - but the design spec still decides how it looks.
+    pipeline: {
+      content: ["plan", "write", "audit"],
+      design: ["artplan", "generate", "review"],
+      build: ["export"],
+      gates: ["content", "design"],
+      buildShape: "not-paper",
+      outputs: ["html"],
+      unit: "scene",
+    },
   },
   {
     id: "publication",
@@ -87,6 +205,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: true,
     images: true,
     auditable: true,
+    pipeline: {
+      content: ["research", "plan", "write", "factcheck", "audit", "destyle"],
+      design: ["artplan", "generate", "review"],
+      build: ["layout", "export"],
+      gates: ["content", "design", "build"],
+      buildShape: "page-shaped",
+      outputs: ["print-pdf"],
+      unit: "page",
+    },
   },
   {
     id: "play",
@@ -94,10 +221,16 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     outDir: "worlds",
     skills: ["quire-play-world"],
     factCheck: false,
-    images: false,
+    // `play/play-image.ts` has been generating these all along; the flag said
+    // it did not.
+    images: true,
     // A live world is state, not a finished text. Auditing one as prose would
     // report on a save file.
     auditable: false,
+    // A live world is played, not produced. It has no run to sequence, which
+    // is a different statement from having an empty one - hence null rather
+    // than a graph with nothing in it.
+    pipeline: null,
   },
   {
     id: "translation",
@@ -107,6 +240,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     factCheck: false,
     images: false,
     auditable: true,
+    pipeline: {
+      content: ["write", "audit", "destyle"],
+      design: [],
+      build: ["export"],
+      gates: ["content", "build"],
+      buildShape: "reflow-shaped",
+      outputs: ["epub"],
+      unit: "chapter",
+    },
   },
 ];
 

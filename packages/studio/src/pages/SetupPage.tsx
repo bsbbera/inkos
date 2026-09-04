@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Cpu, HardDriveDownload, Image as ImageIcon, PlugZap, RefreshCw } from "lucide-react";
+import { Bot, Cpu, HardDriveDownload, Image as ImageIcon, PlugZap, RefreshCw } from "lucide-react";
+import { ModelRouting } from "./ModelRouting";
+import { AppUpdates } from "./AppUpdates";
+import { SearchFallback } from "./SearchFallback";
+import { WorkspaceFolder } from "./WorkspaceFolder";
+import { ServiceListPage } from "./ServiceListPage";
 import {
   shimAsset,
   shimDelete,
@@ -308,16 +313,95 @@ function Images() {
   );
 }
 
-export function SetupPage() {
+const TABS = [
+  { id: "machine", label: "Machine", note: "What this computer can do: CLIs, images, hardware." },
+  { id: "providers", label: "Models", note: "Which providers are reachable, and with what key." },
+  { id: "agents", label: "Agents", note: "Which model answers for which agent. Set once." },
+] as const;
+
+type SetupTab = (typeof TABS)[number]["id"];
+
+/**
+ * One page for the machine, its models and its agents.
+ *
+ * These were three screens — Setup, Model config, and a card buried in Project
+ * settings — and the provider list was drawn on two of them from two different
+ * scans. Splitting a single question ("what is this thing running on?") across
+ * three rail entries is how a person loses the model picker entirely.
+ */
+export function SetupPage({
+  nav,
+  tab,
+}: {
+  readonly nav: {
+    readonly toDashboard: () => void;
+    readonly toServices: () => void;
+    readonly toServiceDetail: (id: string) => void;
+  };
+  readonly tab?: SetupTab;
+}) {
+  const [active, setActive] = useState<SetupTab>(tab ?? "machine");
+  useEffect(() => { if (tab) setActive(tab); }, [tab]);
+  const current = TABS.find((entry) => entry.id === active) ?? TABS[0];
+
   return (
     <div className="space-y-6">
       <header className="q-head">
         <p className="q-label">This machine</p>
         <h1 className="mt-3">Setup</h1>
-        <p>What this machine can do. Project and model choices live with the project.</p>
+        <p>{current.note}</p>
       </header>
-      <Providers />
-      <Images />
+
+      <div role="tablist" aria-label="Setup sections" className="flex flex-wrap gap-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
+        {TABS.map((entry) => (
+          <button
+            key={entry.id}
+            role="tab"
+            type="button"
+            aria-selected={entry.id === active}
+            onClick={() => { setActive(entry.id); window.location.hash = `#/setup/${entry.id}`; }}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+              entry.id === active
+                ? "bg-card text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+
+      {active === "machine" ? (
+        <>
+          <WorkspaceFolder />
+          <Providers />
+          <Images />
+          <AppUpdates />
+        </>
+      ) : null}
+      {active === "providers" ? (
+        <>
+          <ServiceListPage nav={nav} />
+          <SearchFallback />
+        </>
+      ) : null}
+      {active === "agents" ? (
+        <Section
+          icon={<Bot size={18} />}
+          title="Agent models"
+          note="A pin here beats the default. An unreachable pin falls back to it."
+        >
+          <ModelRouting
+            onOpenModelConfig={() => { setActive("providers"); window.location.hash = "#/setup/providers"; }}
+            labels={{
+              globalDefault: "Default model",
+              noModel: "No model selected yet",
+              openModelConfig: "Providers",
+              usesDefault: "uses the default",
+            }}
+          />
+        </Section>
+      ) : null}
     </div>
   );
 }

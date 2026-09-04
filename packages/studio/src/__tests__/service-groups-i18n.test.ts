@@ -1,11 +1,22 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { setAppLanguage } from "../lib/app-language";
 import { getGroupDescription, getGroupLabel, getGroupShortLabel } from "../constants/service-groups";
 import { getServiceQuickLinks } from "../components/ServiceQuickLinks";
 
+/*
+ * These cases assert the Chinese copy. They were written when the global app
+ * language defaulted to zh and so never had to say so; English is the default
+ * now, and a test that depends on a global default should name it either way.
+ * Cases below that want English set it themselves, and win: an inner beforeEach
+ * runs after this one.
+ */
+beforeEach(() => {
+  setAppLanguage("zh");
+});
+
 // 每条用例结束后恢复默认语言，避免污染其他测试。
 afterEach(() => {
-  setAppLanguage("zh");
+  setAppLanguage("en");
 });
 
 describe("service-groups i18n", () => {

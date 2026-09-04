@@ -1,63 +1,34 @@
-/**
- * Check finished work, from the work rather than from a file list.
+/*
+ * Audit. Mock 08.
  *
- * The first version of this screen listed every auditable `.md` on disk and let
- * you check one. That was the shape of `runStoryAudit`, not the shape of the
- * work: a magazine is one issue of sixteen pages, a short is one story spread
- * over sixty-four files, and neither is a row in a list of paths.
+ * Scope, queue, passage. You say what gets read, you empty the queue with two
+ * keys, and the paragraph that produced each finding is on screen beside it —
+ * and you can take the pen back at any point and write the fix yourself.
  *
- * So the unit is the project. `/api/v1/audit/projects` groups the same targets
- * by production and project, and `/api/v1/audit/project/:kind/:id` returns the
- * derived view: stages read off whatever run state that production keeps, its
- * findings, and its files.
+ * The three columns are the three decisions, in the order they are made. The
+ * old screen had a file tree and an editor, which answered the second question
+ * ("what does this file say") and never the first ("what am I checking") or
+ * the third ("what do I do about this one"). Findings arrived in a response
+ * body and vanished with it.
  *
- * One tree, not two lists. The files used to sit in a section of their own in
- * the middle, which meant the screen carried a navigator on the left and a
- * second navigator beside the thing you were reading — four columns wide by the
- * time the app's own sidebar was counted, and nothing but the app's sidebar
- * could be folded away. Kind, project and file are three levels of the same
- * question, so they are three levels of the same tree, and every level folds.
- * The middle is then only the project, and the editor can be put away when it
- * is not wanted.
- *
- * The two other things a finished issue needs are here rather than only on the
- * publication screen: the pictures (ComfyUI, the `art` stage) and the document
- * (Affinity, the `build` stage). Both already existed behind `/resume`, which
- * takes a stage range — no new route, just the two the audit screen was missing.
- *
- * What this screen got wrong for a long time, all of it the same mistake in
- * different places: it never said what it was doing.
- *
- *   - Three columns scrolled as one, so reading a finding scrolled the sentence
- *     it was about off the screen.
- *   - Every `Make` button was fire-and-forget. The route returns before the
- *     work starts, the events it broadcasts were not in the client's allowlist,
- *     and `busy` cleared in milliseconds — so a build that was running looked
- *     exactly like a build that had never begun, and clicking again earned a
- *     409 rendered as a stack trace.
- *   - A rewriting pass took minutes, could not be stopped, and could not be
- *     undone, though the pass has written `<name>.pre-audit.md` before touching
- *     a word since the day it was written.
- *   - The confirmation dialog guarded unsaved typing and left the finished
- *     manuscript unguarded, which is the wrong way round.
- *   - Nothing on it announced anything to a screen reader.
- *
- * English only, deliberately. This page used to call a `tr()` helper gated on
- * `t("nav.myBooks") !== "My Books"`, and the English string for that key is
- * "My Works" — so the comparison was true forever and every label rendered in
- * Chinese whatever the app was set to. PublicationDetail, the screen this one
- * is meant to match, carries no translations either.
+ * Charcoal is reserved for the manuscript itself, so the passage column is
+ * charcoal and the two that let you choose are paper. Square checkboxes are
+ * your intent, round dots are the file's own state; they never mean the same
+ * thing inside one row.
  */
-import { useResizable } from "../hooks/use-resizable";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Theme } from "../hooks/use-theme";
-import { useNewSSEMessages, type SSEMessage } from "../hooks/use-sse";
-import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { TypeMark } from "../components/TypeMark";
+import type { SSEMessage } from "../hooks/use-sse";
+import { fetchJson, useApi } from "../hooks/use-api";
+import { useNewSSEMessages } from "../hooks/use-sse";
+import { Icon } from "../components/ui/icon";
+import { Empty, Failed, Loading } from "../components/ui/states";
+import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
 import {
-  AlertTriangle, Check, ChevronDown, ChevronRight, Image as ImageIcon,
-  Lock, Loader2, PanelRightClose, PanelRightOpen, Play, RotateCcw, Save,
-  ShieldCheck, Square, Unlock, X,
-} from "lucide-react";
+  Grip, ReadAloud, useColumns, type Workflow,
+} from "../components/workflow";
+
+/* ------------------------------------------------------------------- types */
 
 interface Project {
   readonly kind: string;
@@ -74,6 +45,21 @@ interface FileAudit {
   readonly warnings?: number;
   readonly rewritten?: string;
   readonly approved?: { readonly at: string; readonly by: string };
+  /* How much has been done to it, not only when it last happened. */
+  readonly reads?: number;
+  readonly revisions?: number;
+  readonly deslops?: number;
+  readonly notes?: number;
+}
+
+/** "read 4x, rewritten twice" - said only where there is something to say. */
+function historyOf(a: FileAudit): string {
+  const parts: string[] = [];
+  if (a.reads) parts.push(`read ${a.reads}×`);
+  if (a.revisions) parts.push(`rewritten ${a.revisions}×`);
+  if (a.deslops) parts.push(`de-AI ${a.deslops}×`);
+  if (a.notes) parts.push(`${a.notes} note${a.notes === 1 ? "" : "s"}`);
+  return parts.join(" · ");
 }
 
 interface Item {
@@ -81,26 +67,8 @@ interface Item {
   readonly name: string;
   readonly words: number;
   readonly modified: string;
-  /** What has been done to this file, and whether it is signed off. */
-  readonly audit?: FileAudit;
-  /** A `.pre-audit` copy exists, so the last rewrite can be undone. */
-  readonly backup?: boolean;
-}
-
-interface Finding {
-  readonly page: number | null;
-  readonly severity: string;
-  readonly category: string;
-  readonly description: string;
-  readonly suggestion: string;
-}
-
-interface Approval { readonly at: string; readonly by: string }
-
-interface Gates {
-  readonly copy: { approved: Approval | null; warnings: readonly string[] };
-  readonly design: { approved: Approval | null; blockers: readonly string[]; canApprove: boolean };
-  readonly build: { canBuild: boolean; blockers: readonly string[] };
+  readonly audit: FileAudit;
+  readonly backup: boolean;
 }
 
 interface Detail {
@@ -109,1619 +77,1537 @@ interface Detail {
   readonly id: string;
   readonly title: string;
   readonly subtitle: string;
-  readonly stages: ReadonlyArray<{ stage: string; state: string; detail: string }>;
-  readonly findings: ReadonlyArray<Finding>;
   readonly items: ReadonlyArray<Item>;
-  /** Publications only. Nothing else is signed off in two halves. */
-  readonly gates?: Gates;
+  /** Where this work has got to and what is holding it. Every kind has one. */
+  readonly workflow?: Workflow;
+  /** Whether this kind's runner can be re-entered at a stage. */
+  readonly resumable?: boolean;
 }
 
-interface Audit {
-  readonly findings: ReadonlyArray<{
-    readonly category: string;
-    readonly severity: string;
-    readonly description: string;
-    readonly suggestion: string;
-  }>;
-}
+/* The stages a publication run can be picked up at. Must match the server's
+   list: `fact-check` was missing from the magazine screen's dropdowns for a
+   while, so the only stage that checks facts could never be resumed at. */
+const RESUME_STAGES = [
+  "research", "plan", "write", "fact-check", "audit", "art", "build",
+] as const;
 
-/**
- * Severity, through the theme rather than around it.
- *
- * These were `text-success`, `text-warning` and `text-destructive` — raw
- * palette that does not move between parchment and obsidian, and amber on the
- * light card measures about 1.9:1, which is not a severity indicator so much as
- * a rumour of one. `--success` and `--warning` are new; `--destructive` was
- * always there and this file was not using it.
- */
-const STATE_TONE: Record<string, string> = {
-  done: "text-success",
-  complete: "text-success",
-  running: "text-primary",
-  partial: "text-warning",
-  "needs-review": "text-warning",
-  failed: "text-destructive",
-  error: "text-destructive",
-};
+type Severity = "blocking" | "warning" | "note";
 
-/** Run-state words as a person would say them. `s.state` is an enum off disk. */
-const STATE_LABEL: Record<string, string> = {
-  done: "finished",
-  complete: "finished",
-  running: "running",
-  partial: "part-way",
-  "needs-review": "needs a look",
-  failed: "failed",
-  error: "failed",
-  pending: "not started",
-  idle: "not started",
-};
-
-/** Stage names as a person would say them. Unknown stages keep their own name. */
-const STAGE_LABEL: Record<string, string> = {
-  art: "Pictures",
-  build: "Document",
-  write: "Writing",
-  outline: "Outline",
-  audit: "Checks",
-  revise: "Rewrite",
-  layout: "Layout",
-  research: "Research",
-  publish: "Publishing",
-};
-
-const say = (map: Record<string, string>, key: string) =>
-  map[key] ?? key.replace(/[-_]/g, " ");
-
-/** A stage name, sentence case. An unmapped stage arrived as `fact-check`. */
-const stageName = (stage: string) => {
-  const said = say(STAGE_LABEL, stage);
-  return said.charAt(0).toUpperCase() + said.slice(1);
-};
-
-const SELECTED = "bg-primary/10 text-primary";
-
-/**
- * A pass that has already run on the open file.
- *
- * Quiet, and unmistakably not the same button it was a minute ago: the point is
- * that a finished check should not look identical to one nobody has clicked.
- */
-const DONE = "bg-success/10 text-success border border-success/30";
-
-const artifact = (path: string) =>
-  `/api/v1/project/artifacts/${path.split("/").map(encodeURIComponent).join("/")}`;
-
-/** The page number a publication file carries in its name, for a spread render. */
-function pageNumberOf(name: string): number | null {
-  const m = /^(\d+)[-_]/.exec(name);
-  return m ? Number(m[1]) : null;
-}
-
-/** A file name as a title, for the flatplan tile — `04-inside-this-issue.md`
- *  reads as "Inside this issue". */
-function titleOf(name: string): string {
-  const bare = name.replace(/\.[^.]+$/, "").replace(/^\d+[-_]/, "").replace(/[-_]+/g, " ").trim();
-  return bare ? bare[0].toUpperCase() + bare.slice(1) : name;
-}
-
-/** Which of the flatplan's four states a file is in, for its bottom edge. */
-function pgStateOf(item: Item): "checked" | "rewritten" | "signed" | "" {
-  const a = item.audit;
-  if (a?.approved) return "signed";
-  if (a?.rewritten) return "rewritten";
-  if (a?.checked) return "checked";
-  return "";
-}
-
-/**
- * The part of a path that says which stage of the work a file belongs to —
- * `final/chapters`, `outline`, `reviews` — relative to its own project.
- */
-function folderOf(path: string): string {
-  const parts = path.split("/");
-  // drop the production directory, the project directory, and the filename
-  return parts.slice(2, -1).join("/");
-}
-
-/** `2m 41s`, for a pass whose only other progress report is a spinner. */
-function elapsed(sinceMs: number): string {
-  const s = Math.max(0, Math.round((Date.now() - sinceMs) / 1000));
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
-}
-
-/**
- * What the tree was showing last time this screen was open.
- *
- * Kind, project and file selection were component state, so navigating to Chat
- * and back dropped all of it and the whole path had to be clicked again. Module
- * scope, not localStorage: this should survive a route change, not a restart,
- * because a project that has since been deleted should not be waiting here.
- */
-const remembered: {
-  shutKinds: Record<string, boolean>;
-  openProjects: Record<string, boolean>;
-  picked: { kind: string; id: string } | null;
-  showEditor: boolean;
-} = { shutKinds: {}, openProjects: {}, picked: null, showEditor: true };
-
-/** A held action, and the words to ask about it with. */
-interface Pending {
-  readonly act: () => void;
+interface Finding {
+  readonly id: string;
+  readonly path: string;
+  readonly section: string;
+  readonly quote: string;
+  readonly severity: Severity;
+  readonly category: string;
   readonly title: string;
-  readonly message: string;
-  readonly confirmLabel: string;
-  readonly cancelLabel: string;
+  readonly description: string;
+  readonly suggestion: string;
+  readonly fix?: string;
+  readonly state: "open" | "accepted" | "ignored";
+  readonly para: number;
+  readonly start: number;
+  readonly end: number;
 }
 
-export function AuditPage({
-  theme, sse,
-}: { theme: Theme; sse: { messages: ReadonlyArray<SSEMessage> } }) {
-  const [projects, setProjects] = useState<readonly Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [retry, setRetry] = useState<{ readonly act: () => void } | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [image, setImage] = useState<string | null>(null);
+interface Counts {
+  readonly blocking: number;
+  readonly warning: number;
+  readonly note: number;
+  readonly open: number;
+  /** Accepted or deliberately left. Proof the page was worked, not skipped. */
+  readonly settled: number;
+}
 
-  // Everything folds. `false` is the default for a kind, `true` for a project,
-  // so the tree opens showing what you have rather than every file you own.
-  const [shutKinds, setShutKinds] = useState<Record<string, boolean>>(remembered.shutKinds);
-  const [openProjects, setOpenProjects] = useState<Record<string, boolean>>(remembered.openProjects);
-  const [showEditor, setShowEditor] = useState(remembered.showEditor);
+/* --------------------------------------------------------------- pure parts */
 
-  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(remembered.picked);
-  const [detail, setDetail] = useState<Detail | null>(null);
+/**
+ * What a file's dot says about it, before anybody has selected anything.
+ *
+ * Four states and no more, because a dot that can mean six things means none:
+ * never read, read and clean, read and something is open, and blocked.
+ */
+export function fileState(
+  item: Item,
+  findings: ReadonlyArray<Finding>,
+): { readonly dot: string; readonly note: string } {
+  const mine = findings.filter((f) => f.path === item.path && f.state === "open");
+  if (mine.some((f) => f.severity === "blocking")) {
+    return { dot: "dot dot-bad", note: `${mine.length} open · blocks approval` };
+  }
+  if (mine.length > 0) return { dot: "dot dot-warn", note: `${mine.length} open` };
+  if (item.audit.checked) return { dot: "dot dot-clean", note: "clean" };
+  return { dot: "dot dot-never", note: "never read" };
+}
 
-  const [file, setFile] = useState<Item | null>(null);
-  const [audit, setAudit] = useState<Audit | null>(null);
-  const [scope, setScope] = useState<"file" | "project">("project");
-  const [text, setText] = useState("");
-  const [saved, setSaved] = useState("");
-  const [loadFailed, setLoadFailed] = useState(false);
-  /**
-   * An action held back until the user has answered for it.
-   *
-   * This guarded one thing — unsaved typing about to be replaced — and left the
-   * more valuable artifact unguarded: `Rewrite` and `Remove AI phrasing` write
-   * over the finished chapter on disk, and on a file the user had not just
-   * typed into they did it with no question asked at all. Both now ask, and so
-   * does switching projects, which blanked the editor without a word.
-   */
-  const [pending, setPending] = useState<Pending | null>(null);
-  const [loadingText, setLoadingText] = useState(false);
-  const [progress, setProgress] = useState<string | null>(null);
-  /** The long-running thing, if there is one, and when it started. */
-  const [inflight, setInflight] = useState<{ key: string; label: string; at: number } | null>(null);
-  /**
-   * The pass that last finished on the open file.
-   *
-   * Three buttons sat identical before a run and identical after it, so a
-   * finished check looked exactly like one that had never been clicked and the
-   * only way to tell was to remember.
-   */
-  const [ran, setRan] = useState<{ mode: string; findings: number } | null>(null);
-  /**
-   * How much rewritten text has landed in the editor, and when the last piece
-   * did.
-   *
-   * The rewrite has streamed each finished section into the panel since it was
-   * written, and the panel gave no sign of it: the text simply differed at some
-   * point, which from the reader's chair is indistinguishable from nothing
-   * happening for four minutes and then a reload.
-   */
-  const [streamed, setStreamed] = useState<{ count: number; at: number } | null>(null);
-  /**
-   * The headings rewritten so far, in the order they landed.
-   *
-   * This is the stream as a person can watch it. `audit:text` carries the whole
-   * document each time, so applying it is invisible — the text differs at some
-   * point, minutes apart, which reads as a reload. A section name appearing is
-   * something happening.
-   */
-  const [sections, setSections] = useState<readonly string[]>([]);
-  /**
-   * Approved files the reader has deliberately reopened, this visit.
-   *
-   * Not persisted: reopening is a decision about the next few minutes, not a
-   * property of the file, and it should not outlive the screen.
-   */
-  const [unlocked, setUnlocked] = useState<ReadonlySet<string>>(new Set());
-  const [, setTick] = useState(0);
+/**
+ * How long reading this much prose takes.
+ *
+ * One number, stated before the run rather than in a dialog afterwards,
+ * because the cost is part of the choice. Derived from what runs actually
+ * take: a section is one model turn and a chapter is a few of them.
+ */
+export function estimate(words: number): string {
+  if (words === 0) return "nothing selected";
+  const minutes = Math.max(1, Math.round(words / 3200));
+  return `about ${minutes} min`;
+}
 
-  // Purely how the screen presents itself — none of these three touch a
-  // route or a handler, so they default to whatever reads best and are free
-  // to add without risking the logic above.
-  const [fileView, setFileView] = useState<"tiles" | "list">("tiles");
-  const [textSize, setTextSize] = useState<"sm" | "md" | "lg">("md");
-  const [wide, setWide] = useState(false);
-  /** Severity, as a filter. Empty means every severity, which is the default. */
-  const [sevs, setSevs] = useState<ReadonlySet<string>>(new Set());
+/** Worst first, then in reading order — the order a queue is actually worked. */
+const SEVERITY_ORDER: Record<Severity, number> = { blocking: 0, warning: 1, note: 2 };
 
-  useEffect(() => { remembered.shutKinds = shutKinds; }, [shutKinds]);
-  useEffect(() => { remembered.openProjects = openProjects; }, [openProjects]);
-  useEffect(() => { remembered.picked = picked; }, [picked]);
-  useEffect(() => { remembered.showEditor = showEditor; }, [showEditor]);
+/**
+ * The page's findings, still-open ones first.
+ *
+ * This dropped everything settled, so a page that had been read and worked
+ * showed an empty list under the words "Nothing is open" — the same screen a
+ * page nobody has ever read showed. Eleven findings dealt with and eleven
+ * findings that never existed are not the same page, and the one thing the
+ * reviewer wants to see is that the work was done.
+ */
+export function queueOf(
+  findings: ReadonlyArray<Finding>,
+  filter: Severity | "all",
+): ReadonlyArray<Finding> {
+  return findings
+    .filter((f) => filter === "all" || f.severity === filter)
+    .slice()
+    .sort((a, b) =>
+      Number(a.state !== "open") - Number(b.state !== "open")
+      || SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]
+      || a.path.localeCompare(b.path)
+      || a.start - b.start);
+}
 
-  // One second, only while something is running: the elapsed time beside a
-  // minutes-long pass is the only thing on screen that proves it is still alive.
+const SEV_CLASS: Record<Severity, string> = {
+  blocking: "sev sev-bad",
+  warning: "sev sev-warn",
+  note: "sev sev-info",
+};
+
+/** `books/tide/chapters/0009_nine.md` reads as `ch09` in a queue row. */
+export function placeOf(path: string): string {
+  const name = path.split("/").pop() ?? path;
+  const num = /^(\d{2,4})/.exec(name);
+  if (num) return `ch${String(Number(num[1])).padStart(2, "0")}`;
+  return name.replace(/\.md$/, "");
+}
+
+/* ---------------------------------------------------------------- the page */
+
+export function AuditPage({ sse }: { readonly sse: { readonly messages: ReadonlyArray<SSEMessage> } }) {
+  const { data: projectList, loading, error, refetch: refetchProjects } =
+    useApi<{ projects: ReadonlyArray<Project> }>("/audit/projects");
+  const projects = useMemo(() => projectList?.projects ?? [], [projectList]);
+
+  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(null);
   useEffect(() => {
-    if (!inflight) return;
-    const id = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(id);
-  }, [inflight]);
-
-  const fail = useCallback((e: unknown, again?: () => void) => {
-    setError(String((e as Error).message ?? e));
-    setRetry(again ? { act: again } : null);
-  }, []);
-
-  const clearError = useCallback(() => { setError(null); setRetry(null); }, []);
-
-  // The live rewrite writes into the editor, so it must not land on top of
-  // something the user typed and has not saved. `dirty` is derived, so the
-  // listener reads it through a ref rather than re-subscribing on every keystroke.
-  const stateRef = useRef({ path: "", dirty: false, projectId: "" });
-  stateRef.current = {
-    path: file?.path ?? "",
-    dirty: text !== saved,
-    projectId: picked?.id ?? "",
-  };
-
-  const loadProject = useCallback(async (kind: string, id: string) => {
-    try {
-      const res = await fetch(
-        `/api/v1/audit/project/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,
-      );
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setDetail(body);
-    } catch (e) {
-      fail(e, () => void loadProject(kind, id));
+    // Open on the work touched most recently rather than on nothing at all.
+    if (!picked && projects.length > 0) {
+      const first = projects[0]!;
+      setPicked({ kind: first.kind, id: first.id });
     }
-  }, [fail]);
+  }, [picked, projects]);
 
-  // The SSE listener must be able to refresh the project it is watching without
-  // re-subscribing every time the selection changes.
-  const reload = useRef<() => void>(() => {});
-  reload.current = () => { if (picked) void loadProject(picked.kind, picked.id); };
+  const { data: detail, refetch: refetchDetail } = useApi<Detail>(
+    picked ? `/audit/project/${picked.kind}/${picked.id}` : "",
+  );
+  const items = useMemo(() => detail?.items ?? [], [detail]);
 
-  useNewSSEMessages(sse.messages, useCallback((message: SSEMessage) => {
-    const data = message.data as {
-      path?: string; id?: string; message?: string; markdown?: string;
-      state?: string; stage?: string; heading?: string;
-    } | null;
-    if (!data) return;
+  const { data: findingData, refetch: refetchFindings } =
+    useApi<{ findings: ReadonlyArray<Finding>; counts: Counts }>("/findings");
+  const findings = useMemo(() => findingData?.findings ?? [], [findingData]);
 
-    /**
-     * Publication events are keyed by issue id, not by path — which is why the
-     * old handler, which returned early unless `data.path` matched the open
-     * file, threw every single one of them away.
-     */
-    if (message.event.startsWith("publication:")) {
-      if (!data.id || data.id !== stateRef.current.projectId) return;
-      if (message.event === "publication:event" && data.stage) {
-        setProgress(say(STAGE_LABEL, data.stage));
-      }
-      if (message.event === "publication:run") {
-        if (data.state === "start") return;
-        setBusy(null);
-        setInflight(null);
-        setProgress(null);
-        if (data.state === "error" && data.message) setError(data.message);
-        reload.current();
-      }
-      if (message.event === "publication:issue") reload.current();
-      return;
-    }
+  /* Two windows on one book must not disagree about what is still open. */
+  useNewSSEMessages(sse.messages, useCallback((m: SSEMessage) => {
+    if (m.event === "findings:changed" || m.event === "audit:state") void refetchFindings();
+  }, [refetchFindings]));
 
-    if (!data.path || data.path !== stateRef.current.path) return;
-    if (message.event === "audit:progress" && data.message) setProgress(data.message);
-    if (message.event === "audit:run" && data.state !== "start") setProgress(null);
-    if (message.event === "audit:text" && typeof data.markdown === "string" && !stateRef.current.dirty) {
-      setText(data.markdown);
-      setSaved(data.markdown);
-      setStreamed((s) => ({ count: (s?.count ?? 0) + 1, at: Date.now() }));
-    }
-    if (message.event === "audit:section" && typeof data.heading === "string") {
-      // A chapter file is often one unheaded section, so the heading arrives
-      // empty. Counting them is still the honest signal — "the second piece has
-      // landed" is a fact, "untitled section" is not information.
-      const heading = data.heading.trim();
-      setSections((list) => [...list, heading || `Part ${list.length + 1}`]);
-    }
-    // The tree's marks live in a file the server writes, so a run that changes
-    // them has to say so.
-    if (message.event === "audit:state") reload.current();
-  }, []));
-
-  const loadProjects = useCallback(async () => {
-    try {
-      const res = await fetch("/api/v1/audit/projects");
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setProjects(body.projects ?? []);
-    } catch (e) {
-      fail(e, () => void loadProjects());
-    } finally {
-      setLoading(false);
-    }
-  }, [fail]);
-
-  useEffect(() => { void loadProjects(); }, [loadProjects]);
-
-  // Whatever was open last time this screen was mounted.
-  useEffect(() => {
-    if (remembered.picked) void loadProject(remembered.picked.kind, remembered.picked.id);
-    // Deliberately once, on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const groups = useMemo(() => {
-    const byKind = new Map<string, { label: string; rows: Project[] }>();
-    for (const p of projects) {
-      const g = byKind.get(p.kind) ?? { label: p.kindLabel, rows: [] };
-      g.rows.push(p);
-      byKind.set(p.kind, g);
-    }
-    return [...byKind.entries()].map(([kind, g]) => ({
-      kind,
-      label: g.label,
-      rows: [...g.rows].sort((a, b) => b.modified.localeCompare(a.modified)),
-    }));
-  }, [projects]);
-
-  const openProject = useCallback(async (kind: string, id: string) => {
-    const key = `${kind}/${id}`;
-    const already = picked?.kind === kind && picked.id === id;
-    setOpenProjects((p) => ({ ...p, [key]: already ? !p[key] : true }));
-    if (already) return;
-    setPicked({ kind, id });
-    setDetail(null);
-    setFile(null);
-    setAudit(null);
-    setRan(null);
-    setStreamed(null);
-    setSections([]);
-    setScope("project");
-    setText("");
-    setSaved("");
-    setLoadFailed(false);
-    clearError();
-    setNote(null);
-    setImage(null);
-    await loadProject(kind, id);
-  }, [clearError, loadProject, picked]);
-
-  const openFile = useCallback(async (item: Item) => {
-    setFile(item);
-    setAudit(null);
-    setRan(null);
-    setStreamed(null);
-    setSections([]);
-    setScope("project");
-    setLoadingText(true);
-    setLoadFailed(false);
-    clearError();
-    try {
-      const res = await fetch(artifact(item.path));
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setText(body.content ?? "");
-      setSaved(body.content ?? "");
-    } catch (e) {
-      // An empty editor used to be the only sign of this, which is
-      // indistinguishable from an empty file — and typing one character into it
-      // and saving would write one character over a real chapter.
-      setLoadFailed(true);
-      setText("");
-      setSaved("");
-      fail(e, () => void openFile(item));
-    } finally {
-      setLoadingText(false);
-    }
-  }, [clearError, fail]);
-
-  const save = async () => {
-    if (!file || loadFailed) return;
-    setBusy("save");
-    clearError();
-    try {
-      const res = await fetch(artifact(file.path), {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        // The server refuses to write over an approved file unless it is told
-        // the caller means it. Reopening the file here is that.
-        body: JSON.stringify({ content: text, force: unlocked.has(file.path) }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setSaved(text);
-    } catch (e) {
-      fail(e, () => void save());
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  /**
-   * Anything that runs against the publication as a whole, on its own routes.
-   *
-   * `/resume` answers `{started: true}` before the work begins, so this cannot
-   * clear `busy` when the POST returns — doing that is what made every one of
-   * these buttons look like it had done nothing. The SSE handler above clears
-   * it when `publication:run` reports done or error.
-   */
-  const publication = async (key: string, label: string, path: string, body: unknown) => {
-    if (!picked) return;
-    setBusy(key);
-    clearError();
-    setNote(null);
-    setImage(null);
-    setInflight({ key, label, at: Date.now() });
-    try {
-      const res = await fetch(
-        `/api/v1/publications/${encodeURIComponent(picked.id)}${path}`,
-        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
-      );
-      const out = await res.json().catch(() => ({}));
-      if (res.status === 409) {
-        // Not a failure. It means the thing the user just asked for is already
-        // happening, which is status, and it used to render as a stack trace.
-        setNote(String(out.error ?? "Already running."));
-        return;
-      }
-      if (!res.ok) throw new Error(out.error || `HTTP ${res.status}`);
-      if (out.image) {
-        setImage(artifact(String(out.image)));
-        setNote("Spread rendered.");
-      }
-      // A render answers with its result rather than streaming, so nothing else
-      // is coming for it.
-      if (out.image || out.started !== true) {
-        setBusy(null);
-        setInflight(null);
-        await loadProject(picked.kind, picked.id);
-      }
-    } catch (e) {
-      setBusy(null);
-      setInflight(null);
-      fail(e, () => void publication(key, label, path, body));
-    }
-  };
-
-  const RUN_LABEL: Record<string, string> = {
-    report: "Checking",
-    revise: "Rewriting",
-    deslop: "Removing AI phrasing",
-  };
-
-  const run = async (mode: "report" | "revise" | "deslop") => {
-    if (!file || loadFailed) return;
-    setBusy(mode);
-    setRan(null);
-    setStreamed(null);
-    setSections([]);
-    clearError();
-    setInflight({ key: mode, label: RUN_LABEL[mode] ?? mode, at: Date.now() });
-    try {
-      const res = await fetch("/api/v1/audit/run", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          path: file.path,
-          revise: mode === "revise",
-          deslop: mode === "deslop",
-        }),
-      });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      if (body.cancelled) {
-        setNote("Stopped. Nothing further was changed.");
-        return;
-      }
-      setAudit(body.audit ?? null);
-      setRan({ mode, findings: body.audit?.findings?.length ?? 0 });
-      setScope("file");
-      // A revise pass rewrites the file, so the editor beside it is now stale —
-      // and the project listing is too, because the pass has just left a
-      // `.pre-audit` copy that the Undo button reads.
-      if (mode !== "report") {
-        await openFile(file);
-        if (picked) await loadProject(picked.kind, picked.id);
-      }
-    } catch (e) {
-      fail(e, () => void run(mode));
-    } finally {
-      setBusy(null);
-      setInflight(null);
-    }
-  };
-
-  /** Stop the pass now. The server holds the AbortController it was missing. */
-  const cancel = async () => {
-    if (!file) return;
-    try {
-      await fetch("/api/v1/audit/cancel", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: file.path }),
-      });
-    } catch { /* the run finishing on its own is not a failure to report */ }
-  };
-
-  /** Put back the copy the rewriting pass took before it changed anything. */
-  const restore = async () => {
-    if (!file) return;
-    setBusy("restore");
-    clearError();
-    try {
-      const res = await fetch("/api/v1/audit/restore", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: file.path }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      setText(body.content ?? "");
-      setSaved(body.content ?? "");
-      setAudit(null);
-      setRan(null);
-      setNote("The text from before the rewrite is back.");
-    } catch (e) {
-      fail(e, () => void restore());
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  /** Sign the open file off, or take the sign-off back. */
-  const approve = async (yes: boolean) => {
-    if (!file) return;
-    setBusy("approve");
-    clearError();
-    try {
-      const res = await fetch("/api/v1/audit/approve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path: file.path, approve: yes }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
-      // Approving locks the editor again, so a reopen from before it should
-      // not survive.
-      setUnlocked((set) => {
-        const next = new Set(set);
-        next.delete(file.path);
-        return next;
-      });
-      setNote(yes ? "Signed off." : "Sign-off withdrawn.");
-      if (picked) await loadProject(picked.kind, picked.id);
-    } catch (e) {
-      fail(e, () => void approve(yes));
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const dirty = text !== saved;
-  const page = file ? pageNumberOf(file.name) : null;
-  const running = inflight !== null;
-  const runBusy = busy === "report" || busy === "revise" || busy === "deslop";
+  /* ---- the page being worked ---- */
 
   /*
-   * The open file as the project currently reports it, rather than as it was
-   * when it was clicked. `file` is a snapshot from the tree; the marks on it
-   * change under a run, and reading them off `detail` keeps them true.
+   * One page, not a basket of them.
+   *
+   * This was a set of checkboxes feeding a batch read, which meant the screen
+   * never knew which page you were looking at — so the queue showed every
+   * finding in the workspace at once (ninety-three of them, across three
+   * unrelated productions) and the reading panel showed a paragraph belonging
+   * to whichever of those you last clicked. A page is the unit of the work.
    */
-  const current = detail?.items.find((i) => i.path === file?.path);
-  const approved = current?.audit?.approved ?? null;
-  const locked = approved !== null && !unlocked.has(file?.path ?? "");
-
-  /** How far through the project the reader is, in one line. */
-  const tally = useMemo(() => {
-    const items = detail?.items ?? [];
-    return {
-      total: items.length,
-      checked: items.filter((i) => i.audit?.checked).length,
-      rewritten: items.filter((i) => i.audit?.rewritten).length,
-      approved: items.filter((i) => i.audit?.approved).length,
-    };
-  }, [detail]);
-
-  /** Ask, then run `act` — or run it now if there is nothing to warn about. */
-  const guarded = (act: () => void, ask?: Partial<Pending>) => {
-    const needed = dirty || ask?.message !== undefined;
-    if (!needed) { act(); return; }
-    setPending({
-      act,
-      title: ask?.title ?? "Unsaved changes",
-      message: dirty
-        ? `Your edits to ${file?.name ?? "this file"} have not been saved. Continuing replaces them, and they cannot be recovered.`
-        : ask?.message ?? "",
-      confirmLabel: ask?.confirmLabel ?? "Discard and continue",
-      cancelLabel: ask?.cancelLabel ?? "Keep editing",
+  const [page, setPage] = useState<string | null>(null);
+  useEffect(() => {
+    /* Default to the first page nobody has read, else the first page. */
+    setPage((was) => {
+      if (was && items.some((i) => i.path === was)) return was;
+      return (items.find((i) => !i.audit.checked) ?? items[0])?.path ?? null;
     });
+  }, [items]);
+
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+
+  useNewSSEMessages(sse.messages, useCallback((m: SSEMessage) => {
+    if (m.event !== "audit:progress") return;
+    const d = (m.data ?? {}) as { message?: string };
+    if (d.message) setProgress(d.message);
+  }, []));
+
+  const run = async (paths: readonly string[]) => {
+    if (paths.length === 0) return;
+    setRunning(true);
+    setProgress(`Reading ${paths.length} file${paths.length === 1 ? "" : "s"}…`);
+    try {
+      const out = await fetchJson<{ ran?: ReadonlyArray<{ path: string; error?: string }> }>(
+        "/audit/run",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // Reporting only. Rewriting a file is the reviewer's decision here,
+          // taken one finding at a time in the passage column.
+          body: JSON.stringify({ paths, revise: false }),
+        },
+      );
+      const failed = (out.ran ?? []).filter((r) => r.error);
+      toast(failed.length === 0
+        ? "Read. The queue has what it found."
+        : `Read ${paths.length - failed.length} of ${paths.length}; ${failed.length} could not be read.`);
+      await refetchFindings();
+      await refetchProjects();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That read did not finish.");
+    } finally {
+      setRunning(false);
+      setProgress(null);
+    }
   };
 
-  /** The words for a pass that writes over the manuscript on disk. */
-  const rewriteAsk = (mode: "revise" | "deslop"): Partial<Pending> => ({
-    title: mode === "revise" ? "Rewrite this file?" : "Remove AI phrasing?",
-    message: `${file?.name ?? "This file"} will be rewritten in place. A copy of the text as it stands is kept beside it as ${file?.name?.replace(/(\.[^.]+)$/, ".pre-audit$1") ?? "a .pre-audit copy"}, and Undo below puts it back.`,
-    confirmLabel: mode === "revise" ? "Rewrite it" : "Remove it",
-    cancelLabel: "Leave it alone",
+  const stop = async () => {
+    // One controller covers the whole run, so cancelling any of its files
+    // cancels the run. The first is as good as any.
+    const first = page ?? items[0]?.path;
+    if (!first) return;
+    await fetchJson("/audit/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: first }),
+    }).catch(() => undefined);
+  };
+
+  /* ---- the workflow, and the four things it lets you do ---- */
+
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const act = useCallback(async (key: string, run: () => Promise<unknown>, done: string) => {
+    setBusy(key);
+    try {
+      await run();
+      toast(done);
+      await refetchDetail();
+      await refetchProjects();
+      await refetchFindings();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That did not take.");
+    } finally {
+      setBusy(null);
+      /* The progress line comes off the same SSE feed as a read's does, and
+         only `run` was clearing it - so "Re-auditing after round 2…" stayed on
+         screen after a revise had finished, and the page read as still working
+         when nothing was. */
+      setProgress(null);
+    }
+  }, [refetchDetail, refetchProjects, refetchFindings]);
+
+  const approveProject = (yes: boolean, force = false) => {
+    if (!picked || !detail) return;
+    /* A publication keeps its approvals on the issue, so the two gates are
+       forwarded to the routes that own them rather than duplicated here. */
+    const path = picked.kind === "publication"
+      ? `/publications/${encodeURIComponent(picked.id)}/approve`
+      : `/audit/project/${picked.kind}/${encodeURIComponent(picked.id)}/approve`;
+    const body = picked.kind === "publication"
+      ? { what: "copy", approve: yes }
+      : { approve: yes, ...(force ? { gate: "force" } : {}) };
+    return act(
+      "approve",
+      () => fetchJson(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      yes ? "Signed off." : "Sign-off taken back.",
+    );
+  };
+
+  const resume = (from: string, stopAt: string) => {
+    if (!picked) return;
+    return act(
+      "resume",
+      () => fetchJson(`/publications/${encodeURIComponent(picked.id)}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, stopAt }),
+      }),
+      "Picked the run back up.",
+    );
+  };
+
+  /* Revise and the de-AI pass, on the page you are looking at. Same route as
+     the reporting run, with the flag that lets it write.
+
+     This took every file in the production for a while - `items.map(i => i.path)`
+     sitting under a button that read "Audit & revise" - so picking chapter two
+     and pressing it rewrote all twenty-three. The scope is the selected page,
+     the way the read beside it is. The old text stays beside each rewritten
+     file as `.pre-audit`. */
+  const revisePage = (deslop: boolean) => {
+    if (!page) {
+      toast("Pick a page first.");
+      return;
+    }
+    return act(
+      deslop ? "deslop" : "revise",
+      () => fetchJson("/audit/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paths: [page], revise: true, ...(deslop ? { deslop: true } : {}) }),
+      }),
+      deslop ? "Rewritten to sound less machine-made." : "Read and revised.",
+    );
+  };
+
+  /* ---- how the three columns are split ---- */
+
+  /* Equal by default; drag a seam to change it, double-click one to go back.
+     `reset` matters because the widths are kept in `localStorage`: without it
+     a drag made on a wide monitor is the layout forever. */
+  const { template, onGrip, reset: resetCols } = useColumns("audit", 3);
+
+  /* The editor's note about the file the current finding is in. */
+  const [note, setNote] = useState("");
+  const [reviseBusy, setReviseBusy] = useState(false);
+
+  const reviseFile = useCallback(async (path: string, what: string) => {
+    setReviseBusy(true);
+    try {
+      const out = await fetchJson<{ changed?: boolean; sections?: number; error?: string }>(
+        "/audit/file/revise",
+        { method: "POST", body: JSON.stringify({ path, note: what }) },
+      );
+      toast(out.changed
+        ? `Rewritten — ${out.sections} section${out.sections === 1 ? "" : "s"}.`
+        : "The pass ran and left it as it was.");
+      setNote("");
+      await Promise.all([refetchFindings(), refetchDetail(), refetchProjects()]);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That rewrite did not run.");
+    } finally {
+      setReviseBusy(false);
+    }
+  }, [refetchFindings, refetchDetail, refetchProjects]);
+
+  /* ---- queue ---- */
+
+  const [filter, setFilter] = useState<Severity | "all">("all");
+  /*
+   * This page's findings, not the workspace's.
+   *
+   * `/findings` returns every finding on record - three productions' worth -
+   * and this screen rendered the lot. So the magazine said "93 findings" and
+   * listed objections belonging to a short story, and the count over the queue
+   * was a fact about the whole workspace pretending to be a fact about the
+   * thing you were reading.
+   */
+  const mine = useMemo(
+    () => (page ? findings.filter((f) => f.path === page) : []),
+    [findings, page],
+  );
+  const queue = useMemo(() => queueOf(mine, filter), [mine, filter]);
+  const counts = useMemo(() => {
+    const open = mine.filter((f) => f.state === "open");
+    return {
+      blocking: open.filter((f) => f.severity === "blocking").length,
+      warning: open.filter((f) => f.severity === "warning").length,
+      note: open.filter((f) => f.severity === "note").length,
+      open: open.length,
+      settled: mine.length - open.length,
+    };
+  }, [mine]);
+
+  const [atIndex, setAtIndex] = useState(0);
+  const current = queue[Math.min(atIndex, queue.length - 1)] ?? null;
+  useEffect(() => { setAtIndex(0); }, [filter, page]);
+
+  /* ---- the page itself ---- */
+
+  const {
+    data: pageData, loading: pageLoading, refetch: refetchPage,
+  } = useApi<{ text: string }>(page ? `/audit/file?path=${encodeURIComponent(page)}` : "");
+  const pageText = pageData?.text ?? "";
+  const pageName = useMemo(() => {
+    const item = items.find((i) => i.path === page);
+    if (!item) return page ? placeOf(page) : "";
+    return item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "") || item.name;
+  }, [items, page]);
+
+  /* A rewrite lands as `audit:text`; the panel showing that text redraws. */
+  useNewSSEMessages(sse.messages, useCallback((m: SSEMessage) => {
+    if (m.event !== "audit:text") return;
+    const d = (m.data ?? {}) as { path?: string };
+    if (d.path && d.path === page) void refetchPage();
+  }, [page, refetchPage]));
+
+  /* ---- settling ---- */
+
+  const [mode, setMode] = useState<"read" | "edit">("read");
+  const [draft, setDraft] = useState("");
+  const [settling, setSettling] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setMode("read");
+    setDraft(pageText);
+  }, [page, pageText]);
+
+  /* Edit means the page now, so saving means the page. */
+  const savePage = useCallback(async () => {
+    if (!page || !draft.trim()) return;
+    setSaving(true);
+    try {
+      await fetchJson("/audit/file", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: page, text: draft }),
+      });
+      toast("Saved. The old text is beside it as .pre-audit.");
+      setMode("read");
+      await Promise.all([refetchPage(), refetchDetail()]);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That save did not take.");
+    } finally {
+      setSaving(false);
+    }
+  }, [page, draft, refetchPage, refetchDetail]);
+
+  const settle = useCallback(async (
+    state: "accepted" | "ignored",
+    /* The reviewer's own wording, which arrives as a whole paragraph. */
+    paragraph?: string,
+  ) => {
+    if (!current) return;
+    setSettling(true);
+    try {
+      await fetchJson(`/findings/${current.id}/settle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          state,
+          ...(paragraph ? { text: paragraph, scope: "paragraph" } : {}),
+        }),
+      });
+      toast(state === "accepted" ? "Taken. The chapter has it now." : "Left as written.");
+      await refetchFindings();
+      /* The row stays in the list, in green, and sorts below the open ones.
+         Step to what is now at the top of the open pile rather than holding an
+         index that has just been re-sorted out from under it. */
+      setAtIndex(0);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That did not take.");
+    } finally {
+      setSettling(false);
+    }
+  }, [current, queue.length, refetchFindings]);
+
+  useQueueKeys({
+    enabled: !running && queue.length > 0 && mode === "read",
+    onNext: () => setAtIndex((i) => Math.min(i + 1, queue.length - 1)),
+    onPrev: () => setAtIndex((i) => Math.max(i - 1, 0)),
+    // Only a finding that proposes something can be accepted with one key.
+    onAccept: () => { if (current?.fix) void settle("accepted"); },
+    onIgnore: () => { void settle("ignored"); },
   });
 
-  /** Arrow keys walk the tree, which was mouse-only in every direction. */
-  const treeRef = useRef<HTMLDivElement>(null);
-  const onTreeKey = (e: React.KeyboardEvent) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    const rows = Array.from(
-      treeRef.current?.querySelectorAll<HTMLButtonElement>("[data-row]") ?? [],
+  if (error) {
+    return <Failed what="Could not list the work." detail={error} retry={() => refetchProjects()} />;
+  }
+  if (loading && projects.length === 0) return <Loading what="Looking for finished work…" rows={5} />;
+  if (projects.length === 0) {
+    return (
+      <Empty icon="pulse" title="Nothing has been written yet.">
+        Anything a production finishes — a chapter, a page, a script — can be read
+        against the book&rsquo;s own rules here.
+      </Empty>
     );
-    const here = rows.indexOf(document.activeElement as HTMLButtonElement);
-    const next = rows[e.key === "ArrowDown" ? here + 1 : here - 1];
-    if (next) { e.preventDefault(); next.focus(); }
-  };
-
-  const shown: ReadonlyArray<Finding> = scope === "file"
-    ? (audit?.findings ?? []).map((f) => ({ ...f, page: null }))
-    : (detail?.findings ?? []);
-
-  // Both columns were fixed widths. The runtime patch used to grip every
-  // <aside> on the page, so these two were draggable and stopped being so when
-  // that patch was replaced by a hook wired to the two chat sidebars only.
-  const nav = useResizable({ key: "quire-audit-nav", initial: 256, min: 200, max: 420, side: "end" });
-  const editor = useResizable({ key: "quire-audit-editor", initial: 416, min: 320, max: 900, side: "start" });
-
-  const sevOf = (s: string) =>
-    s === "blocking" ? "blocking" : s === "warning" ? "warning" : "info";
-  const counts = {
-    blocking: shown.filter((f) => sevOf(f.severity) === "blocking").length,
-    warning: shown.filter((f) => sevOf(f.severity) === "warning").length,
-    info: shown.filter((f) => sevOf(f.severity) === "info").length,
-  };
-  const listed = sevs.size === 0 ? shown : shown.filter((f) => sevs.has(sevOf(f.severity)));
-  const toggleSev = (s: string) =>
-    setSevs((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(s)) next.add(s);
-      return next;
-    });
-
-  const doneStages = detail?.stages.filter(
-    (s) => s.state === "done" || s.state === "complete",
-  ).length ?? 0;
+  }
 
   return (
-    <div className="aud flex-1 min-w-0 flex h-full min-h-0">
-      {/* ═════════════════════════════════════════════════════ the tree ══ */}
-      <nav
-        className="aud-tree shrink-0 h-full overflow-y-auto"
-        style={{ width: nav.width }}
-        aria-label="Everything finished"
+    <div className="workbench">
+      {/* The name of the thing, and the two passes that act on all of it. The
+          rest of the workflow is the middle column, beside the queue it is
+          about, rather than a strip across the top of all three. */}
+      {detail ? (
+        <div className="spread" style={{ alignItems: "flex-end", gap: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <h2 className="h-page" style={{ fontSize: 21 }}>{detail.title}</h2>
+            <p className="dim" style={{ fontSize: 12, marginTop: 2 }}>{detail.subtitle}</p>
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        className="cols cols-audit"
+        style={template ? ({ "--cols": template } as React.CSSProperties) : undefined}
       >
-        <div
-          {...nav.gripProps}
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize the page list"
-          className="absolute right-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/40 active:bg-primary"
+        <ScopeColumn
+          projects={projects}
+          picked={picked}
+          onPick={setPicked}
+          items={items}
+          findings={findings}
+          page={page}
+          onPage={setPage}
+          running={running}
+          working={busy === "revise" || busy === "deslop"}
+          progress={progress}
+          onRead={() => { if (page) void run([page]); }}
+          onReadAll={() => void run(items.map((i) => i.path))}
+          onStop={() => void stop()}
         />
 
-        <div className="tree-head">
-          <span className="ring" aria-hidden="true"><ShieldCheck size={16} /></span>
-          <h1>Audit</h1>
-        </div>
+        <Grip onPointerDown={onGrip(0)} onReset={resetCols} />
 
-        {loading ? (
-          <Spinner label="Loading your work" />
-        ) : error && groups.length === 0 ? (
-          // Error and empty used to render together: a red box saying something
-          // broke, beside a cheerful note saying you have finished nothing.
-          <p className="quiet">Could not read your work — see the message beside this.</p>
-        ) : groups.length === 0 ? (
-          <p className="quiet">Nothing finished yet.</p>
-        ) : (
-          <div ref={treeRef} onKeyDown={onTreeKey}>
-            {groups.map((g) => {
-              const shut = shutKinds[g.kind] === true;
+        <StateColumn
+          detail={detail ?? null}
+          busy={busy}
+          running={running}
+          onApprove={(yes, force) => void approveProject(yes, force)}
+          onResume={(a, b) => void resume(a, b)}
+          onRevise={(deslop) => void revisePage(deslop)}
+          items={items}
+          allFindings={findings}
+          here={items.find((i) => i.path === page) ?? null}
+          pageName={pageName}
+          queue={queue}
+          counts={counts}
+          filter={filter}
+          onFilter={setFilter}
+          at={current}
+          onPick={(id) => setAtIndex(queue.findIndex((f) => f.id === id))}
+        />
+
+        <Grip onPointerDown={onGrip(1)} onReset={resetCols} />
+
+        <PageColumn
+          path={page}
+          name={pageName}
+          text={pageText}
+          loading={pageLoading}
+          findings={queue}
+          current={current}
+          onPick={(id) => setAtIndex(queue.findIndex((f) => f.id === id))}
+          mode={mode}
+          onMode={setMode}
+          draft={draft}
+          onDraft={setDraft}
+          onSave={() => void savePage()}
+          saving={saving}
+          note={note}
+          onNote={setNote}
+          reviseBusy={reviseBusy}
+          onRevise={() => { if (page) void reviseFile(page, note); }}
+          history={historyOf(items.find((i) => i.path === page)?.audit ?? {})}
+          busy={settling}
+          onAccept={() => void settle("accepted")}
+          onIgnore={() => void settle("ignored")}
+        />
+
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ 1. what to read */
+
+/** What both file views need to know about a file, worked out in one place. */
+function fileFacts(item: Item, findings: ReadonlyArray<Finding>) {
+  const state = fileState(item, findings);
+  const open = findings.filter((f) => f.path === item.path && f.state === "open");
+  const num = /^(\d{2,4})/.exec(item.name);
+  return {
+    dot: state.dot,
+    note: state.note,
+    open: open.length,
+    blocking: open.filter((f) => f.severity === "blocking").length,
+    num: num ? String(Number(num[1])).padStart(2, "0") : null,
+    name: item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "") || item.name,
+    history: historyOf(item.audit),
+  };
+}
+
+/** A date said the short way, or "never" when the thing has not happened. */
+function when(iso?: string): string {
+  if (!iso) return "never";
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? "—"
+    : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function ScopeColumn({
+  projects, picked, onPick, items, findings, page, onPage,
+  running, working, progress, onRead, onReadAll, onStop,
+}: {
+  readonly projects: ReadonlyArray<Project>;
+  readonly picked: { kind: string; id: string } | null;
+  readonly onPick: (p: { kind: string; id: string }) => void;
+  readonly items: ReadonlyArray<Item>;
+  readonly findings: ReadonlyArray<Finding>;
+  /** The one page being worked. This column exists to choose it. */
+  readonly page: string | null;
+  readonly onPage: (path: string) => void;
+  readonly running: boolean;
+  /** A pass this column did not start — a whole-production rewrite or de-AI. */
+  readonly working: boolean;
+  readonly progress: string | null;
+  readonly onRead: () => void;
+  readonly onReadAll: () => void;
+  readonly onStop: () => void;
+}) {
+  const here = items.find((i) => i.path === page) ?? null;
+  /* A list reads names in order; a field of tiles answers "which of these
+     still needs work" at a glance. Which one you want is about the production,
+     not the session, so the choice is kept. */
+  const [view, setView] = useState<"list" | "tiles">(() => {
+    try { return localStorage.getItem("quire.audit.files") === "tiles" ? "tiles" : "list"; }
+    catch { return "list"; }
+  });
+  const chooseView = (v: "list" | "tiles") => {
+    setView(v);
+    try { localStorage.setItem("quire.audit.files", v); } catch { /* private mode */ }
+  };
+
+  /* The pages of the open work. A value rather than inline markup because
+     it is rendered inside the work list, directly under the row it belongs
+     to, and standalone when there is only one production. */
+  const files = (
+    <>
+        {items.length === 0 ? (
+          <p className="hint">Nothing finished in this one yet.</p>
+        ) : view === "tiles" ? (
+          /* Sheets, not cards. `.pg`/`.sheet` is the app's own page: paper at
+             3:4 with the number set as a ghost folio in the corner, which is
+             where a page number lives. It was already in the stylesheet and
+             the audit column was drawing generic tiles beside it. */
+          <div className="pgs">
+            {items.map((item) => {
+              const f = fileFacts(item, findings);
               return (
-                <div className="grp" data-shut={shut ? "true" : "false"} key={g.kind}>
-                  <button
-                    data-row
-                    aria-expanded={!shut}
-                    onClick={() => setShutKinds((p) => ({ ...p, [g.kind]: !shut }))}
-                  >
-                    <ChevronDown className="chev" size={12} />
-                    <span>{g.label}</span>
-                    <span className="n mono">{g.rows.length}</span>
-                  </button>
-
-                  {shut ? null : (
-                    <div className="kids">
-                      {g.rows.map((p) => {
-                        const key = `${p.kind}/${p.id}`;
-                        const on = picked?.kind === p.kind && picked.id === p.id;
-                        // The files show on `open && on`, so the chevron has to
-                        // say the same thing. It read `open` alone, which meant
-                        // a project you had moved away from kept an open
-                        // chevron over nothing, and clicking it to see the files
-                        // folded it instead.
-                        const open = openProjects[key] === true && on;
-                        return (
-                          <div key={p.id}>
-                            <button
-                              data-row
-                              className="proj"
-                              aria-expanded={open}
-                              aria-current={on ? "true" : "false"}
-                              onClick={() => guarded(() => void openProject(p.kind, p.id))}
-                              title={p.id}
-                            >
-                              {open
-                                ? <ChevronDown className="chev" size={12} />
-                                : <ChevronRight className="chev" size={12} />}
-                              <span className="t">{p.id}</span>
-                              <span className="n mono">{p.files}</span>
-                            </button>
-
-                            {/* The files live here rather than in a section of
-                                their own beside the project. One navigator. */}
-                            {open ? (
-                              detail ? (
-                                <>
-                                  <div className="view" role="group" aria-label="How to show the pages">
-                                    <button
-                                      type="button"
-                                      onClick={() => setFileView("tiles")}
-                                      aria-pressed={fileView === "tiles"}
-                                    >
-                                      Flatplan
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setFileView("list")}
-                                      aria-pressed={fileView === "list"}
-                                    >
-                                      List
-                                    </button>
-                                  </div>
-
-                                  {fileView === "tiles" ? (
-                                    <>
-                                      <div className="plan">
-                                        {detail.items.map((item) => {
-                                          const n = pageNumberOf(item.name);
-                                          return (
-                                            <button
-                                              key={item.path}
-                                              type="button"
-                                              className="pg"
-                                              data-s={pgStateOf(item)}
-                                              aria-current={file?.path === item.path ? "true" : "false"}
-                                              onClick={() => guarded(() => void openFile(item))}
-                                              title={`${item.name}${folderOf(item.path) ? ` · ${folderOf(item.path)}` : ""}`}
-                                            >
-                                              <span className="no">
-                                                {n !== null ? String(n).padStart(2, "0") : "—"}
-                                              </span>
-                                              <span className="sl">{titleOf(item.name)}</span>
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                      <div className="plan-key">
-                                        <span><i style={{ background: "var(--ok)" }} />checked</span>
-                                        <span><i style={{ background: "var(--warn)" }} />rewritten</span>
-                                        <span><i style={{ background: "var(--vermilion)" }} />signed off</span>
-                                        <span><i style={{ background: "var(--line-soft)" }} />waiting</span>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <div>
-                                      {detail.items.map((item) => (
-                                        <button
-                                          key={item.path}
-                                          data-row
-                                          className="file"
-                                          aria-current={file?.path === item.path ? "true" : "false"}
-                                          onClick={() => guarded(() => void openFile(item))}
-                                          title={item.path}
-                                        >
-                                          {/*
-                                            * Where each file has got to.
-                                            *
-                                            * Twenty-two rows that looked identical
-                                            * whether they had been checked, rewritten
-                                            * and signed off or never opened — so the
-                                            * only record of how far you were through a
-                                            * project was your own memory of it.
-                                            */}
-                                          <span className="fn">
-                                            <span className={`dot dot-${pgStateOf(item) || "waiting"}`} />
-                                            {item.name}
-                                          </span>
-                                          {/* Which folder it came from. Without this,
-                                              final/chapters/0001.md and outline/0001.md
-                                              are the same row printed twice. */}
-                                          <span className="fp mono">{folderOf(item.path) || detail.id}</span>
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <Spinner label="Loading files" className="ml-5 my-1" size={12} />
-                              )
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <button
+                  key={item.path}
+                  type="button"
+                  className="pg"
+                  aria-current={page === item.path}
+                  title={`${item.name} · ${f.note}${f.history ? ` · ${f.history}` : ""}`}
+                  onClick={() => onPage(item.path)}
+                >
+                  <span className="sheet">
+                    <span className="rule" />
+                    {f.num ? <span className="folio">{f.num}</span> : null}
+                    {/* Only where there is something to answer for. Twenty-one
+                        sheets reading "never read" said one word twenty-one
+                        times and buried the page that had findings. */}
+                    {f.open > 0 ? (
+                      <span className={f.blocking > 0 ? "pill pill-bad" : "pill pill-warn"}>{f.open}</span>
+                    ) : null}
+                  </span>
+                  <span className="cap">
+                    <span className={f.dot} title={f.note} />
+                    <span className="trunc">{f.name}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rows">
+            {items.map((item) => {
+              const f = fileFacts(item, findings);
+              return (
+                <button
+                  key={item.path}
+                  type="button"
+                  className="row"
+                  style={{ padding: "8px 4px", width: "100%", textAlign: "left" }}
+                  aria-current={page === item.path}
+                  onClick={() => onPage(item.path)}
+                >
+                  {f.num ? <span className="num tnum" style={{ width: "1.9em" }}>{f.num}</span> : null}
+                  <span className="grow">
+                    <span className="name" style={{ fontSize: 14 }}>{f.name}</span>
+                    <span className="meta">
+                      {item.words.toLocaleString()} words · {f.note}
+                      {f.history ? ` · ${f.history}` : ""}
+                    </span>
+                  </span>
+                  {/* The count, not just that there is one: "3 open" and "1
+                      open" are different amounts of work and the dot said the
+                      same thing for both. */}
+                  {f.open > 0 ? (
+                    <span className={f.blocking > 0 ? "pill pill-bad" : "pill pill-warn"}>{f.open}</span>
+                  ) : null}
+                  <span className={f.dot} title={f.note} />
+                </button>
               );
             })}
           </div>
         )}
-      </nav>
+    </>
+  );
 
-      {/* ═════════════════════════════════════════════════════ the work ══ */}
-      <main className="aud-work flex-1 min-w-0 h-full overflow-y-auto">
-        <div className="topbar">
-          <span className="sp" />
-          <button
-            type="button"
-            className="btn btn-line btn-sm"
-            onClick={() => setShowEditor((v) => !v)}
-            aria-label={showEditor ? "Hide the editor" : "Show the editor"}
-          >
-            {showEditor ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
-            <span>{showEditor ? "Hide manuscript" : "Show manuscript"}</span>
-          </button>
-        </div>
+  return (
+    <div className="panel panel-flush colpanel">
+      <div className="panel-head" style={{ padding: "13px 16px" }}>
+        <span className="grow" style={{ minWidth: 0 }}>
+          <h3 className="h-panel">The pages</h3>
+          <span className="dim" style={{ fontSize: 11 }}>
+            {items.length} file{items.length === 1 ? "" : "s"} · one at a time
+          </span>
+        </span>
+        <Seg
+          value={view}
+          onChange={chooseView}
+          options={[{ value: "list", label: "List" }, { value: "tiles", label: "Tiles" }]}
+        />
+      </div>
 
-        {error && (
-          <div role="alert" className="alarm">
-            <AlertTriangle size={18} className="ico" />
-            {/*
-              * This was `font-mono text-xs break-all` — the visual grammar of a
-              * stack trace, applied to sentences the server writes for people
-              * ("this artifact is already being audited"). Body copy, and a way
-              * out of it.
-              */}
-            <div className="flex-1 min-w-0 space-y-2">
-              <p className="break-words">{error}</p>
-              <div className="flex items-center gap-2">
-                {retry ? (
-                  <button
-                    className="btn btn-line btn-sm"
-                    onClick={() => { const again = retry.act; clearError(); again(); }}
-                  >
-                    Try again
-                  </button>
-                ) : null}
-                <button className="btn btn-quiet btn-sm" onClick={clearError}>Dismiss</button>
-              </div>
+      <div className="panel-body grows" style={{ padding: "6px 14px 10px" }}>
+        {projects.length > 1 ? (
+          <>
+            <div className="label" style={{ padding: "8px 2px 6px" }}><span>The work</span></div>
+            <div className="rows">
+              {projects.map((p) => {
+                const open = picked?.kind === p.kind && picked.id === p.id;
+                return (
+                  <Fragment key={`${p.kind}/${p.id}`}>
+                    <button
+                      type="button"
+                      className="row row-work"
+                      style={{ padding: "8px 4px" }}
+                      aria-current={open}
+                      onClick={() => onPick({ kind: p.kind, id: p.id })}
+                    >
+                      <TypeMark kind={p.kind} />
+                      <span className="grow">
+                        <span className="name" style={{ fontSize: 14 }}>{p.id}</span>
+                        {/* The silhouette said the type already. Repeating the
+                            word beside it is the labelling the styleguide
+                            rules out. */}
+                        <span className="meta">{p.files} files</span>
+                      </span>
+                    </button>
+                    {/* The pages belong to the work above them, so they hang off
+                        it rather than sitting under the whole list. With four
+                        productions the files were below all four, and the one
+                        you had open had already scrolled off the top. */}
+                    {open ? <div className="work-files">{files}</div> : null}
+                  </Fragment>
+                );
+              })}
             </div>
-          </div>
-        )}
-
-        {!picked ? (
-          <p className="quiet">
-            Pick something on the left. Everything this app has finished is there,
-            filed under what made it.
-          </p>
-        ) : !detail ? (
-          <Spinner label="Loading this project" size={20} />
+          </>
+        ) : files}
+      </div>
+      <div className="panel-body" style={{ borderTop: "1px solid var(--line)", padding: "13px 16px" }}>
+        <div className="rowflex" style={{ justifyContent: "space-between", marginBottom: 10 }}>
+          <span className="dim" style={{ fontSize: 11 }}>
+            {here ? `${here.words.toLocaleString()} words` : `${items.length} files`}
+          </span>
+          <span className="dim mono" style={{ fontSize: 11 }}>
+            {estimate(here ? here.words : items.reduce((n, i) => n + i.words, 0))}
+          </span>
+        </div>
+        {/* `running` covered a read started from this button and nothing else,
+            so a whole-production rewrite — the longest, least reversible pass
+            in the app — ran with no way to stop it and the button still
+            offering to start another. Both use the same controller, so one
+            Stop serves both. */}
+        {running || working ? (
+          <button type="button" className="btn btn-line" style={{ width: "100%", justifyContent: "center" }} onClick={onStop}>
+            <span className="spin" />
+            Stop
+          </button>
         ) : (
           <>
-            {/* ── 1. Readiness ──────────────────────────────────────────
-                One block answering the page's actual question, instead of a
-                12px tally line, two approval boxes and a red banner that each
-                held a third of the answer. */}
-            <section className="ready" aria-labelledby="ready-h">
-              <div className="ready-top">
-                <div className="anchor">
-                  <p className="frac">
-                    <b>{tally.approved}</b><i>/</i><span className="of">{tally.total}</span>
-                  </p>
-                  <p className="lb">files signed off</p>
-                  {detail.gates ? (
-                    <p className="why">Copy cannot be approved until every file carries one.</p>
-                  ) : null}
-                </div>
-
-                <div className="ready-id">
-                  <h2 id="ready-h">{detail.title}</h2>
-                  <p className="sub mono">{detail.subtitle}</p>
-
-                  <div className="tally">
-                    <div><b className="tnum">{tally.total}</b><span>files</span></div>
-                    <div className={tally.checked ? "is-ok" : "is-idle"}>
-                      <b className="tnum">{tally.checked}</b><span>checked</span>
-                    </div>
-                    <div className={tally.rewritten ? "is-warn" : "is-idle"}>
-                      <b className="tnum">{tally.rewritten}</b><span>rewritten</span>
-                    </div>
-                    <div className={tally.approved ? "is-acc" : "is-idle"}>
-                      <b className="tnum">{tally.approved}</b><span>signed off</span>
-                    </div>
-                    <div className="is-idle">
-                      <b className="tnum">{tally.total - tally.approved}</b><span>waiting</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Copy and Design are not independent checkboxes; they are what
-                  Build is waiting on, so the chain draws that link rather than
-                  leaving it to a red banner underneath. */}
-              {detail.gates ? (
-                <div className="chain">
-                  <Gate
-                    title="Copy"
-                    approved={detail.gates.copy.approved}
-                    notes={detail.gates.copy.warnings}
-                    notesLabel="Worth knowing before you sign this off:"
-                    approvedLabel="Signed off with these still open:"
-                    canApprove
-                    busy={busy === "copy"}
-                    onToggle={(yes) => void publication("copy", "Approving", "/approve", { what: "copy", approve: yes })}
-                  />
-                  <Gate
-                    title="Design"
-                    approved={detail.gates.design.approved}
-                    notes={detail.gates.design.blockers}
-                    notesLabel="The design cannot be approved until:"
-                    approvedLabel="Signed off with these still open:"
-                    canApprove={detail.gates.design.canApprove}
-                    busy={busy === "design"}
-                    onToggle={(yes) => void publication("design", "Approving", "/approve", { what: "design", approve: yes })}
-                  />
-                  <div className="gate is-final">
-                    <h3>Build</h3>
-                    <div className="st">
-                      <span className={`pill ${detail.gates.build.canBuild ? "pill-ok" : "pill-bad"}`}>
-                        {detail.gates.build.canBuild
-                          ? <><Check size={11} />Open</>
-                          : <><Lock size={11} />Held</>}
-                      </span>
-                    </div>
-                    {detail.gates.build.canBuild ? null : (
-                      <ul className="blockers">
-                        {detail.gates.build.blockers.map((b) => <li key={b}>{b}</li>)}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </section>
-
-            {/*
-              * Everything this page says about work in progress, in one place a
-              * screen reader is watching. There was no live region anywhere on
-              * this screen, so a pass that took four minutes announced its
-              * start, its progress, its finish and its failure to nobody.
-              *
-              * Sticky, because this column scrolls and a pass that runs for
-              * minutes reported itself at the top of it — so the moment the
-              * reader scrolled to the findings, the only proof the pass was
-              * alive scrolled away with it.
-              */}
-            <div
-              role="status"
-              aria-live="polite"
-              className="sticky top-0 z-20 space-y-2 empty:hidden"
-              style={{ background: "color-mix(in oklab, var(--putty) 88%, transparent)" }}
+            <button
+              type="button"
+              className="btn"
+              style={{ width: "100%", justifyContent: "center" }}
+              disabled={!here}
+              onClick={onRead}
             >
-              {inflight ? (
-                <div className="arrive">
-                  <p className="hd">
-                    <Loader2 size={13} className="animate-spin" style={{ color: "var(--vermilion)" }} />
-                    <span className="flex-1 min-w-0 truncate">{progress ?? `${inflight.label}…`}</span>
-                    <span className="mono" style={{ color: "var(--ink-3)" }}>{elapsed(inflight.at)}</span>
-                    {runBusy ? (
-                      <button className="btn btn-line btn-sm" onClick={() => void cancel()}>
-                        <Square size={10} fill="currentColor" />Stop
-                      </button>
-                    ) : null}
-                  </p>
-                </div>
-              ) : null}
-              {note ? <p className="quiet" style={{ color: "var(--ok)" }}>{note}</p> : null}
-              {image ? (
-                // A render produced a picture and the reward for it was the path
-                // it was written to, in green text.
-                <img
-                  src={image}
-                  alt="The spread that was just rendered"
-                  style={{ maxHeight: 260, borderRadius: "var(--r-card)", border: "1px solid var(--line)" }}
-                />
-              ) : null}
-            </div>
-
-            {/* ── 2. The run ────────────────────────────────────────────
-                Seven stages were a three-column text table where the only
-                thing separating "finished" from "not started" was the word.
-                A run is a line; this draws the line. */}
-            {detail.stages.length > 0 || detail.gates ? (
-              <section className="run" aria-labelledby="run-h">
-                <div className="run-head">
-                  <h3 id="run-h">The run</h3>
-                  {detail.stages.length > 0 ? (
-                    <span className="label">{doneStages} of {detail.stages.length} finished</span>
-                  ) : null}
-                </div>
-
-                {detail.stages.length > 0 ? (
-                  <div className="track">
-                    {detail.stages.map((s) => {
-                      const tone = s.state === "running" ? "now"
-                        : s.state === "failed" || s.state === "error" ? "bad"
-                          : (s.state === "done" || s.state === "complete") ? "done" : "idle";
-                      return (
-                        <div key={s.stage} className={`stage ${tone}`}>
-                          <span className="node" />
-                          <span className="nm">{stageName(s.stage)}</span>
-                          {/* The failure reason, when there is one, is the one
-                              string anyone reading this wants. */}
-                          <span className="dt" title={s.detail}>
-                            {say(STATE_LABEL, s.state)}{s.detail ? ` · ${s.detail}` : ""}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : null}
-
-                {/* The pictures and the document. Both are stages of the run
-                    already, reached through `/resume` with a one-stage range,
-                    so this is the same path the publication screen takes. */}
-                {detail.gates ? (
-                  <div className="make">
-                    <button
-                      className="btn"
-                      disabled={running}
-                      onClick={() => void publication("art", "Drawing", "/resume", { from: "art", stopAt: "art" })}
-                    >
-                      <ImageIcon size={14} />
-                      {busy === "art" ? "Drawing…" : "Generate images"}
-                    </button>
-                    <button
-                      className="btn btn-line"
-                      disabled={running || page === null}
-                      onClick={() => void publication("render", "Rendering", "/render", { page })}
-                      title={page === null ? "Pick a numbered page on the left first" : `Render page ${page}`}
-                    >
-                      {busy === "render" ? "Rendering…" : `Render spread${page ? ` — p${page}` : ""}`}
-                    </button>
-                    <button
-                      className="btn btn-line"
-                      disabled={running || !detail.gates.build.canBuild}
-                      onClick={() => void publication("build", "Building", "/resume", { from: "build", stopAt: "build" })}
-                      title={detail.gates.build.canBuild ? "Build the PDF" : detail.gates.build.blockers.join("; ")}
-                    >
-                      <Play size={14} />
-                      {busy === "build" ? "Building…" : "Build document"}
-                    </button>
-                    <p className="hint">
-                      Building needs both gates open. Rendering a spread needs a numbered page
-                      picked on the left.
-                    </p>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-
-            {/* ── 3. The bench ──────────────────────────────────────────
-                The one dark surface on the page, because the picked file is
-                the one thing being worked on. Safe and destructive actions are
-                separated by a rule, and each group says what it does to disk. */}
-            {!file ? (
-              <p className="quiet">Pick a file on the left to check it.</p>
-            ) : (
-              <section className="bench" aria-labelledby="bench-h">
-                <span
-                  className="disc disc-fill"
-                  aria-hidden="true"
-                  style={{ width: 240, height: 240, right: -96, top: -118 }}
-                />
-                <span
-                  className="disc disc-dots"
-                  aria-hidden="true"
-                  style={{ width: 96, height: 96, right: 34, bottom: -42, opacity: 0.3 }}
-                />
-
-                <div className="bench-head">
-                  <div style={{ minWidth: 0 }}>
-                    <h3 id="bench-h">{file.name}</h3>
-                    <p className="path mono" title={file.path}>
-                      {folderOf(file.path) || detail.id}
-                      {current?.words ? ` · ${current.words.toLocaleString()} words` : ""}
-                    </p>
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <span className={`pill ${current?.audit?.checked ? "pill-ok" : ""}`}>
-                      {current?.audit?.checked ? "Checked" : "Not checked"}
-                    </span>
-                    <span className={`pill ${approved ? "pill-ok" : ""}`}>
-                      {approved ? "Signed off" : "Not signed off"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="acts">
-                  <div className="act-grp">
-                    <p className="label">Reports only · nothing on disk changes</p>
-                    <div className="act-row">
-                      <button
-                        className={`btn${ran?.mode === "report" ? " btn-line" : ""}`}
-                        disabled={runBusy || loadFailed}
-                        onClick={() => guarded(() => void run("report"))}
-                      >
-                        {busy === "report"
-                          ? "Checking…"
-                          : ran?.mode === "report"
-                            ? <><Check size={14} />Checked</>
-                            : "Check it"}
-                      </button>
-                      <button
-                        className={`btn ${approved ? "btn-line" : "btn-ok"}`}
-                        disabled={busy !== null}
-                        onClick={() => void approve(approved === null)}
-                      >
-                        {approved
-                          ? <><Unlock size={14} />Withdraw sign-off</>
-                          : <><Check size={14} />{busy === "approve" ? "Signing off…" : "Sign this off"}</>}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/*
-                    * These two write over the manuscript on disk, and they were
-                    * the quiet secondary buttons while the harmless action above
-                    * was the loud primary one. A ruled-off group with its own
-                    * label fixes both the emphasis and the honesty.
-                    */}
-                  <div className="act-grp danger">
-                    <p className="label">Rewrites the file · a copy is kept first</p>
-                    <div className="act-row">
-                      <button
-                        className={`btn ${ran?.mode === "revise" ? "btn-line" : "btn-danger"}`}
-                        disabled={runBusy || loadFailed || locked}
-                        title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
-                        onClick={() => guarded(() => void run("revise"), rewriteAsk("revise"))}
-                      >
-                        {busy === "revise"
-                          ? "Rewriting…"
-                          : ran?.mode === "revise"
-                            ? <><Check size={14} />Rewritten</>
-                            : "Check and rewrite"}
-                      </button>
-                      <button
-                        className={`btn ${ran?.mode === "deslop" ? "btn-line" : "btn-danger"}`}
-                        disabled={runBusy || loadFailed || locked}
-                        title={locked ? "This file is signed off. Withdraw the sign-off to rewrite it." : undefined}
-                        onClick={() => guarded(() => void run("deslop"), rewriteAsk("deslop"))}
-                      >
-                        {busy === "deslop"
-                          ? "Rewriting…"
-                          : ran?.mode === "deslop"
-                            ? <><Check size={14} />Cleaned</>
-                            : "Remove AI phrasing"}
-                      </button>
-                      {current?.backup ? (
-                        <button
-                          className="btn btn-line"
-                          disabled={busy !== null || locked}
-                          onClick={() => void restore()}
-                          title={locked
-                            ? "This file is signed off. Withdraw the sign-off to put an older copy back."
-                            : "Put back the text from before the last rewrite"}
-                        >
-                          <RotateCcw size={13} />
-                          {busy === "restore" ? "Putting it back…" : "Undo the rewrite"}
-                        </button>
-                      ) : null}
-                    </div>
-                    {/*
-                      * What the two of them actually do. The difference was
-                      * written down once, in a comment in `api/audit.ts`, where
-                      * nobody using this could read it.
-                      */}
-                    <p className="small">
-                      Rewriting acts on everything it finds. Removing AI phrasing acts only on prose
-                      that reads machine-made and leaves a plot hole reported but untouched. Both
-                      keep a copy of the file as it stands before they start.
-                    </p>
-                  </div>
-                </div>
-
-                {locked ? (
-                  <p className="note lock">
-                    <Lock size={12} />
-                    Signed off — rewriting and undo are off for this file. Checking still works;
-                    it changes nothing.
-                  </p>
-                ) : null}
-
-                {current?.audit?.checked ? (
-                  <p className="note">
-                    Last checked {new Date(current.audit.checked).toLocaleString()}
-                    {typeof current.audit.findings === "number"
-                      ? ` · ${current.audit.findings} findings`
-                      : ""}
-                    {current.audit.rewritten
-                      ? ` · rewritten ${new Date(current.audit.rewritten).toLocaleString()}`
-                      : ""}
-                  </p>
-                ) : null}
-              </section>
-            )}
-
-            {/* ── 4. Findings ───────────────────────────────────────────
-                One list, not two. There were two, in the same card, with the
-                same divider, chip and arrow — one holding this run's findings
-                for one file and the other the project's findings on record —
-                and nothing but a heading to tell them apart once you had
-                scrolled past it. */}
-            <section className="find" aria-labelledby="find-h">
-              <div className="find-head">
-                <h3 id="find-h">Findings</h3>
-                <div className="seg">
-                  <button
-                    onClick={() => setScope("project")}
-                    aria-pressed={scope === "project"}
-                  >
-                    This issue <span className="mono">{detail.findings.length}</span>
-                  </button>
-                  <button
-                    onClick={() => setScope("file")}
-                    disabled={!audit}
-                    aria-pressed={scope === "file"}
-                  >
-                    Last check <span className="mono">{audit ? audit.findings.length : 0}</span>
-                  </button>
-                </div>
-
-                {/* Severity, as a filter rather than a legend: thirty-six
-                    findings are read by triaging them, and the two that block
-                    the issue are the two worth seeing alone. */}
-                <div className="filters">
-                  <button
-                    className="pill pill-bad"
-                    aria-pressed={sevs.has("blocking")}
-                    onClick={() => toggleSev("blocking")}
-                  >
-                    Blocking <span className="mono">{counts.blocking}</span>
-                  </button>
-                  <button
-                    className="pill pill-warn"
-                    aria-pressed={sevs.has("warning")}
-                    onClick={() => toggleSev("warning")}
-                  >
-                    Warning <span className="mono">{counts.warning}</span>
-                  </button>
-                  <button
-                    className="pill"
-                    aria-pressed={sevs.has("info")}
-                    onClick={() => toggleSev("info")}
-                  >
-                    Info <span className="mono">{counts.info}</span>
-                  </button>
-                </div>
-              </div>
-
-              {listed.length === 0 ? (
-                <p className="f-empty">
-                  {shown.length > 0
-                    ? "Nothing at that severity — the filters above are narrowing this list."
-                    : scope === "file"
-                      ? `Nothing to fix in ${file?.name ?? "this file"}.`
-                      : "Nothing on record for this project."}
-                </p>
-              ) : (
-                listed.map((f, i) => (
-                  // A colour stripe down the row's edge is the category's
-                  // default for severity; a marker in its own gutter reads as
-                  // fast and keeps the left edge straight across thirty rows.
-                  <div key={`${f.category}-${i}`} className={`f-row sev-${sevOf(f.severity)}`}>
-                    <span className="f-mark" aria-hidden="true" />
-                    <div className="f-meta">
-                      <span className="sev-word">{f.severity}</span>
-                      <span className="f-cat">{f.category}</span>
-                      {f.page !== null ? <span className="f-pg">p{f.page}</span> : null}
-                    </div>
-                    <p>{f.description}</p>
-                    {f.suggestion ? (
-                      /* The fix is the useful half, so it is set apart by a
-                         rule in the accent rather than by an arrow glyph. */
-                      <p className="f-fix">{f.suggestion}</p>
-                    ) : null}
-                  </div>
-                ))
-              )}
-            </section>
+              <Icon name="play" size={15} />
+              Read this page
+            </button>
+            <button
+              type="button"
+              className="btn btn-quiet btn-sm"
+              style={{ width: "100%", justifyContent: "center", marginTop: 7 }}
+              disabled={items.length === 0}
+              onClick={onReadAll}
+            >
+              Read all {items.length}
+            </button>
           </>
         )}
-      </main>
+        <p className="hint" style={{ marginTop: 9 }}>
+          {progress ?? "Findings from earlier runs stay until you settle them."}
+        </p>
+      </div>
+    </div>
+  );
+}
 
-      {/* ═══════════════════════════════════════════════════ the editor ══ */}
-      {showEditor && (
-        <aside
-          className="aud-edit shrink-0 h-full overflow-y-auto"
-          style={{ width: editor.width }}
-          aria-label="Read and edit this file"
-        >
-          <div
-            {...editor.gripProps}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize the reading panel"
-            className="absolute left-0 top-0 z-20 h-full w-1 cursor-col-resize touch-none transition-colors hover:bg-primary/40 active:bg-primary"
-          />
+/* -------------------------------------------------- 2. where the work stands */
 
-          <div className="edit-head">
-            <h3>Manuscript</h3>
-            <button
-              className={`btn btn-sm${dirty ? "" : " btn-line"}`}
-              disabled={!file || !dirty || loadFailed || locked || busy !== null}
-              onClick={() => void save()}
+/**
+ * The middle column: what state this work is in, and what is open against it.
+ *
+ * The magazine had all of this and nothing else did — stages, gates that name
+ * what is keeping them shut, a sign-off, a rewrite. The first attempt at
+ * sharing it put the lot in a bar across the top of the screen, above all
+ * three columns, which is not a column, is not where anyone is looking, and
+ * cost the two reading panels most of their height.
+ *
+ * So it is the second column, above the queue it explains: the state of the
+ * work and the list of things standing against it are one subject, and a
+ * finding that blocks the sign-off now sits under the sign-off it blocks.
+ */
+function StateColumn({
+  detail, busy, running, onApprove, onResume, onRevise,
+  items, allFindings, here,
+  pageName, queue, counts, filter, onFilter, at, onPick,
+}: {
+  readonly detail: Detail | null;
+  readonly busy: string | null;
+  readonly running: boolean;
+  readonly onApprove: (approve: boolean, force?: boolean) => void;
+  readonly onResume: (from: string, stopAt: string) => void;
+  readonly onRevise: (deslop: boolean) => void;
+  /** Which whole-production rewrite is one press from running, if any. */
+  /** Every file in this production, for the global tally. */
+  readonly items: ReadonlyArray<Item>;
+  /** Every finding on record. Filtered to this production before counting. */
+  readonly allFindings: ReadonlyArray<Finding>;
+  /** The one file being worked, for the per-page tally. */
+  readonly here: Item | null;
+  /** The page these findings belong to, said above them. */
+  readonly pageName: string;
+  readonly queue: ReadonlyArray<Finding>;
+  readonly counts: Counts;
+  readonly filter: Severity | "all";
+  readonly onFilter: (f: Severity | "all") => void;
+  readonly at: Finding | null;
+  readonly onPick: (id: string) => void;
+}) {
+  const [from, setFrom] = useState<string>("write");
+  const [stopAt, setStopAt] = useState<string>("audit");
+  const [showState, setShowState] = useState(true);
+
+  /* Said on the buttons, because both act on the whole production while
+     sitting beside a column showing one page. */
+
+  /*
+   * The whole production, counted.
+   *
+   * Everything else on this screen is about one page, which is right — but a
+   * screen that only ever says "8 findings on 0002.md" cannot answer whether
+   * the book is nearly done. `allFindings` is every finding on record, across
+   * every production, so it is narrowed to this one's files before anything
+   * is added up.
+   */
+  const global = useMemo(() => {
+    const paths = new Set(items.map((i) => i.path));
+    const open = allFindings.filter((f) => paths.has(f.path) && f.state === "open");
+    return {
+      pages: items.length,
+      read: items.filter((i) => i.audit.checked).length,
+      signed: items.filter((i) => i.audit.approved).length,
+      open: open.length,
+      blocking: open.filter((f) => f.severity === "blocking").length,
+      words: items.reduce((n, i) => n + i.words, 0),
+      reads: items.reduce((n, i) => n + (i.audit.reads ?? 0), 0),
+      revisions: items.reduce((n, i) => n + (i.audit.revisions ?? 0), 0),
+      deslops: items.reduce((n, i) => n + (i.audit.deslops ?? 0), 0),
+      notes: items.reduce((n, i) => n + (i.audit.notes ?? 0), 0),
+    };
+  }, [items, allFindings]);
+
+  /* Whether anything has ever read this page. The difference between "clean"
+     and "unexamined", which the findings list was not drawing. */
+  const read = !!here?.audit.checked;
+
+  const workflow = detail?.workflow ?? null;
+  const signed = !!detail && detail.items.length > 0 && detail.items.every((i) => i.audit.approved);
+  const auditGate = workflow?.gates.find((g) => g.name === "audit") ?? null;
+  const blocked = auditGate ? !auditGate.canApprove : false;
+  const held = workflow ? !workflow.done.can : false;
+
+  const pills: ReadonlyArray<{ value: Severity; label: string; className: string; n: number }> = [
+    { value: "blocking", label: "blocking", className: "pill pill-bad", n: counts.blocking },
+    { value: "warning", label: "warnings", className: "pill pill-warn", n: counts.warning },
+    { value: "note", label: "notes", className: "pill", n: counts.note },
+  ];
+
+  return (
+    <div className="panel panel-flush colpanel">
+      {/* ---------------------------------------------------------- status */}
+      <div className="panel-head" style={{ padding: "13px 16px" }}>
+        <span className="grow" style={{ minWidth: 0 }}>
+          <h3 className="h-panel">Where it stands</h3>
+          {workflow ? (
+            <span
+              className="rowflex"
+              style={{
+                gap: 6, fontSize: 11, marginTop: 2, alignItems: "flex-start",
+                color: held ? "var(--bad)" : "var(--ok)",
+              }}
             >
-              <Save size={13} />
-              {busy === "save" ? "Saving…" : dirty ? "Save" : "Saved"}
-            </button>
+              <Icon name={held ? "alert" : "check"} size={12} />
+              <span>
+                {held
+                  ? workflow.done.blockers[0]
+                  : "Everything is clear — this can be called finished."}
+              </span>
+            </span>
+          ) : (
+            <span className="dim" style={{ fontSize: 11 }}>Pick something on the left.</span>
+          )}
+        </span>
+        {workflow ? (
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            aria-expanded={showState}
+            aria-label={showState ? "Hide the detail" : "Show the detail"}
+            onClick={() => setShowState(!showState)}
+          >
+            <Icon name={showState ? "up" : "down"} size={13} />
+          </button>
+        ) : null}
+      </div>
+
+      {/* Everything under the head scrolls as one body. It used to be a stack
+          of fixed blocks with only the queue allowed to grow, so on a short
+          window the fixed part was taller than the column and the queue — the
+          part you actually work — was given nothing. */}
+      <div className="grows">
+
+        {/* ------------------------------------------- the whole production */}
+        <div className="panel-body" style={{ padding: "12px 16px" }}>
+          <div className="label" style={{ marginBottom: 8 }}>
+            <span>All {global.pages} page{global.pages === 1 ? "" : "s"}</span>
+          </div>
+          <div className="stats">
+            <span><b>{global.read}/{global.pages}</b><em>read</em></span>
+            <span>
+              <b className={global.pages > 0 && global.signed === global.pages ? "is-ok" : ""}>
+                {global.signed}/{global.pages}
+              </b>
+              <em>signed off</em>
+            </span>
+            <span><b className={global.open ? "is-bad" : "is-ok"}>{global.open}</b><em>open</em></span>
+            <span><b className={global.blocking ? "is-bad" : ""}>{global.blocking}</b><em>blocking</em></span>
+            <span><b>{global.words.toLocaleString()}</b><em>words</em></span>
+          </div>
+          <div className="stats" style={{ marginTop: 11 }}>
+            <span><b>{global.reads}</b><em>reads</em></span>
+            <span><b>{global.revisions}</b><em>rewrites</em></span>
+            <span><b>{global.deslops}</b><em>de-AI</em></span>
+            <span><b>{global.notes}</b><em>notes</em></span>
+          </div>
+        </div>
+
+      {workflow && showState ? (
+        <>
+          {/* ------------------------------------------------------ stages */}
+          <div className="panel-body" style={{ padding: "10px 16px" }}>
+            <div className="stack-xs">
+              {workflow.stages.map((s) => (
+                <div
+                  key={s.stage}
+                  className="rowflex"
+                  style={{ gap: 9, alignItems: "baseline", fontSize: 12 }}
+                >
+                  <span className={`st ${s.state === "done" ? "done" : s.state === "partial" ? "now" : ""}`}>
+                    <i />
+                  </span>
+                  <span style={{ width: 68, fontWeight: 500 }}>{s.stage}</span>
+                  <span className="grow dim" style={{ fontSize: 11.5 }}>{s.detail}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          {!file ? (
-            <p className="quiet">Pick a file to edit it here.</p>
-          ) : loadingText ? (
-            <Spinner label="Opening the file" />
-          ) : loadFailed ? (
-            <div className="alarm">
-              <AlertTriangle size={16} className="ico" />
-              <div className="space-y-2">
-                <p>This file would not open, so there is nothing here to edit.</p>
-                <button className="btn btn-line btn-sm" onClick={() => void openFile(file)}>
-                  Try again
-                </button>
-              </div>
+          {/* ------------------------------------------------------- gates */}
+          <div className="panel-body" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)" }}>
+            <div className="stack-xs">
+              {workflow.gates.map((g) => {
+                /* The sign-off lives per file in the audit state for every kind
+                   but a publication, so it is worked out here rather than the
+                   server inventing an approval object for one. */
+                const done = g.name === "copy" && detail && detail.kind !== "publication"
+                  ? signed
+                  : !!g.approved;
+                return (
+                  <div key={g.name} className="stack-xs">
+                    <div className="rowflex" style={{ gap: 8, fontSize: 12 }}>
+                      <span className="grow" style={{ fontWeight: 500 }}>{g.label}</span>
+                      <span className={done ? "pill pill-ok" : "pill"}>
+                        {done ? "approved" : "not approved"}
+                      </span>
+                    </div>
+                    {g.blockers.map((b) => (
+                      <span
+                        key={b}
+                        className="rowflex"
+                        style={{ gap: 6, fontSize: 11, alignItems: "flex-start", color: "var(--bad)" }}
+                      >
+                        <span className="sev sev-bad" style={{ marginTop: 5 }} />
+                        <span>{b}</span>
+                      </span>
+                    ))}
+                    {g.warnings.map((w) => (
+                      <span
+                        key={w}
+                        className="rowflex"
+                        style={{ gap: 6, fontSize: 11, alignItems: "flex-start", color: "var(--ink-3)" }}
+                      >
+                        <span className="sev sev-warn" style={{ marginTop: 5 }} />
+                        <span>{w}</span>
+                      </span>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
-          ) : (
-            <>
-              <p className="fname mono">{file.name}</p>
+          </div>
 
-              {/* How the manuscript is set — three sizes and a measure, because
-                  this panel is read for hours and a fixed size is somebody
-                  else's eyesight. */}
-              <div className="setting">
-                <div className="steps" role="group" aria-label="Text size">
-                  <button type="button" className="s1" aria-pressed={textSize === "sm"} aria-label="Small" onClick={() => setTextSize("sm")}>A</button>
-                  <button type="button" className="s2" aria-pressed={textSize === "md"} aria-label="Medium" onClick={() => setTextSize("md")}>A</button>
-                  <button type="button" className="s3" aria-pressed={textSize === "lg"} aria-label="Large" onClick={() => setTextSize("lg")}>A</button>
-                </div>
+          {/* ---------------------------------------------- what you can do */}
+          <div className="panel-body" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)" }}>
+            <div className="rowflex" style={{ gap: 7, flexWrap: "wrap" }}>
+              {signed ? (
                 <button
                   type="button"
-                  className="btn btn-quiet btn-sm wide"
-                  aria-pressed={wide}
-                  onClick={() => setWide((w) => !w)}
+                  className="btn btn-line btn-sm"
+                  disabled={busy !== null}
+                  onClick={() => onApprove(false)}
                 >
-                  {wide ? "Standard width" : "Full width"}
+                  <Icon name="x" size={13} />Withdraw the sign-off
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy !== null || blocked}
+                  title={blocked ? "Clear what is listed above first." : undefined}
+                  onClick={() => onApprove(true)}
+                >
+                  <Icon name="check" size={13} />
+                  {busy === "approve" ? "Saving…" : "Sign off the writing"}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-line btn-sm"
+                disabled={busy !== null || running || !here}
+                title={here
+                  ? `Reads ${pageName ?? "this page"} and rewrites what it finds, up to two rounds. The text as it stands is kept beside it as .pre-audit.`
+                  : "Pick a page first."}
+                onClick={() => onRevise(false)}
+              >
+                {busy === "revise" ? "Rewriting…" : "Audit & revise this page"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-line btn-sm"
+                disabled={busy !== null || running || !here}
+                title={here
+                  ? `Rewrites ${pageName ?? "this page"} to sound less machine-made. The text as it stands is kept beside it as .pre-audit.`
+                  : "Pick a page first."}
+                onClick={() => onRevise(true)}
+              >
+                {busy === "deslop" ? "Rewriting…" : "De-AI this page"}
+              </button>
+            </div>
+
+            {/* The override, and only where there is something to override. It
+                is deliberately not the same button as the sign-off: signing off
+                over a contradiction is a different decision from signing off. */}
+            {blocked && !signed ? (
+              <button
+                type="button"
+                className="btn btn-bad btn-sm"
+                style={{ marginTop: 8 }}
+                disabled={busy !== null}
+                onClick={() => onApprove(true, true)}
+              >
+                <Icon name="alert" size={13} />
+                Sign off anyway, over {auditGate!.blockers.length} objection
+                {auditGate!.blockers.length === 1 ? "" : "s"}
+              </button>
+            ) : null}
+
+            {detail?.resumable ? (
+              <div className="rowflex" style={{ gap: 7, marginTop: 9, flexWrap: "wrap" }}>
+                <span className="label">Resume</span>
+                <select
+                  className="input"
+                  style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
+                  value={from}
+                  onChange={(e) => setFrom(e.target.value)}
+                >
+                  {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <span className="label">through</span>
+                <select
+                  className="input"
+                  style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
+                  value={stopAt}
+                  onChange={(e) => setStopAt(e.target.value)}
+                >
+                  {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={busy !== null || running}
+                  onClick={() => onResume(from, stopAt)}
+                >
+                  <Icon name="play" size={13} />
+                  {busy === "resume" ? "Starting…" : "Go"}
                 </button>
               </div>
+            ) : (
+              <p className="hint" style={{ marginTop: 9 }}>
+                A {(detail?.kindLabel ?? "file").toLowerCase()} is written in one pass, so
+                there is no stage to pick it up at. Rewriting is how it changes.
+              </p>
+            )}
 
-              {/*
-                * A signed-off file is not typed into by accident.
-                *
-                * "Approved" meant nothing to the editor before: the textarea was
-                * as writable as any other, so the sign-off was a note to self
-                * rather than a state of the work. Reopening is one click and a
-                * confirmation, and it lasts only as long as this visit.
-                */}
-              {approved ? (
-                <div className={locked ? "arrive" : "alarm"}>
-                  <p className="hd">
-                    {locked ? <Lock size={12} /> : <Unlock size={12} />}
-                    {locked
-                      ? `Signed off ${new Date(approved.at).toLocaleString()}${approved.by ? ` by ${approved.by}` : ""}. Read-only.`
-                      : `Reopened. This file was signed off ${new Date(approved.at).toLocaleString()} — saving replaces the approved text.`}
-                  </p>
-                  {locked ? (
-                    <button
-                      className="btn btn-line btn-sm"
-                      onClick={() => setPending({
-                        act: () => setUnlocked((set) => new Set(set).add(file.path)),
-                        title: "Reopen an approved file?",
-                        message: `${file.name} was signed off ${new Date(approved.at).toLocaleString()}${approved.by ? ` by ${approved.by}` : ""}. Editing it replaces the text that was approved.`,
-                        confirmLabel: "Reopen for editing",
-                        cancelLabel: "Leave it closed",
-                      })}
-                    >
-                      Reopen for editing
-                    </button>
-                  ) : null}
-                </div>
-              ) : null}
+            {workflow.lastError ? (
+              <div className="fail" style={{ marginTop: 9, fontSize: 12 }}>
+                <Icon name="alert" size={14} />
+                <span>
+                  The last run stopped
+                  {workflow.lastError.stage ? ` during ${workflow.lastError.stage}` : ""}:{" "}
+                  {workflow.lastError.message}
+                </span>
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
 
-              {/*
-                * The rewrite as it arrives.
-                *
-                * The pass has streamed the whole document into the textarea
-                * after every section since it was written, and nothing about
-                * that is watchable: two identical-looking swaps, minutes apart,
-                * with the changed sentences wherever they happen to be in a
-                * scrolled box. A section landing is an event; this says so.
-                */}
-              {runBusy || sections.length > 0 ? (
-                <div role="status" aria-live="polite" className="arrive">
-                  <p className="hd">
-                    {runBusy
-                      ? <Loader2 size={12} className="animate-spin" style={{ color: "var(--vermilion)" }} />
-                      : <Check size={12} style={{ color: "var(--ok)" }} />}
-                    {runBusy
-                      ? busy === "report" ? "Checking — nothing is being rewritten" : "Rewriting, section by section"
-                      : `${sections.length} section${sections.length === 1 ? "" : "s"} rewritten`}
-                  </p>
-                  {sections.length > 0 ? (
-                    <ul>
-                      {sections.map((heading, i) => (
-                        <li key={`${heading}-${i}`}>
-                          <Check size={11} />
-                          <span className="min-w-0 break-words">{heading}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p>
-                      {busy === "report"
-                        ? "A report pass never changes the text, so nothing will land here."
-                        : "Nothing has landed yet — the first section takes the longest."}
-                    </p>
-                  )}
-                  {streamed ? (
-                    <p>
-                      The text beside this was replaced {streamed.count === 1 ? "once" : `${streamed.count} times`}.
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
+      {/* ------------------------------------------------------- this page */}
+      {/* The same facts as above, for the one file open. "Rewritten three
+          times and still wrong" is a per-page fact, and a production total
+          cannot say it — nine rewrites spread over seventeen pages and nine
+          rewrites of this one are the same number and a different problem. */}
+      <div className="panel-body" style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+        <div className="label" style={{ marginBottom: 8 }}>
+          <span>{here ? `This page · ${pageName}` : "This page"}</span>
+        </div>
+        {here ? (
+          <>
+            <div className="stats">
+              <span><b>{here.audit.reads ?? 0}</b><em>reads</em></span>
+              <span><b>{here.audit.revisions ?? 0}</b><em>rewrites</em></span>
+              <span><b>{here.audit.deslops ?? 0}</b><em>de-AI</em></span>
+              <span><b>{here.audit.notes ?? 0}</b><em>notes</em></span>
+              <span><b className={counts.open ? "is-bad" : "is-ok"}>{counts.open}</b><em>open</em></span>
+            </div>
+            <div className="rowflex" style={{ gap: 10, marginTop: 10, fontSize: 11 }}>
+              <span className="dim">last read {when(here.audit.checked)}</span>
+              <span className="dim">·</span>
+              <span className="dim">last rewrite {when(here.audit.rewritten)}</span>
+              <span className={here.audit.approved ? "pill pill-ok" : "pill"}>
+                {here.audit.approved ? "signed off" : "not signed off"}
+              </span>
+            </div>
+          </>
+        ) : (
+          <p className="hint">Pick a page on the left.</p>
+        )}
+      </div>
 
-              {/*
-                * Prose, not configuration. This is where a novelist reads what
-                * the model just rewrote, and it was 12px monospace with the
-                * spellchecker off and no way to save from the keyboard.
-                */}
-              <div
-                className="sheet"
-                data-wide={wide ? "true" : "false"}
-                style={{
-                  "--size": textSize === "sm" ? "13.5px" : textSize === "lg" ? "17.5px" : "15px",
-                  "--lead": textSize === "lg" ? "1.7" : "1.76",
-                } as unknown as React.CSSProperties}
+      {/* ---------------------------------------------------------- checks */}
+      <div className="panel-head" style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+        <span className="grow">
+          <span className="rowflex" style={{ gap: 10, alignItems: "baseline" }}>
+            <span className="numeral" style={{ fontSize: 24 }}>
+              {String(counts.open).padStart(2, "0")}
+            </span>
+            <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+              finding{counts.open === 1 ? "" : "s"}
+            </span>
+          </span>
+          <span className="dim" style={{ fontSize: 11, display: "block", marginTop: 2, overflowWrap: "anywhere" }}>
+            {pageName ? `on ${pageName}` : "pick a page on the left"}
+          </span>
+        </span>
+        <span className="dim" style={{ fontSize: 11 }}>j / k</span>
+      </div>
+
+      <div className="panel-body" style={{ padding: "8px 12px 2px" }}>
+        <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
+          {pills.map((p) => (
+            <button
+              key={p.value}
+              type="button"
+              className={p.className}
+              aria-pressed={filter === p.value}
+              onClick={() => onFilter(filter === p.value ? "all" : p.value)}
+            >
+              {p.n} {p.label}
+            </button>
+          ))}
+          {counts.settled > 0 ? (
+            <span className="pill pill-ok">{counts.settled} settled</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="panel-body" style={{ padding: 8 }}>
+        {/* Three states, not two. A page nobody has read and a page that was
+            read and came back clean both used to say "Nothing is open", which
+            is a claim about writing that had never been looked at.
+
+            `read` alone was the wrong question, though: it means *you* pressed
+            Read this page, and a production run raises findings of its own
+            without ever setting it. Twelve real findings were counted in the
+            header above and then hidden behind "nothing has looked at this
+            page". Anything already found is listed, whoever found it. */}
+        {!read && queue.length === 0 ? (
+          <Empty icon="clock" title="Not read yet.">
+            Nothing has looked at this page. Press <b>Read this page</b> on the left
+            and whatever it finds will be listed here.
+          </Empty>
+        ) : queue.length === 0 ? (
+          <Empty icon="check" title="Read, and nothing to answer for.">
+            The last read went through this page and raised nothing.
+          </Empty>
+        ) : (
+          queue.map((f) => {
+            const settled = f.state !== "open";
+            return (
+              <button
+                key={f.id}
+                type="button"
+                className={settled ? "finding settled" : "finding"}
+                aria-current={at?.id === f.id}
+                onClick={() => onPick(f.id)}
               >
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => {
-                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-                    e.preventDefault();
-                    if (dirty && busy === null) void save();
-                  }
-                }}
-                spellCheck
-                readOnly={locked}
-                aria-label={`Edit ${file.name}`}
+                <span className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
+                  <span className={settled ? "sev sev-ok" : SEV_CLASS[f.severity]} />
+                  <span className="grow">
+                    <b>{f.title}</b>
+                    <span className="cat">
+                      {placeOf(f.path)} · {f.category}{f.section ? ` · ${f.section}` : ""}
+                    </span>
+                  </span>
+                  {settled ? (
+                    <span className="pill pill-ok">
+                      {f.state === "accepted" ? "taken" : "left"}
+                    </span>
+                  ) : f.severity === "blocking" ? (
+                    <span className="pill pill-bad">blocks</span>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      </div>
+    </div>
+  );
+}
+
+/* ----------------------------------------------------------------- 3. the page */
+
+/**
+ * The page itself, whole, with every finding marked in it.
+ *
+ * This column used to show one paragraph — the one the selected finding sat
+ * in — so the screen whose job is judging a page could never show the page.
+ * You approved writing you had not read, and a finding about the shape of the
+ * whole thing had a single paragraph under it as evidence.
+ *
+ * Now it is the page: read it, hear it, mark every objection in it at once,
+ * click a mark to bring that finding up, rewrite the lot with a sentence, or
+ * take the pen and edit it yourself.
+ */
+function PageColumn({
+  path, name, text, loading, findings, current, onPick,
+  mode, onMode, draft, onDraft, onSave, saving,
+  note, onNote, onRevise, reviseBusy,
+  history, busy, onAccept, onIgnore,
+}: {
+  readonly path: string | null;
+  readonly name: string;
+  readonly text: string;
+  readonly loading: boolean;
+  readonly findings: ReadonlyArray<Finding>;
+  readonly current: Finding | null;
+  readonly onPick: (id: string) => void;
+  readonly mode: "read" | "edit";
+  readonly onMode: (m: "read" | "edit") => void;
+  readonly draft: string;
+  readonly onDraft: (t: string) => void;
+  readonly onSave: () => void;
+  readonly saving: boolean;
+  readonly note: string;
+  readonly onNote: (t: string) => void;
+  readonly onRevise: () => void;
+  readonly reviseBusy: boolean;
+  readonly history: string;
+  readonly busy: boolean;
+  readonly onAccept: () => void;
+  readonly onIgnore: () => void;
+}) {
+  if (!path) {
+    return (
+      <div className="dark crop" style={{ height: "100%", display: "grid", placeItems: "center", padding: 32 }}>
+        <p className="muted" style={{ fontSize: 14, maxWidth: "42ch", textAlign: "center" }}>
+          Pick a page on the left and it appears here whole, in the book&rsquo;s own
+          type, with every objection marked in it.
+        </p>
+      </div>
+    );
+  }
+
+  /* Whichever text is actually in front of you. */
+  const pageText = mode === "edit" ? draft : text;
+
+  return (
+    <div className="dark crop colpanel" data-tabscope>
+      <span className="disc dots dots-light" aria-hidden="true"
+            style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
+
+      <div style={{ padding: "16px 22px 12px", position: "relative", flex: "none" }}>
+        <div className="spread" style={{ alignItems: "flex-start", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="label">{placeOf(path)}</div>
+            <h3 style={{ fontSize: 17, marginTop: 5, overflowWrap: "anywhere" }}>{name}</h3>
+          </div>
+          <div className="rowflex" style={{ gap: 9, flex: "none" }}>
+            {/* The whole page, out of the app or read to you. They belong to
+                the page, not to one mode of looking at it, so they sit with
+                the page's own controls and act on whichever text is in front
+                of you - the draft while you are editing, the file otherwise.
+                Glyph only: this row already carries a count and a toggle. */}
+            <button
+              type="button"
+              className="btn btn-quiet btn-sm"
+              disabled={!pageText.trim()}
+              aria-label="Copy the whole page"
+              title="Copy the whole page"
+              onClick={() => {
+                void navigator.clipboard
+                  .writeText(pageText)
+                  .then(() => toast("The page is on the clipboard."))
+                  .catch(() => toast("Could not reach the clipboard."));
+              }}
+            >
+              <Icon name="copy" size={15} />
+            </button>
+            <ReadAloud dark iconOnly text={pageText} label="Read the whole page" />
+            <span className="pill">
+              {findings.filter((f) => f.state === "open").length} open
+            </span>
+            <Seg
+              value={mode}
+              onChange={onMode}
+              options={[{ value: "read", label: "Read" }, { value: "edit", label: "Edit" }]}
+            />
+          </div>
+        </div>
+      </div>
+
+      {mode === "read" ? (
+        <>
+          <div className="grows" style={{ padding: "0 22px", position: "relative" }}>
+            {loading ? (
+              <p className="muted" style={{ fontSize: 14 }}>Opening the page…</p>
+            ) : text ? (
+              <MarkedText text={text} findings={findings} current={current} onPick={onPick} />
+            ) : (
+              <p className="muted" style={{ fontSize: 14 }}>
+                This page has nothing in it yet.
+              </p>
+            )}
+          </div>
+
+          {/* The one you are on, and the two verdicts for it. Everything else
+              about the page is above; this strip is about a single objection. */}
+          {current ? (
+            <div style={{
+              padding: "13px 22px", position: "relative", flex: "none",
+              borderTop: "1px solid var(--line-char)",
+            }}>
+              <div className="label" style={{ marginBottom: 5 }}>
+                <span>{current.category}{current.severity === "blocking" ? " · blocks approval" : ""}</span>
+              </div>
+              <b style={{ fontSize: 14 }}>{current.title}</b>
+              <p className="muted" style={{ fontSize: 13, marginTop: 5 }}>
+                {current.fix ? `Proposes: ${current.fix}` : current.suggestion}
+              </p>
+              <div className="rowflex" style={{ gap: 8, marginTop: 10 }}>
+                {current.fix ? (
+                  <button type="button" className="btn btn-sm" disabled={busy} onClick={onAccept}>
+                    <Icon name="check" size={14} />Accept the fix
+                  </button>
+                ) : (
+                  <button type="button" className="btn btn-sm" onClick={() => onMode("edit")}>
+                    <Icon name="pencil" size={14} />Write it yourself
+                  </button>
+                )}
+                <button type="button" className="btn btn-line btn-sm" disabled={busy} onClick={onIgnore}>
+                  Leave it
+                </button>
+                <ReadAloud
+                  dark
+                  text={current.start >= 0 ? text.slice(current.start, current.end) : text}
+                  label={current.start >= 0 ? "Hear the sentence" : "Hear the page"}
+                />
+                <span className="grow" />
+                <span className="kbd">A</span><span className="kbd">I</span>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Rewrite the whole page from one sentence of instruction. The
+              right padding clears the desktop shell's Settings button, which
+              is fixed to that corner of the window and knows nothing about
+              what the workbench has put under it. */}
+          <div style={{
+            padding: "12px 60px 16px 22px", position: "relative", flex: "none",
+            borderTop: "1px solid var(--line-char)",
+          }}>
+            <div className="rowflex" style={{ gap: 8 }}>
+              <input
+                className="input grow"
+                value={note}
+                onChange={(e) => onNote(e.target.value)}
+                placeholder="What is wrong with this page? It will be rewritten to fix it."
+                onKeyDown={(e) => { if (e.key === "Enter" && note.trim() && !reviseBusy) onRevise(); }}
               />
-              </div>
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={!note.trim() || reviseBusy}
+                onClick={onRevise}
+              >
+                {reviseBusy ? "Rewriting…" : "Revise the page"}
+              </button>
+            </div>
+            {history ? (
+              <p className="hint" style={{ marginTop: 7, color: "var(--on-char-2)" }}>
+                So far: {history}.
+              </p>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grows" style={{ padding: "0 22px", position: "relative" }}>
+            <div style={{
+              border: "1.5px solid var(--vermilion)",
+              borderRadius: "var(--r-card)",
+              background: "var(--char-2)",
+              padding: "14px 16px",
+              height: "100%",
+              display: "flex",
+            }}>
+              <textarea
+                className="read-field"
+                style={{ color: "var(--on-char)", "--rs": "15.5px", "--rm": "100%", flex: 1 } as React.CSSProperties}
+                aria-label="Edit the page"
+                value={draft}
+                onChange={(e) => onDraft(e.target.value)}
+              />
+            </div>
+          </div>
 
-              <div className="foot">
-                <span className="mono">
-                  {text.trim() ? `${text.trim().split(/\s+/).length.toLocaleString()} words` : "empty"}
-                  {page !== null ? ` · p${page}` : ""}
-                </span>
-                <span className="dirty mono" data-unsaved={dirty ? "true" : "false"}>
-                  {dirty ? "unsaved — Ctrl+S" : "saved"}
-                </span>
-              </div>
-            </>
-          )}
-        </aside>
+          <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
+            <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
+              <Icon name="check" size={16} />
+              {saving ? "Saving…" : "Save the page"}
+            </button>
+            <button type="button" className="btn btn-line" onClick={() => onMode("read")}>
+              Cancel
+            </button>
+            <span className="grow" />
+            <span className="dim mono" style={{ fontSize: 11 }}>
+              {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+            </span>
+          </div>
+        </>
       )}
-
-      <ConfirmDialog
-        open={pending !== null}
-        variant="danger"
-        title={pending?.title ?? ""}
-        message={pending?.message ?? ""}
-        confirmLabel={pending?.confirmLabel ?? "Continue"}
-        cancelLabel={pending?.cancelLabel ?? "Cancel"}
-        onConfirm={() => { const held = pending; setPending(null); held?.act(); }}
-        onCancel={() => setPending(null)}
-      />
     </div>
   );
 }
 
 /**
- * A spinner that says what it is waiting for.
+ * The page with every objection marked in it at once.
  *
- * Five bare `Loader2`s on this page announced nothing at all, on a screen whose
- * slowest operations are the ones worth announcing.
+ * One mark per finding, in file order, non-overlapping — a finding whose span
+ * runs into the one before it is left unmarked rather than drawn in the wrong
+ * place, which is the same rule the single-passage view used. The current one
+ * is brighter than the rest so the queue and the page agree about where you
+ * are, and clicking any mark moves the queue to it.
  */
-function Spinner({
-  label, size = 18, className = "",
-}: { label: string; size?: number; className?: string }) {
-  return (
-    <span role="status" className={`inline-flex items-center ${className}`}>
-      <Loader2 size={size} className="animate-spin" style={{ color: "var(--vermilion)" }} />
-      <span className="sr-only">{label}</span>
-    </span>
-  );
-}
-
-/**
- * One approval, as a link in the chain rather than a card of its own.
- *
- * Lifted from PublicationDetail's GateCard rather than imported, because that
- * one is not exported and this file should not be the reason it becomes part
- * of that screen's public surface.
- */
-function Gate({
-  title, approved, notes, notesLabel, approvedLabel, canApprove, busy, onToggle,
+function MarkedText({
+  text, findings, current, onPick,
 }: {
-  title: string;
-  approved: Approval | null;
-  notes: readonly string[];
-  notesLabel: string;
-  approvedLabel: string;
-  canApprove: boolean;
-  busy: boolean;
-  onToggle: (approve: boolean) => void;
+  readonly text: string;
+  readonly findings: ReadonlyArray<Finding>;
+  readonly current: Finding | null;
+  readonly onPick: (id: string) => void;
 }) {
+  const parts: React.ReactNode[] = [];
+  const located = findings
+    .filter((f) => f.start >= 0 && f.end > f.start && f.end <= text.length)
+    .sort((a, b) => a.start - b.start);
+
+  let at = 0;
+  for (const f of located) {
+    if (f.start < at) continue; // overlaps the one before it; do not double-mark
+    if (f.start > at) parts.push(text.slice(at, f.start));
+    parts.push(
+      <mark
+        key={f.id}
+        aria-current={current?.id === f.id}
+        className={
+          f.state !== "open" ? "m-ok"
+            : f.severity === "blocking" ? "m-bad"
+              : f.severity === "warning" ? "m-warn" : ""
+        }
+        onClick={() => onPick(f.id)}
+        title={f.state === "open" ? f.title : `${f.title} — settled`}
+      >
+        {text.slice(f.start, f.end)}
+      </mark>,
+    );
+    at = f.end;
+  }
+  if (at < text.length) parts.push(text.slice(at));
+
   return (
-    <div className={`gate${approved ? " is-open" : ""}`}>
-      <h3>{title}</h3>
-      <div className="st">
-        <span className={`pill ${approved ? "pill-ok" : "pill-warn"}`}>
-          {approved ? "Approved" : "Not approved"}
-        </span>
-        <button
-          className={`btn btn-sm ${approved ? "btn-line" : "btn-ok"}`}
-          style={{ marginLeft: "auto" }}
-          disabled={busy || (!approved && !canApprove)}
-          onClick={() => onToggle(!approved)}
-        >
-          {approved
-            ? <><X size={13} />Withdraw</>
-            : <><Check size={13} />{busy ? "Approving…" : "Approve"}</>}
-        </button>
-      </div>
-
-      {approved ? (
-        <p className="when">
-          {new Date(approved.at).toLocaleString()}
-          {/* Who signed this off was carried in the type and rendered nowhere,
-              which made an approval unattributable. */}
-          {approved.by ? ` · by ${approved.by}` : ""}
-        </p>
-      ) : null}
-
-      {/*
-        * Warnings stay after the sign-off.
-        *
-        * Copy can be approved over its warnings on purpose — that is what
-        * `canApprove` being true regardless is for. Hiding them the instant
-        * someone does destroys the record of what they chose to overrule.
-        */}
-      {notes.length > 0 ? (
-        <>
-          <p className="when">{approved ? approvedLabel : notesLabel}</p>
-          <ul className="blockers">{notes.map((n) => <li key={n}>{n}</li>)}</ul>
-        </>
-      ) : null}
+    <div
+      className="read"
+      style={{ color: "var(--on-char)", "--rs": "15.5px", "--rm": "62ch" } as React.CSSProperties}
+    >
+      <p style={{ whiteSpace: "pre-wrap" }}>{parts}</p>
     </div>
   );
 }

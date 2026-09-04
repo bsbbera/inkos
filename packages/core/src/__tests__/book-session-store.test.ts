@@ -352,10 +352,28 @@ describe("book-session-store", () => {
       ])).toBe("多行 内容 有空格");
     });
 
-    it("truncates content longer than 20 chars with ellipsis", () => {
+    /* The cap is 120 display columns, CJK counting two, so a Chinese title
+       still runs to 60 characters and an English one to 120 — where before
+       both stopped at 20 and every row in the rail read "Write one complete
+       s…" no matter how wide the column was dragged. */
+    it("keeps a sentence that fits the width", () => {
       expect(extractFirstUserMessageTitle([
-        { role: "user", content: "这是一段超过二十个字符的很长的提问内容会被截断" },
-      ])).toBe("这是一段超过二十个字符的很长的提问内容会…");
+        { role: "user", content: "这是一段超过二十个字符的很长的提问内容不会被截断" },
+      ])).toBe("这是一段超过二十个字符的很长的提问内容不会被截断");
+    });
+
+    it("truncates Chinese past 60 characters, which is 120 columns", () => {
+      const title = extractFirstUserMessageTitle([{ role: "user", content: "字".repeat(80) }]);
+      expect(title).toBe(`${"字".repeat(60)}…`);
+    });
+
+    it("truncates English on a word boundary rather than mid-word", () => {
+      const title = extractFirstUserMessageTitle([
+        { role: "user", content: `${"alpha ".repeat(30)}omega` },
+      ]) as string;
+      expect(title.endsWith("…")).toBe(true);
+      expect(title).not.toMatch(/alph…$/);
+      expect(title.length).toBeLessThanOrEqual(121);
     });
 
     it("returns null when content is only whitespace", () => {

@@ -54,7 +54,8 @@ export async function requireRenderer(shimUrl: string | undefined, what = "image
 }
 
 /**
- * Same idea for Affinity, which cannot be started on the user's behalf.
+ * Same idea for Affinity, which this may start because a build is about to
+ * need it — but which nothing else may, least of all a status panel.
  *
  * Its scripting sandbox also has to be able to read the Desktop, or every image
  * placement fails silently once the build is already underway. Better to refuse
@@ -63,7 +64,9 @@ export async function requireRenderer(shimUrl: string | undefined, what = "image
 export async function requireDesigner(shimUrl: string | undefined, what: string): Promise<string> {
   if (!shimUrl) throw new Error(`${what} needs Quire's shim, which is not reachable`);
   type Status = { up?: boolean; canRead?: boolean; reason?: string };
-  const s: Status = await fetch(`${shimUrl}/affinity/status`, { signal: AbortSignal.timeout(40_000) })
+  /* `launch=1`: a build is the one caller that may start Affinity. The bare
+     status route deliberately does not, or opening Quire opens Affinity. */
+  const s: Status = await fetch(`${shimUrl}/affinity/status?launch=1`, { signal: AbortSignal.timeout(180_000) })
     .then((r) => r.json() as Promise<Status>)
     .catch((e: unknown): Status => ({ up: false, reason: String(e) }));
   if (s.up && s.canRead !== false) return shimUrl;

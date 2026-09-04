@@ -9,6 +9,8 @@ export interface ProbedModel {
   readonly id: string;
   readonly name: string;
   readonly contextWindow: number;
+  /** Only when the endpoint declared it; absent means unknown, never false. */
+  readonly imageInput?: boolean;
 }
 
 export async function probeModelsFromUpstream(
@@ -24,11 +26,25 @@ export async function probeModelsFromUpstream(
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) return [];
-    const json = (await res.json()) as { data?: Array<{ id: unknown }> };
+    const json = (await res.json()) as {
+      data?: Array<{ id: unknown; name?: unknown; supports_images?: unknown }>;
+    };
     if (!Array.isArray(json.data)) return [];
     return json.data
-      .filter((m): m is { id: string } => typeof m.id === "string" && m.id.length > 0)
-      .map((m) => ({ id: m.id, name: m.id, contextWindow: 0 }));
+      .filter((m): m is { id: string; name?: string; supports_images?: boolean } =>
+        typeof m.id === "string" && m.id.length > 0)
+      // `name: m.id` was hardcoded here, which overwrote the display name an
+      // endpoint had sent with the slug. Quire's shim relays what a CLI says
+      // its models are called — devin calls `glm-5-2` "GLM-5.2 High" — and the
+      // picker then had to reconstruct that from the id, which cannot be done:
+      // no rule turns `glm-5-2` into `GLM-5.2 High`. Standard OpenAI /models
+      // carries no `name`, so the id remains the fallback.
+      .map((m) => ({
+        id: m.id,
+        name: typeof m.name === "string" && m.name ? m.name : m.id,
+        contextWindow: 0,
+        ...(typeof m.supports_images === "boolean" ? { imageInput: m.supports_images } : {}),
+      }));
   } catch {
     return [];
   }

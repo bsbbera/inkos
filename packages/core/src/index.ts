@@ -343,6 +343,10 @@ export {
   legacyBookSessionPath,
 } from "./interaction/session-transcript.js";
 export {
+  summarizeSession, summarizeTranscriptEvents, tokensOf, EMPTY_SESSION_SUMMARY,
+} from "./interaction/session-summary.js";
+export type { SessionSummary } from "./interaction/session-summary.js";
+export {
   cleanRestoredAgentMessages,
   committedMessageEvents,
   deriveBookSessionFromTranscript,
@@ -744,10 +748,20 @@ export { loadPublicationRegistry, findPublicationDefinition, userDefinitionsDir 
 export type { PublicationRegistry, PublicationDiagnostic } from "./publications/registry.js";
 export type { PublicationDefinition, PublicationDefinitionSource } from "./publications/types.js";
 export {
-  runStoryAudit, runStoryDeslop, createStoryAsk, storyAuditReport,
+  runStoryAudit, runStoryDeslop, reviseStoryFile, createStoryAsk, storyAuditReport,
   STORY_DIMENSIONS, STORY_SLOP_DIMENSIONS,
 } from "./pipeline/story-audit.js";
-export type { StoryAudit, StoryFinding } from "./pipeline/story-audit.js";
+export type {
+  StoryAudit, StoryFinding, StoryReviseOptions, StoryRevised,
+} from "./pipeline/story-audit.js";
+export {
+  applyFix, applyParagraph, blocksApproval, countBySeverity, findingId, locate,
+  locateQuote, mergeFindings, normalizeSeverity, paragraphAt, paragraphOf,
+  paragraphSpan, NO_LOCATION,
+} from "./pipeline/findings.js";
+export type {
+  ApplyOutcome, Finding, FindingLocation, FindingSeverity, FindingState, RawFinding,
+} from "./pipeline/findings.js";
 export {
   factCheck, factCheckReport, isProblem as isFactProblem,
 } from "./pipeline/fact-check.js";
@@ -759,7 +773,28 @@ export type { SearchSource, SearchSweep, SourcedResult } from "./utils/search-so
 export { modelCapabilities, modelSearchesWeb } from "./llm/providers/lookup.js";
 
 export { PRODUCTIONS, auditableRoots, productionByDir } from "./productions/registry.js";
-export type { ProductionSpec } from "./productions/registry.js";
+export type {
+  ProductionSpec, ProductionPipeline, PipelineGate, BuildShape, BuildOutput,
+} from "./productions/registry.js";
+export {
+  advance as advancePipeline,
+  approve as approvePipelineGate,
+  ensurePipeline,
+  loadPipeline,
+  pipelineFor,
+  pipelinePath,
+  reject as rejectPipelineGate,
+  reportUnitDone,
+  reportUnitFailed,
+  specFor as productionSpecFor,
+  waitingOn as pipelineWaitingOn,
+  withdraw as withdrawPipelineGate,
+} from "./pipeline/orchestrator.js";
+export type {
+  ProductionRef, OrchestratorEvent, AdvanceResult, WaitingProduction,
+} from "./pipeline/orchestrator.js";
+export { pendingUnits, stageSequence } from "./pipeline/pipeline-state.js";
+export type { PipelineState, PipelineStatus, GateState } from "./pipeline/pipeline-state.js";
 
 export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
@@ -793,3 +828,36 @@ export type {
   Stage as PublicationStage,
 } from "./pipeline/publication-runner.js";
 export type { PublicationFinding, PublicationAudit } from "./pipeline/publication-audit.js";
+export { PUBLICATION_AGENTS, agentForStage } from "./pipeline/publication-agents.js";
+
+export {
+  AGENT_JOBS,
+  AGENT_ROSTER,
+  AGENT_GROUP_LABELS,
+  agentRole,
+  canonicalAgentId,
+  jobOf,
+  isKnownAgent,
+  type AgentGroup,
+  type AgentJob,
+  type AgentRole,
+} from "./llm/agent-roster.js";
+export {
+  addUsage,
+  byAgent,
+  byModel,
+  totalUsage,
+  usageFromResponse,
+  type UsageEvent,
+  type UsageLedger,
+  type UsageRow,
+} from "./llm/session-usage.js";
+export {
+  normalizeOverrides,
+  resolveAgentRoute,
+  resolveRoutingTable,
+  type ModelPin,
+  type ResolvedRoute,
+  type RouteSource,
+  type RouteTarget,
+} from "./llm/model-routing.js";

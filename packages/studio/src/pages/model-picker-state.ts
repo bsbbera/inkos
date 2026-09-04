@@ -27,6 +27,8 @@ export interface ModelVariant {
   /** "high", "max fast", or "" when the model has no variants at all. */
   readonly variant: string;
   readonly contextWindow?: number;
+  /** What the CLI calls it — "GLM-5.2 High". Absent when it offered no name. */
+  readonly name?: string;
 }
 
 export interface ModelFamily {
@@ -77,6 +79,11 @@ export function toFamilies(
       id: model.id,
       variant,
       ...(model.contextWindow ? { contextWindow: model.contextWindow } : {}),
+      // A name only counts when it is not the id echoed back: the studio's
+      // models route fills `name: id` for endpoints that send none, and a slug
+      // in the name field is worse than no name, because it silences the
+      // fallback that would have tidied it.
+      ...(model.name && model.name !== model.id ? { name: model.name } : {}),
     };
     const existing = families.get(base);
     if (existing) existing.push(entry);
@@ -86,4 +93,71 @@ export function toFamilies(
     base,
     variants: [...variants].sort((a, b) => variantOrder(a.variant) - variantOrder(b.variant)),
   }));
+}
+
+/**
+ * The name to show for one model.
+ *
+ * The CLI's own name wins whenever there is one. Devin sends
+ * `{ value: "glm-5-2", name: "GLM-5.2 High" }` over ACP and the whole chain
+ * used to discard it — twice, once in the shim and once in the model probe —
+ * so this file tried to reconstruct a display name from the slug instead.
+ * That cannot work. `glm-5-2` is "GLM-5.2 High"; `gpt-5-6-sol` is not "GPT 5 6
+ * Sol"; the version separators are gone and the marketing name was never in
+ * the id to begin with. The fix was to stop dropping the answer.
+ *
+ * The derived form below is the fallback only, for CLIs that genuinely send no
+ * names — claude's four aliases, antigravity's list. It tidies casing and
+ * nothing more, and it is allowed to be imperfect because it is never used
+ * where a real name exists.
+ *
+ * Purely presentational: `id` is still what gets sent.
+ */
+export function modelLabel(variant: ModelVariant, base: string): string {
+  return variant.name ?? prettyModelName(base, variant.variant);
+}
+
+export function prettyModelName(base: string, variant = ""): string {
+  const slug = base.slice(base.indexOf("/") + 1);
+  const words = slug.split("-").map((word) => {
+    // Version fragments stay digits; a lone letter-run gets a capital.
+    if (/^\d+$/.test(word)) return word;
+    if (KNOWN_CAPS[word]) return KNOWN_CAPS[word];
+    return word.charAt(0).toUpperCase() + word.slice(1);
+  });
+  const name = words.join(" ");
+  if (!variant) return name;
+  const suffix = variant.split(" ")
+    .map((w) => KNOWN_CAPS[w] ?? w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return `${name} ${suffix}`;
+}
+
+/** Words whose conventional casing is not "first letter up". */
+const KNOWN_CAPS: Record<string, string> = {
+  gpt: "GPT", glm: "GLM", swe: "SWE", api: "API",
+  xhigh: "XHigh", "1m": "1M", oss: "OSS", k2: "K2", k3: "K3",
+  v4: "V4", ai: "AI",
+};
+
+/**
+ * One provider's models, and the providers you could switch to.
+ *
+ * The picker used to stack every provider's list into one scroll, so choosing
+ * a devin model meant scrolling past antigravity's and vice versa — with 183
+ * devin ids in the middle of it. A person picking a model has already decided
+ * which CLI is running; the other CLIs' models are not candidates, they are
+ * obstacles.
+ *
+ * So: providers are a strip you switch on, and the list below shows one
+ * provider. Returns the resolved provider too, because the requested one may
+ * no longer be connected and the caller must not render an empty list.
+ */
+export function scopeToProvider<T extends { service: string }>(
+  groups: ReadonlyArray<T>,
+  service: string | null,
+): { readonly current: T | null; readonly providers: ReadonlyArray<T> } {
+  if (groups.length === 0) return { current: null, providers: [] };
+  const current = groups.find((g) => g.service === service) ?? groups[0]!;
+  return { current, providers: groups };
 }

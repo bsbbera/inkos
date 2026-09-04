@@ -187,12 +187,6 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <button onClick={nav.toDashboard} className={c.link}>{t("bread.home")}</button>
-        <span className="text-border">/</span>
-        <span>{t("nav.import")}</span>
-      </div>
-
       <h1 className="q-title text-3xl flex items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><FileInput size={19} /></span>
         {t("import.title")}

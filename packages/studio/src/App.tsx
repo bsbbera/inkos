@@ -1,7 +1,6 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useEffect, useMemo, useState, lazy, Suspense } from "react";
 import { useHashRoute } from "./hooks/use-hash-route";
 import type { HashRoute } from "./hooks/use-hash-route";
-import { Sidebar } from "./components/Sidebar";
 import { Dashboard } from "./pages/Dashboard";
 import { ChatPage } from "./pages/ChatPage";
 import { BookDetail } from "./pages/BookDetail";
@@ -25,19 +24,23 @@ import { AuditPage } from "./pages/AuditPage";
 import { PublicationDetail } from "./pages/PublicationDetail";
 import { StoryPlayer } from "./pages/StoryPlayer";
 import { StoryGraphTree } from "./pages/StoryGraphTree";
+import { ProductionsPage } from "./pages/ProductionsPage";
+import { StartPage } from "./pages/StartPage";
+import { RunPage } from "./pages/RunPage";
+import { StyleGuide } from "./pages/StyleGuide";
 const FlowView = lazy(() => import("./pages/FlowView"));
 const FilmWizard = lazy(() => import("./pages/FilmWizard"));
 import { LanguageSelector } from "./pages/LanguageSelector";
 import { BookSidebar, BookSidebarToggle } from "./components/chat/BookSidebar";
 import { useSSE } from "./hooks/use-sse";
-import { ProgressPanel } from "./components/ProgressPanel";
 import { useSessionEvents } from "./hooks/use-session-events";
 import { useTheme } from "./hooks/use-theme";
 import { useI18n } from "./hooks/use-i18n";
 import { setAppLanguage, tr } from "./lib/app-language";
-import { postApi, putApi, useApi } from "./hooks/use-api";
-import { Sun, Moon } from "lucide-react";
-import { House, PanelLeft, PlugZap } from "lucide-react";
+import { postApi, useApi } from "./hooks/use-api";
+import { Shell, type ShellVariant } from "./components/shell/Shell";
+import { crumbsFor } from "./components/shell/crumbs";
+import { useShellData, deriveActiveRun } from "./hooks/use-shell-data";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -58,17 +61,48 @@ export function deriveStartupGate(input: {
   return input.projectError ? "error" : "loading";
 }
 
+/**
+ * How much of the main column the screen wants.
+ *
+ * Conversation and audit carry their own columns and their own scrolling; a
+ * padded, scrolling stage under them produces two scrollbars and a page that
+ * cannot reach its own footer.
+ */
+export function shellVariantFor(route: HashRoute): ShellVariant {
+  switch (route.page) {
+    // A conversation is three columns — what it is about, the
+    // conversation, what it made — and vermilion.css already draws that
+    // grid as `.main.chat`. Chat asked for "flush" instead, a plain flex
+    // row, so the grid never reached the element and every column sized
+    // itself to its contents.
+    case "chat":
+    case "book":
+    // Starting a book is the same component in a different mode, and it was
+    // the one route left in "flush" — a plain flex row, where the three-column
+    // grid never reaches the element and every column sizes itself to its
+    // contents. Same screen, different shape, for no reason anyone could see.
+    case "book-create":
+      return "chat";
+    case "film-author":
+    case "audit":
+    case "film-studio":
+    case "flow":
+      return "flush";
+    default:
+      return "stage";
+  }
+}
+
 export function App() {
   const { route, setRoute } = useHashRoute();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const sse = useSSE();
-  const { theme, setTheme } = useTheme();
+  const { theme } = useTheme();
   const { t, lang: currentLang } = useI18n();
   const { data: project, error: projectError, refetch: refetchProject } = useApi<{ language: string; languageExplicit: boolean }>("/project");
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
 
-  const isDark = theme === "dark";
+  const { books, publications, waiting, tails, modelLabel, paletteExtra } = useShellData();
 
   // 全局语言同步：app-language 是模块级单例，供用不了 hook 的代码（lib 纯函数、
   // store slice）读取。这里在渲染期同步赋值，让子组件在同一次渲染里调用 tr() 时
@@ -81,10 +115,6 @@ export function App() {
   }, [currentLang]);
 
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
-
-  useEffect(() => {
     if (project) {
       if (!project.languageExplicit) {
         setShowLanguageSelector(true);
@@ -95,9 +125,10 @@ export function App() {
 
   useSessionEvents(sse, route, setRoute);
 
-  const nav = {
+  const nav = useMemo(() => ({
     toDashboard: () => setRoute({ page: "dashboard" }),
     toChat: () => setRoute({ page: "chat" }),
+    toBooks: () => setRoute({ page: "books" }),
     toBook: (bookId: string) => setRoute({ page: "book", bookId }),
     toBookSettings: (bookId: string) => setRoute({ page: "book-settings", bookId }),
     toBookCreate: () => setRoute({ page: "book-create" }),
@@ -118,26 +149,30 @@ export function App() {
     toDoctor: () => setRoute({ page: "doctor" }),
     toMcp: () => setRoute({ page: "mcp" }),
     toSetup: () => setRoute({ page: "setup" }),
+    toAgents: () => setRoute({ page: "setup", tab: "agents" }),
     toAudit: () => setRoute({ page: "audit" }),
+    toNew: () => setRoute({ page: "new" }),
+    toRun: () => setRoute({ page: "run" }),
     toPublication: (issueId: string) => setRoute({ page: "publication", issueId }),
     toPlay: (projectId: string) => setRoute({ page: "play", projectId }),
     toFilm: (projectId: string) => setRoute({ page: "film", projectId }),
     toFlow: (projectId: string) => setRoute({ page: "flow", projectId }),
     toFilmAuthor: (projectId: string) => setRoute({ page: "film-author", projectId }),
     toFilmStudio: (projectId: string) => setRoute({ page: "film-studio", projectId }),
-  };
-
-  const activeBookId = deriveActiveBookId(route);
-  const activePage =
-    activeBookId
-      ? `book:${activeBookId}`
-      : route.page === "service-detail"
-        ? "services"
-        : route.page === "publication"
-          ? `publication:${route.issueId}`
-          : route.page;
+  }), [setRoute]);
 
   const startupGate = deriveStartupGate({ ready, projectError });
+
+  const activeRun = useMemo(() => deriveActiveRun(sse.messages), [sse.messages]);
+
+  const crumbs = useMemo(
+    () =>
+      crumbsFor(route, {
+        book: (id) => books.find((b) => b.id === id)?.title,
+        publication: (id) => publications.find((p) => p.id === id)?.title,
+      }),
+    [route, books, publications],
+  );
 
   if (startupGate === "error") {
     return (
@@ -186,260 +221,88 @@ export function App() {
   }
 
   return (
-    <div className="h-screen text-foreground flex overflow-hidden font-sans">
-      {/* Left Sidebar. Folds away: the audit screen carries its own tree and an
-          editor, and a fixed 260px of navigation on top of that left the work
-          itself the narrowest column on the screen. */}
-      {sidebarOpen ? <Sidebar nav={nav} activePage={activePage} sse={sse} t={t} /> : null}
+    <Shell
+      route={route}
+      setRoute={setRoute}
+      crumbs={crumbs}
+      variant={shellVariantFor(route)}
+      tails={tails}
+      run={activeRun ? { what: activeRun.what, where: activeRun.where } : null}
+      model={modelLabel}
+      waiting={waiting}
+      paletteExtra={paletteExtra}
+    >
+      {/*
+        * The server going away used to be invisible: a run in flight simply
+        * stopped producing events and the screen sat on "Thinking…" with no
+        * way to tell a dead backend from a slow model. The browser retries
+        * the stream by itself, so this says so and then clears itself.
+        */}
+      {sse.lost ? (
+        <div role="status" className="fail" style={{ marginBottom: 16 }}>
+          Lost the connection to Quire. Anything already running keeps going; this reconnects on its own.
+        </div>
+      ) : null}
 
-      {/* Center Content */}
-      <div className="flex-1 flex flex-col min-w-0 bg-background/30 backdrop-blur-sm">
-        {/* Header Strip */}
-        <header className="h-14 shrink-0 flex items-center justify-between px-8 border-b border-border/40">
-          <div className="flex items-center gap-2">
-             <button
-               onClick={() => setSidebarOpen((v) => !v)}
-               aria-label={sidebarOpen ? "Hide the sidebar" : "Show the sidebar"}
-               title={sidebarOpen ? "Hide the sidebar" : "Show the sidebar"}
-               className="inline-flex items-center rounded-lg border border-border/50 bg-card/70 p-2 text-foreground hover:bg-secondary/50 transition-colors"
-             >
-               <PanelLeft size={18} />
-             </button>
-             <button
-               onClick={nav.toDashboard}
-               className="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-card/70 px-3.5 py-2 text-[17px] font-semibold text-foreground hover:bg-secondary/50 transition-colors"
-             >
-               <House size={18} />
-               <span>{t("bread.home")}</span>
-             </button>
-          </div>
+      {route.page === "dashboard" && (
+        <Dashboard nav={nav} sse={sse} books={books} publications={publications} run={activeRun} />
+      )}
+      {route.page === "books" && <ProductionsPage kind="books" nav={nav} />}
+      {route.page === "magazines" && <ProductionsPage kind="magazines" nav={nav} />}
+      {route.page === "new" && <StartPage nav={nav} />}
+      {route.page === "run" && <RunPage sse={sse} run={activeRun} />}
+      {route.page === "styleguide" && <StyleGuide />}
 
-          <div className="flex items-center gap-3">
-            <div className="flex gap-0.5 bg-muted/50 rounded-lg p-0.5">
-              <button
-                onClick={async () => {
-                  await putApi("/project", { language: "zh" });
-                  refetchProject();
-                }}
-                className={`px-2.5 py-1 text-[16px] font-medium rounded-md ${currentLang === "zh" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >
-                中
-              </button>
-              <button
-                onClick={async () => {
-                  await putApi("/project", { language: "en" });
-                  refetchProject();
-                }}
-                className={`px-2.5 py-1 text-[16px] font-medium rounded-md ${currentLang === "en" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-              >
-                EN
-              </button>
-            </div>
-
-            <button
-              onClick={() => setTheme(isDark ? "light" : "dark")}
-              aria-label={isDark ? "Switch to the light theme" : "Switch to the dark theme"}
-              title={isDark ? "Switch to the light theme" : "Switch to the dark theme"}
-              className="inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
-            >
-              {isDark ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-          </div>
-        </header>
-
-        {/*
-          * The server going away used to be invisible: a run in flight simply
-          * stopped producing events and the screen sat on "Thinking…" with no
-          * way to tell a dead backend from a slow model. The browser retries
-          * the stream by itself, so this says so and then clears itself.
-          */}
-        {sse.lost ? (
-          <div
-            role="status"
-            className="shrink-0 flex items-center gap-2 px-8 py-2 bg-destructive/10 text-destructive text-sm border-b border-destructive/20"
-          >
-            <PlugZap size={15} className="shrink-0" />
-            <span>Lost the connection to Quire. Anything already running keeps going; this reconnects on its own.</span>
-          </div>
-        ) : null}
-
-        {/* Main Content Area */}
-        <main key={route.page} className="route-enter flex-1 relative overflow-y-auto scroll-smooth">
-          {route.page === "dashboard" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <Dashboard nav={nav} sse={sse} theme={theme} t={t} />
-            </div>
-          )}
-          {isBookCreateChatRoute(route) && (
-            <div className="absolute inset-0 flex min-w-0">
-              <ChatPage
-                mode="book-create"
-                nav={nav}
-                theme={theme}
-                t={t}
-                sse={sse}
-              />
-            </div>
-          )}
-          {route.page === "chat" && (
-            <div className="absolute inset-0 flex min-w-0">
-              <ChatPage
-                mode="project-chat"
-                nav={nav}
-                theme={theme}
-                t={t}
-                sse={sse}
-              />
-            </div>
-          )}
-          {route.page === "book" && (
-            <div className="absolute inset-0 flex min-w-0">
-              <ChatPage
-                activeBookId={route.bookId}
-                mode="book"
-                nav={nav}
-                theme={theme}
-                t={t}
-                sse={sse}
-              />
-              <BookSidebar bookId={route.bookId} theme={theme} t={t} sse={sse} />
-              <BookSidebarToggle bookId={route.bookId} theme={theme} t={t} sse={sse} />
-            </div>
-          )}
-          {route.page === "book-settings" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <BookDetail bookId={route.bookId} nav={nav} theme={theme} t={t} sse={sse} />
-            </div>
-          )}
-          {route.page === "chapter" && (
-            <div className="mx-auto w-full max-w-[1400px] px-4 py-12 sm:px-6 lg:px-10 lg:py-16 2xl:px-12 fade-in">
-              <ChapterReader bookId={route.bookId} chapterNumber={route.chapterNumber} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "analytics" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <Analytics bookId={route.bookId} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "services" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <ServiceListPage nav={nav} />
-            </div>
-          )}
-          {route.page === "project-settings" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <ProjectSettings nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "service-detail" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <ServiceDetailPage serviceId={route.serviceId} nav={nav} />
-            </div>
-          )}
-          {route.page === "truth" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <TruthFiles bookId={route.bookId} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "daemon" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <DaemonControl nav={nav} theme={theme} t={t} sse={sse} />
-            </div>
-          )}
-          {route.page === "logs" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <LogViewer nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "genres" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <GenreManager nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "style" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <StyleManager nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "translation" && (
-            <div className="max-w-6xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <TranslationManager nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "import" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <ImportManager nav={nav} theme={theme} t={t} initialTab={route.tab} />
-            </div>
-          )}
-          {route.page === "radar" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <RadarView nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "doctor" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <DoctorView nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "setup" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <SetupPage />
-            </div>
-          )}
-          {route.page === "mcp" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <McpPage nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "audit" && (
-            <div className="fade-in flex-1 flex h-full min-h-0">
-              <AuditPage theme={theme} sse={sse} />
-            </div>
-          )}
-          {route.page === "publication" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <PublicationDetail issueId={route.issueId} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "play" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <StoryPlayer projectId={route.projectId} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "film" && (
-            <div className="max-w-4xl mx-auto px-6 py-12 md:px-12 lg:py-16 fade-in">
-              <StoryGraphTree projectId={route.projectId} nav={nav} theme={theme} t={t} />
-            </div>
-          )}
-          {route.page === "film-author" && (
-            <div className="absolute inset-0 flex min-w-0">
-              <ChatPage
-                activeBookId={route.projectId}
-                mode="interactive-film-authoring"
-                nav={nav}
-                theme={theme}
-                t={t}
-                sse={sse}
-              />
-            </div>
-          )}
-          {route.page === "film-studio" && (
-            <Suspense fallback={<div className="p-6 text-sm">{tr("加载创作向导…", "Loading creation wizard…")}</div>}>
-              <FilmWizard projectId={route.projectId} nav={nav} theme={theme} t={t} sse={sse} />
-            </Suspense>
-          )}
-          {route.page === "flow" && (
-            <Suspense fallback={<div className="p-6 text-sm">{tr("加载流程图…", "Loading flow view…")}</div>}>
-              <FlowView projectId={route.projectId} nav={nav} theme={theme} t={t} />
-            </Suspense>
-          )}
-        </main>
-      </div>
-
-      {/* Floating run status. Was injected by cli-shim/studio-patch/patch.js
-          against the rendered DOM; it is a component now and shares App's one
-          SSE stream instead of opening a second EventSource. */}
-      <ProgressPanel sse={sse} />
-    </div>
+      {isBookCreateChatRoute(route) && (
+        <ChatPage mode="book-create" nav={nav} theme={theme} t={t} sse={sse} />
+      )}
+      {route.page === "chat" && (
+        <ChatPage mode="project-chat" nav={nav} theme={theme} t={t} sse={sse} />
+      )}
+      {route.page === "book" && (
+        <>
+          <ChatPage activeBookId={route.bookId} mode="book" nav={nav} theme={theme} t={t} sse={sse} />
+          <BookSidebar bookId={route.bookId} theme={theme} t={t} sse={sse} />
+          <BookSidebarToggle bookId={route.bookId} theme={theme} t={t} sse={sse} />
+        </>
+      )}
+      {route.page === "book-settings" && (
+        <BookDetail bookId={route.bookId} nav={nav} theme={theme} t={t} sse={sse} />
+      )}
+      {route.page === "chapter" && (
+        <ChapterReader bookId={route.bookId} chapterNumber={route.chapterNumber} nav={nav} t={t} />
+      )}
+      {route.page === "analytics" && <Analytics bookId={route.bookId} t={t} />}
+      {route.page === "services" && <ServiceListPage nav={nav} />}
+      {route.page === "project-settings" && <ProjectSettings nav={nav} theme={theme} t={t} />}
+      {route.page === "service-detail" && <ServiceDetailPage serviceId={route.serviceId} nav={nav} />}
+      {route.page === "truth" && <TruthFiles bookId={route.bookId} t={t} />}
+      {route.page === "daemon" && <DaemonControl t={t} sse={sse} />}
+      {route.page === "logs" && <LogViewer t={t} />}
+      {route.page === "genres" && <GenreManager nav={nav} theme={theme} t={t} />}
+      {route.page === "style" && <StyleManager nav={nav} theme={theme} t={t} />}
+      {route.page === "translation" && <TranslationManager nav={nav} theme={theme} t={t} />}
+      {route.page === "import" && <ImportManager nav={nav} theme={theme} t={t} initialTab={route.tab} />}
+      {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} />}
+      {route.page === "doctor" && <DoctorView t={t} />}
+      {route.page === "setup" && <SetupPage nav={nav} {...(route.tab ? { tab: route.tab } : {})} />}
+      {route.page === "mcp" && <McpPage nav={nav} theme={theme} t={t} />}
+      {route.page === "audit" && <AuditPage sse={sse} />}
+      {route.page === "publication" && (
+        <PublicationDetail issueId={route.issueId} nav={nav} />
+      )}
+      {route.page === "play" && <StoryPlayer projectId={route.projectId} nav={nav} theme={theme} t={t} />}
+      {route.page === "film" && <StoryGraphTree projectId={route.projectId} nav={nav} theme={theme} t={t} />}
+      {route.page === "film-studio" && (
+        <Suspense fallback={<div className="p-6 text-sm">{tr("加载创作向导…", "Loading creation wizard…")}</div>}>
+          <FilmWizard projectId={route.projectId} nav={nav} theme={theme} t={t} sse={sse} />
+        </Suspense>
+      )}
+      {route.page === "flow" && (
+        <Suspense fallback={<div className="p-6 text-sm">{tr("加载流程图…", "Loading flow view…")}</div>}>
+          <FlowView projectId={route.projectId} nav={nav} theme={theme} t={t} />
+        </Suspense>
+      )}
+    </Shell>
   );
 }

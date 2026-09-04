@@ -9,6 +9,9 @@ export interface SSEMessage {
 }
 
 export const STUDIO_SSE_EVENTS = [
+  // The orchestrator's own events. A name missing from this list is dropped
+  // silently by the client, so adding one here is part of emitting it.
+  "pipeline:stage",
   "book:creating",
   "book:created",
   "book:deleted",
@@ -37,6 +40,10 @@ export const STUDIO_SSE_EVENTS = [
   "audit:text",
   "audit:state",
   "audit:section",
+  // A finding was settled, or a run put new ones on record. The queue beside
+  // the passage is a live list and this is what keeps two windows on the same
+  // book from disagreeing about what is still open.
+  "findings:changed",
   // Same story for the publication routes: art, render and build all broadcast
   // their start/done/error and no client heard any of it, so every one of those
   // buttons looked like it had done nothing at all.

@@ -70,3 +70,52 @@ function bytesToBase64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
+
+/**
+ * The `/` in the composer, as a place rather than a keystroke.
+ *
+ * Attaching a skill meant leaving the sentence, opening a panel, finding the
+ * name in a list and coming back — for something a person already knows the
+ * name of while they are typing. Every other tool in this class lets you say
+ * it inline, and this composer had no handling for `/` at all.
+ *
+ * Returns the token being typed, or null when the caret is not inside one.
+ * Deliberately anchored to the start of a line: a path written mid-sentence
+ * (`shorts/the-second-law/final/full.md` — the thing this app prints most)
+ * must never open a skill menu.
+ */
+export interface SlashToken {
+  /** What has been typed after the slash, lowercased. May be empty. */
+  readonly query: string;
+  /** Where the `/` sits, so a pick can replace the token exactly. */
+  readonly start: number;
+  readonly end: number;
+}
+
+export function slashToken(value: string, caret: number): SlashToken | null {
+  if (caret < 0 || caret > value.length) return null;
+  const lineStart = value.lastIndexOf("\n", caret - 1) + 1;
+  const before = value.slice(lineStart, caret);
+  // One slash, at the head of the line, and no whitespace since — so the
+  // token ends at the caret and a second word closes the menu.
+  const m = /^\/([A-Za-z0-9-]*)$/.exec(before);
+  if (!m) return null;
+  return { query: m[1]!.toLowerCase(), start: lineStart, end: caret };
+}
+
+/** Skills whose id or name contains the query, best (prefix) matches first. */
+export function matchSkills<T extends { readonly id: string; readonly name: string }>(
+  skills: ReadonlyArray<T>,
+  query: string,
+): ReadonlyArray<T> {
+  if (!query) return skills;
+  const hit = (s: T) => `${s.id} ${s.name}`.toLowerCase();
+  const starts = skills.filter((s) => s.id.toLowerCase().startsWith(query));
+  const rest = skills.filter((s) => !starts.includes(s) && hit(s).includes(query));
+  return [...starts, ...rest];
+}
+
+/** The composer text with the `/token` replaced — the skill is a chip, not prose. */
+export function applySlashPick(value: string, token: SlashToken): string {
+  return value.slice(0, token.start) + value.slice(token.end);
+}

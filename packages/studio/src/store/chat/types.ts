@@ -1,4 +1,6 @@
 import type { ActionPayload, ActionSource, PlayMode, RequestedIntent, SessionKind } from "@actalk/quire-core";
+import type { UsageLedger } from "@actalk/quire-core/llm/session-usage";
+export type { UsageLedger, UsageRow } from "@actalk/quire-core/llm/session-usage";
 
 // -- Data types --
 
@@ -44,6 +46,19 @@ export type MessagePart =
   | { type: "text"; content: string }
   | { type: "tool"; execution: ToolExecution };
 
+/**
+ * What a turn carried besides its words.
+ *
+ * These were flattened into the message text as an "Attachments:" list, which
+ * is a paragraph the person did not write appearing inside their own sentence.
+ * The mock draws them as chips under the turn, which is what they are: a
+ * reference, not prose.
+ */
+export interface MessageChip {
+  readonly label: string;
+  readonly kind: "file" | "skill";
+}
+
 export interface Message {
   readonly role: "user" | "assistant";
   readonly content: string;
@@ -52,6 +67,7 @@ export interface Message {
   readonly timestamp: number;
   readonly toolCall?: ToolCall;
   readonly toolExecutions?: ToolExecution[];
+  readonly chips?: ReadonlyArray<MessageChip>;
   readonly parts?: MessagePart[];              // chronological parts for interleaved rendering
 }
 
@@ -178,6 +194,14 @@ export interface SessionRuntime {
   readonly lastFailedSend?: FailedSendRecord;
   // 仅前端存在、尚未持久化到磁盘的草稿会话。发送第一条消息时才调 POST /sessions 把它落盘。
   readonly isDraft: boolean;
+  /**
+   * What each agent spent this session, keyed by agent, service and model.
+   *
+   * A run may cross four models now, so one total would hide the decision the
+   * routing page exists to make. Rows arrive on `session:usage`, one per
+   * completion, and are folded by the pure ledger in core.
+   */
+  readonly usage?: UsageLedger;
 }
 
 export interface MessageState {
@@ -209,7 +233,7 @@ export type ChatState = MessageState & CreateState;
 export interface MessageActions {
   activateSession: (sessionId: string | null) => void;
   setInput: (text: string) => void;
-  addUserMessage: (sessionId: string, content: string) => void;
+  addUserMessage: (sessionId: string, content: string, chips?: ReadonlyArray<MessageChip>) => void;
   appendStreamChunk: (sessionId: string, text: string, streamTs: number) => void;
   finalizeStream: (sessionId: string, streamTs: number, content: string, toolCall?: ToolCall) => void;
   replaceStreamWithError: (sessionId: string, streamTs: number, errorMsg: string) => void;

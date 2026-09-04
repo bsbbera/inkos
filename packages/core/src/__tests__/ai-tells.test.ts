@@ -88,3 +88,64 @@ describe("analyzeAITells", () => {
     expect(warningIssues).toHaveLength(0);
   });
 });
+
+describe("findings that can be pointed at", () => {
+  it("quotes the run of same-opening sentences, not just their number", () => {
+    const content = [
+      "She walked to the window and looked out.",
+      "She counted the boats in the harbour.",
+      "She turned back to the empty room.",
+    ].join(" ");
+
+    const issue = analyzeAITells(content, "en").issues
+      .find((i) => i.category === "List-like structure");
+
+    expect(issue).toBeDefined();
+    // The quote has to be findable in the page, or nothing can mark it.
+    expect(content).toContain(issue!.quote);
+    expect(issue!.quote).toContain("She walked");
+    expect(issue!.quote).toContain("empty room");
+  });
+
+  it("points at a hedged sentence rather than reporting a rate", () => {
+    const content = "It seems the door was open. Perhaps nobody had locked it. "
+      + "Maybe the wind. It seemed quiet.";
+
+    const issue = analyzeAITells(content, "en").issues
+      .find((i) => i.category === "Hedge density");
+
+    expect(issue).toBeDefined();
+    expect(content).toContain(issue!.quote);
+    expect(issue!.quote!.toLowerCase()).toContain("seem");
+  });
+
+  it("quotes the most repeated transition, not the first one in the word list", () => {
+    // "still" appears three times, "however" appears four - the finding must
+    // point at the one it is actually complaining about most.
+    const content = [
+      "However, the road was shut. Still, they walked.",
+      "However, the rain came. Still, nobody spoke.",
+      "However, the light held. Still, it was late.",
+      "However, they arrived.",
+    ].join(" ");
+
+    const issue = analyzeAITells(content, "en").issues
+      .find((i) => i.category === "Formulaic transitions");
+
+    expect(issue).toBeDefined();
+    expect(content).toContain(issue!.quote);
+    expect(issue!.quote!.toLowerCase()).toContain("however");
+  });
+
+  it("leaves the whole-page finding unquoted rather than blaming one paragraph", () => {
+    // Uniform paragraphs are a property of the set. Quoting one would mark an
+    // innocent paragraph as the problem.
+    const para = (n: string) => `${n} words here that fill a line of about forty chars.`;
+    const content = [para("Aaa"), para("Bbb"), para("Ccc"), para("Ddd")].join("\n\n");
+
+    const issue = analyzeAITells(content, "en").issues
+      .find((i) => i.category === "Paragraph uniformity");
+
+    if (issue) expect(issue.quote).toBeUndefined();
+  });
+});

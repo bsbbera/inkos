@@ -45,7 +45,7 @@ describe("researchPublication", () => {
   // The failure this exists for: with no way to search, the old stage happily
   // produced a research report out of the model's memory and every page below
   // it inherited unverifiable claims.
-  it("refuses to research from memory when no provider is configured", async () => {
+  it("refuses to research from memory when nothing at all can search", async () => {
     const dir = root();
     const savedT = process.env.TAVILY_API_KEY;
     const savedB = process.env.BRAVE_API_KEY;
@@ -59,7 +59,11 @@ describe("researchPublication", () => {
         subject: "film photography",
         pillars: ["what"],
         ask,
-      })).rejects.toThrow(/no web search is configured/);
+        // No key, no MCP, and a model that does not browse either. The model's
+        // own search is rung one of the ladder; this is the case where every
+        // rung is missing, which is the only one that should still refuse.
+        modelSearches: false,
+      })).rejects.toThrow(/does not browse/);
       expect(ask).not.toHaveBeenCalled();
     } finally {
       if (savedT) process.env.TAVILY_API_KEY = savedT;

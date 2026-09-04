@@ -12,6 +12,7 @@ export default defineConfig({
       "@actalk/quire-core/interactive-film/evaluator": resolve(__dirname, "../core/src/interactive-film/evaluator.ts"),
       "@actalk/quire-core/interactive-film/graph-schema": resolve(__dirname, "../core/src/interactive-film/graph-schema.ts"),
       "@actalk/quire-core/forecast/schema": resolve(__dirname, "../core/src/forecast/schema.ts"),
+      "@actalk/quire-core/llm/session-usage": resolve(__dirname, "../core/src/llm/session-usage.ts"),
       "@actalk/quire-core": resolve(__dirname, "../core/src/index.ts"),
     },
   },

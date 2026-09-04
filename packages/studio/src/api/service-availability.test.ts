@@ -32,3 +32,18 @@ describe("isServiceAvailable", () => {
     })).toBe(false);
   });
 });
+
+describe("a local server", () => {
+  it("is offered without being written into inkos.json first", () => {
+    // Ollama on loopback: nothing to configure, nothing to hold a key for.
+    expect(isServiceAvailable({
+      group: "local", apiKeyOptional: true, hasApiKey: false, isConfigured: false,
+    })).toBe(true);
+  });
+
+  it("still needs a key when its server was set up to want one", () => {
+    expect(isServiceAvailable({
+      group: "local", apiKeyOptional: false, hasApiKey: false, isConfigured: true,
+    })).toBe(false);
+  });
+});

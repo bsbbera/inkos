@@ -552,12 +552,65 @@ function joinThinking(parts: ReadonlyArray<string | undefined>): string | undefi
   return values.length > 0 ? values.join("\n\n---\n\n") : undefined;
 }
 
+/**
+ * 会话标题的显示宽度上限，以西文字符为单位（CJK 记 2）。
+ *
+ * The cap used to be 20 code points, written for Chinese, where 20 characters
+ * is a whole sentence. In English it is three words: every conversation in the
+ * rail read "Write one complete s…", and no amount of widening the column
+ * could show more, because the cut had already happened in the data.
+ *
+ * A title is stored once and rendered in columns of different widths, so the
+ * data keeps the line and the layout decides how much of it fits — `.trunc`
+ * already does that. This cap exists only so a pasted essay does not become a
+ * session title; at 120 it is far past what any column shows, and Chinese is
+ * unchanged in the only sense that matters, since two code points spend the
+ * same width as before.
+ */
+const TITLE_WIDTH = 120;
+
+/** Wide characters — CJK, kana, full-width forms — occupy two columns. */
+const WIDE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+
+function displayWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) width += WIDE.test(ch) ? 2 : 1;
+  return width;
+}
+
+/** Cut to `TITLE_WIDTH` columns, on a word boundary where the script has one. */
+function clampToWidth(text: string): string {
+  if (displayWidth(text) <= TITLE_WIDTH) return text;
+  let out = "";
+  for (const ch of text) {
+    if (displayWidth(out + ch) > TITLE_WIDTH) break;
+    out += ch;
+  }
+  const lastSpace = out.lastIndexOf(" ");
+  // Only back up to a word boundary when one is near the end; a script without
+  // spaces would otherwise lose most of the line to a stray early space.
+  if (lastSpace > TITLE_WIDTH * 0.6) out = out.slice(0, lastSpace);
+  return `${out.trimEnd()}…`;
+}
+
+/**
+ * One line of user text, clamped to `TITLE_WIDTH` columns.
+ *
+ * Lives here rather than in book-session-store because the store already
+ * imports from this file, and the reverse would be a cycle.
+ */
+export function firstLineTitle(content: string): string | null {
+  const oneLine = content.trim().replace(/\s+/g, " ");
+  if (oneLine.length === 0) return null;
+  return clampToWidth(oneLine);
+}
+
+/* Both this file and book-session-store carried the same 20-code-point cut,
+   and only this one ever ran — so fixing the other changed nothing visible. */
 function firstUserMessageTitle(messages: InteractionMessage[]): string | null {
   for (const message of messages) {
     if (message.role !== "user") continue;
-    const oneLine = message.content.trim().replace(/\s+/g, " ");
-    if (!oneLine) return null;
-    return oneLine.length > 20 ? `${oneLine.slice(0, 20)}…` : oneLine;
+    return firstLineTitle(message.content);
   }
   return null;
 }

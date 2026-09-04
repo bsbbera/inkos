@@ -25,6 +25,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./llm/session-usage": {
+      "types": "./dist/llm/session-usage.d.ts",
+      "import": "./dist/llm/session-usage.js"
+    },
     "./interactive-film/evaluator": {
       "types": "./dist/interactive-film/evaluator.d.ts",
       "import": "./dist/interactive-film/evaluator.js"
