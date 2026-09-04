@@ -614,6 +614,10 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
         <Grip onPointerDown={onGrip(0)} onReset={resetCols} />
 
         <StateColumn
+          pipeRun={pipeRun}
+          openGate={openGate}
+          lastApproved={lastApproved}
+          onGate={(verb, gate) => void decideGate(verb, gate)}
           detail={detail ?? null}
           busy={busy}
           running={running}
@@ -921,11 +925,19 @@ function ScopeColumn({
  */
 function StateColumn({
   detail, busy, running, onApprove, onResume, onRevise,
+  pipeRun, openGate, lastApproved, onGate,
   items, allFindings, here,
   pageName, queue, counts, filter, onFilter, at, onPick,
 }: {
   readonly detail: Detail | null;
   readonly busy: string | null;
+  /** Where the run itself stands, which the files on disk cannot say. */
+  readonly pipeRun: PipelineRun | null;
+  /** The gate waiting on a person right now, if one is. */
+  readonly openGate: string | null;
+  /** The most recent sign-off, which is the one an undo should take back. */
+  readonly lastApproved: string | null;
+  readonly onGate: (verb: "approve" | "withdraw", gate: string | null) => void;
   readonly running: boolean;
   readonly onApprove: (approve: boolean, force?: boolean) => void;
   readonly onResume: (from: string, stopAt: string) => void;
@@ -1086,7 +1098,7 @@ function StateColumn({
                     type="button"
                     className="btn btn-sm"
                     disabled={busy !== null}
-                    onClick={() => void decideGate("approve", openGate)}
+                    onClick={() => onGate("approve", openGate)}
                   >
                     <Icon name="check" size={13} />
                     {busy === "gate" ? "Signing off…" : `Sign off the ${openGate}`}
@@ -1101,7 +1113,7 @@ function StateColumn({
                     type="button"
                     className="btn btn-line btn-sm"
                     disabled={busy !== null}
-                    onClick={() => void decideGate("withdraw", lastApproved)}
+                    onClick={() => onGate("withdraw", lastApproved)}
                   >
                     <Icon name="x" size={13} />
                     {busy === "gate-undo" ? "Reopening…" : `Withdraw the ${lastApproved} sign-off`}
