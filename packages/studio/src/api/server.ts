@@ -137,6 +137,7 @@ import {
   loadPublicationRegistry,
   listIssues,
   advancePipeline,
+  runStage as runPipelineStage,
   approvePipelineGate,
   ensurePipeline,
   loadPipeline,
@@ -6209,11 +6210,44 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         projectRoot: root, ref,
         emit: (event) => broadcast("pipeline:stage", event),
       });
+      startStage(ref);
       return c.json({ ref, ...result });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
   });
+
+  /**
+   * Do whatever the run has just moved into, without being asked twice.
+   *
+   * This is the hand-off the pipeline was built for: approving the last unit
+   * at a gate should *start* the next stage, not merely permit it. It runs
+   * detached because a stage takes minutes and the person who approved should
+   * not be watching a spinner on a POST; progress arrives over the event
+   * stream instead.
+   *
+   * Stages nothing here owns are left alone — `runStage` returns `ran: false`
+   * and the run waits for its runner, exactly as before.
+   */
+  function startStage(ref: ProductionRef): void {
+    void runPipelineStage({
+      projectRoot: root,
+      ref,
+      shimUrl: shimUrl(),
+      onProgress: (message) => broadcast("pipeline:stage", { kind: "progress", ref, message }),
+      emit: (event) => broadcast("pipeline:stage", event),
+    }).then((out) => {
+      // A stage that finished may have opened the next one, which may also be
+      // ours to run. Chained rather than looped so a stage that produces
+      // nothing cannot spin.
+      if (out.advanced) startStage(ref);
+    }).catch((error: unknown) => {
+      broadcast("pipeline:stage", {
+        kind: "stage:blocked", ref,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
 
   app.post("/api/v1/productions/:type/:id/gates/:gate/approve", async (c) => {
     const ref = productionRefFrom(c);
@@ -6230,6 +6264,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         ...(body.by ? { by: body.by } : {}),
         emit: (event) => broadcast("pipeline:stage", event),
       });
+      // The whole point of approving: the next stage begins on its own.
+      startStage(ref);
       return c.json({ ref, ...result });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);

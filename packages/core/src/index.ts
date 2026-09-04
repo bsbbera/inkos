@@ -785,11 +785,16 @@ export {
   pipelinePath,
   reject as rejectPipelineGate,
   reportUnitDone,
+  runStage,
   reportUnitFailed,
   specFor as productionSpecFor,
   waitingOn as pipelineWaitingOn,
   withdraw as withdrawPipelineGate,
 } from "./pipeline/orchestrator.js";
+export {
+  EXECUTORS, executorFor, splitNegative, subjectOf,
+  type ArtBrief, type StageContext, type StageExecutor, type StageResult,
+} from "./pipeline/executors.js";
 export type {
   ProductionRef, OrchestratorEvent, AdvanceResult, WaitingProduction,
 } from "./pipeline/orchestrator.js";

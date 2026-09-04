@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { commitAtomicFileSet } from "../utils/atomic-file-set.js";
 import { PRODUCTIONS, type ProductionPipeline, type ProductionSpec, type PipelineGate } from "../productions/registry.js";
+import { executorFor, type StageResult } from "./executors.js";
 import {
   advance as advanceState,
   approve as approveState,
@@ -281,6 +282,80 @@ export async function reportUnitFailed(input: {
   const next = failUnit(current, input.failure);
   await savePipeline(input.projectRoot, input.ref, next);
   return next;
+}
+
+/**
+ * Do the current stage, if this app knows how, and move on when it is done.
+ *
+ * The missing half of the hand-off. `advance` says a stage has started and
+ * stops there; something has to actually run it, and until now that something
+ * was a person clicking a different screen. A stage with no executor is left
+ * alone — its runner still owns it — so this can be called after every
+ * transition without knowing which stages are wired yet.
+ *
+ * Failures are recorded against the unit rather than thrown: a stage that
+ * cannot run is a state the screen has to show, and a rejected promise on a
+ * background call is a state nothing shows.
+ */
+export async function runStage(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  /** Passed to stages that render; ignored by the rest. */
+  readonly shimUrl?: string;
+  readonly onProgress?: (message: string) => void;
+  readonly emit?: EventSink;
+}): Promise<{
+  readonly ran: boolean;
+  readonly stage: string;
+  readonly artifacts: ReadonlyArray<string>;
+  /** True only when the run left the stage. A caller chains on this and not on
+      `ran`: a stage that ran and failed is still standing where it was, and
+      chaining on `ran` would run it again, and again. */
+  readonly advanced: boolean;
+}> {
+  const state = await loadPipeline(input.projectRoot, input.ref);
+  if (!state) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  const executor = executorFor(state.stage);
+  if (!executor || gateOf(state.stage) || state.stage === "done") {
+    return { ran: false, stage: state.stage, artifacts: [], advanced: false };
+  }
+
+  const stage = state.stage;
+  const artifacts: string[] = [];
+  for (let unit = 1; unit <= state.units.total; unit += 1) {
+    if (state.units.done.includes(unit)) continue;
+    const result = await executor({
+      projectRoot: input.projectRoot,
+      type: input.ref.type,
+      id: input.ref.id,
+      unit,
+      ...(input.shimUrl ? { shimUrl: input.shimUrl } : {}),
+      ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+    }).catch((error: unknown): StageResult => ({
+      ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error),
+    }));
+
+    if (!result.ok) {
+      await reportUnitFailed({
+        projectRoot: input.projectRoot,
+        ref: input.ref,
+        failure: { unit, error: result.error ?? "stage failed", resumable: true },
+      });
+      if (input.emit) {
+        input.emit({ kind: "stage:blocked", ref: input.ref, stage, reason: result.error ?? "stage failed" });
+      }
+      return { ran: true, stage, artifacts, advanced: false };
+    }
+    artifacts.push(...result.artifacts);
+    // Reporting per unit rather than at the end: a stage interrupted halfway
+    // through eight pages should resume at the ninth, not redo the eight.
+    await reportUnitDone({
+      projectRoot: input.projectRoot, ref: input.ref, unit,
+      ...(input.emit ? { emit: input.emit } : {}),
+    });
+  }
+  const after = await loadPipeline(input.projectRoot, input.ref);
+  return { ran: true, stage, artifacts, advanced: after?.stage !== stage };
 }
 
 export interface WaitingProduction {
