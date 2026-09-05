@@ -78,7 +78,9 @@ describe("stageSequence", () => {
     expect(stageSequence(spec("book"))).toEqual([
       "content.plan", "content.write", "content.audit", "content.destyle", "gate:content",
       "design.artplan", "design.generate", "design.review", "gate:design",
-      "build.layout", "build.export", "gate:build",
+      // No build.layout: a book reflows, so there is no per-chapter placement
+      // to perform and declaring one would park every book on a dead stage.
+      "build.export", "gate:build",
       "done",
     ]);
   });

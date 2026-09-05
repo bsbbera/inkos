@@ -795,7 +795,7 @@ export {
   withdraw as withdrawPipelineGate,
 } from "./pipeline/orchestrator.js";
 export {
-  EXECUTORS, executorFor, splitNegative, subjectOf,
+  EXECUTORS, executorFor, exportWork, layout, splitNegative, subjectOf,
   type ArtBrief, type StageContext, type StageExecutor, type StageResult,
 } from "./pipeline/executors.js";
 export type {

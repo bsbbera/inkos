@@ -9,7 +9,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { artplan, splitNegative, subjectOf, type ArtBrief } from "../pipeline/executors.js";
+import {
+  artplan, exportWork, layout, splitNegative, subjectOf, type ArtBrief,
+} from "../pipeline/executors.js";
 
 async function workspaceWithCover(text: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
@@ -57,5 +59,48 @@ describe("artplan", () => {
     const out = await artplan({ projectRoot: root, type: "short", id: "nothing-here", unit: 1 });
     expect(out.ok).toBe(false);
     expect(out.error).toContain("cover-prompt.md");
+  });
+});
+
+/**
+ * The build stage's job is to refuse honestly.
+ *
+ * Only two shapes have a renderer behind them. The rest must fail with the
+ * reason rather than pass, because a run that walks to the build gate with no
+ * file behind it hands a person a decision about nothing.
+ */
+describe("build executors", () => {
+  it("will not pretend to lay out reflow-shaped work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
+    const out = await layout({ projectRoot: root, type: "book", id: "a-book", unit: 1 });
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("reflow-shaped");
+  });
+
+  it("names the type it cannot build yet", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
+    const out = await exportWork({ projectRoot: root, type: "script", id: "ep-7", unit: 1 });
+    expect(out.ok).toBe(false);
+    expect(out.error).toContain("screenplay");
+  });
+
+  it("reports the real reason a book has nothing to export", async () => {
+    // No chapters on disk: the failure has to say so rather than write an
+    // empty epub that looks like a finished book.
+    const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
+    const out = await exportWork({ projectRoot: root, type: "book", id: "a-book", unit: 1 });
+    expect(out.ok).toBe(false);
+    expect(out.artifacts).toEqual([]);
+  });
+
+  it("does the export once, not once per unit", async () => {
+    // A finished file present means the work is done; the remaining units of
+    // a whole-work stage must not rebuild it.
+    const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
+    await mkdir(join(root, "books", "a-book", "build"), { recursive: true });
+    await writeFile(join(root, "books", "a-book", "build", "a-book.epub"), "not really an epub");
+    const out = await exportWork({ projectRoot: root, type: "book", id: "a-book", unit: 2 });
+    expect(out.ok).toBe(true);
+    expect(out.artifacts).toEqual([]);
   });
 });

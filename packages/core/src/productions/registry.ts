@@ -111,10 +111,15 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     pipeline: {
       content: ["plan", "write", "audit", "destyle"],
       design: ["artplan", "generate", "review"],
-      build: ["layout", "export"],
+      // No layout stage: reflow-shaped work has no per-unit placement. Text
+      // pours across master pages and a chapter has no fixed spread, so there
+      // is nothing to do per chapter and declaring one would park every book
+      // on a stage nothing performs. The print-pdf output waits on the reflow
+      // script; the epub does not, and is what this builds today.
+      build: ["export"],
       gates: ["content", "design", "build"],
       buildShape: "reflow-shaped",
-      outputs: ["epub", "print-pdf"],
+      outputs: ["epub"],
       unit: "chapter",
     },
   },
@@ -129,7 +134,10 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     pipeline: {
       content: ["write", "audit", "destyle"],
       design: ["artplan", "generate", "review"],
-      build: ["layout", "export"],
+      // Same as the book: nothing to place per unit. A short's print-pdf still
+      // has no exporter behind it, so its build stage reports that rather than
+      // finishing on a file nobody made.
+      build: ["export"],
       gates: ["content", "design", "build"],
       buildShape: "reflow-shaped",
       outputs: ["print-pdf"],

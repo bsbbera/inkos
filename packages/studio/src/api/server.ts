@@ -139,6 +139,11 @@ import {
   advancePipeline,
   runStage as runPipelineStage,
   approvePipelineGate,
+  approvePublication,
+  approvePublicationDesign,
+  unapprovePublication,
+  unapprovePublicationDesign,
+  openPublicationIssue,
   ensurePipeline,
   loadPipeline,
   pipelineFor,
@@ -6264,6 +6269,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         ...(body.by ? { by: body.by } : {}),
         emit: (event) => broadcast("pipeline:stage", event),
       });
+      await mirrorGateToIssue(ref, gate, result.state.gates[gate]?.state === "approved");
       // The whole point of approving: the next stage begins on its own.
       startStage(ref);
       return c.json({ ref, ...result });
@@ -6271,6 +6277,46 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
   });
+
+  /**
+   * Tell a magazine issue what the pipeline just decided about it.
+   *
+   * A magazine carries its own `approved` and `designApproved` in
+   * publication.json, written long before pipeline.json existed, and the
+   * Affinity build refuses to run without them. Two truths about the same
+   * decision is the bug; until the issue file is derived from the run, the
+   * pipeline is the one that wins and this copies its answer down.
+   *
+   * Only the magazine has a second record, so nothing else does anything here.
+   * Failures are swallowed: the gate has already been approved, and a run that
+   * threw at this point would leave the decision recorded in one place only —
+   * which is exactly the state being fixed.
+   */
+  async function mirrorGateToIssue(
+    ref: ProductionRef,
+    gate: string,
+    approved: boolean,
+  ): Promise<void> {
+    if (ref.type !== "publication") return;
+    if (gate !== "content" && gate !== "design") return;
+    try {
+      const { ctx } = await openPublicationIssue(root, ref.id, { shimUrl: shimUrl() });
+      if (gate === "content") {
+        await (approved
+          ? approvePublication(ctx, ref.id)
+          : unapprovePublication(ctx, ref.id));
+      } else {
+        await (approved
+          ? approvePublicationDesign(ctx, ref.id)
+          : unapprovePublicationDesign(ctx, ref.id));
+      }
+    } catch (error) {
+      broadcast("pipeline:stage", {
+        kind: "progress", ref,
+        message: `issue file not updated: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
+  }
 
   app.post("/api/v1/productions/:type/:id/gates/:gate/reject", async (c) => {
     const ref = productionRefFrom(c);
@@ -6311,6 +6357,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         projectRoot: root, ref, gate,
         ...(Array.isArray(body.units) ? { units: body.units } : {}),
       });
+      // Withdrawal has to travel to the issue file too, or the build stays
+      // unblocked by a sign-off the run no longer has.
+      await mirrorGateToIssue(ref, gate, false);
       return c.json({ ref, state });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);

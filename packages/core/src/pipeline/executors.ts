@@ -18,7 +18,7 @@
  * report the unit done.
  */
 
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { safeChildPath } from "../utils/path-safety.js";
 import { PRODUCTIONS } from "../productions/registry.js";
@@ -60,6 +60,10 @@ export interface ArtBrief {
   readonly height: number;
   readonly workflow: string;
   readonly source: string;
+}
+
+async function exists(file: string): Promise<boolean> {
+  return await access(file).then(() => true, () => false);
 }
 
 function outDirOf(type: string): string {
@@ -252,11 +256,129 @@ export const review: StageExecutor = async (ctx) => {
   return { ok: true, artifacts: files.map((n) => join(madeDir, n).replace(/\\/g, "/")) };
 };
 
+function shapeOf(type: string): string {
+  const spec = PRODUCTIONS.find((p) => p.id === type);
+  if (!spec?.pipeline) throw new Error(`${type} does not run a pipeline`);
+  return spec.pipeline.buildShape;
+}
+
+/**
+ * Put one unit into the document.
+ *
+ * Only page-shaped work has a layout step worth running per unit: a magazine
+ * page is placed on a spread that already exists, so `placePage` does exactly
+ * one page and leaves the other thirty-nine alone.
+ *
+ * Reflow-shaped work — a book, a short, a translation — has no per-unit layout
+ * at all: text pours across master pages and a chapter has no fixed place. That
+ * needs the reflow script that does not exist yet, and saying so is the honest
+ * answer. Passing silently would walk the run to a build gate with nothing
+ * behind it, which is the failure this whole stage exists to prevent.
+ */
+export const layout: StageExecutor = async (ctx) => {
+  const shape = shapeOf(ctx.type);
+  if (shape !== "page-shaped") {
+    return {
+      ok: false,
+      artifacts: [],
+      error: `${ctx.type} is ${shape}, and nothing lays that out yet`
+        + " — its pages are not placed one at a time",
+    };
+  }
+  if (ctx.type !== "publication") {
+    return { ok: false, artifacts: [], error: `no layout for ${ctx.type} yet` };
+  }
+
+  // Imported here rather than at the top because the publication runner
+  // reports into the orchestrator, which owns this table: importing it up
+  // there would close a cycle.
+  const [{ openIssueContext }, runner] = await Promise.all([
+    import("./publication-context.js"),
+    import("./publication-runner.js"),
+  ]);
+  try {
+    const { ctx: issueCtx } = await openIssueContext(ctx.projectRoot, ctx.id, {
+      ...(ctx.shimUrl ? { shimUrl: ctx.shimUrl } : {}),
+    });
+    const out = await runner.placePage(issueCtx, ctx.id, ctx.unit);
+    // Findings are what the layout inspector noticed, not a failure: a page
+    // can break a rule and still be the page. They belong on the progress
+    // line so the person at the design gate sees them before signing.
+    for (const finding of out.findings) ctx.onProgress?.(`p${ctx.unit}: ${finding}`);
+    ctx.onProgress?.(`Page ${ctx.unit} laid out`);
+    return { ok: true, artifacts: [] };
+  } catch (error) {
+    return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+  }
+};
+
+/**
+ * Make the file the reader actually gets.
+ *
+ * An export is a property of the whole work, not of a unit — one epub, one
+ * PDF — but the orchestrator calls a stage once per unit, so this checks for
+ * the finished file first and does nothing when it is already there. That is
+ * also what makes it resumable: a run interrupted after the export but before
+ * the last unit was recorded does not build the book twice.
+ */
+export const exportWork: StageExecutor = async (ctx) => {
+  const shape = shapeOf(ctx.type);
+  const dir = join(outDirOf(ctx.type), ctx.id);
+
+  if (shape === "reflow-shaped" && ctx.type === "book") {
+    const relative = join(dir, "build", `${ctx.id}.epub`);
+    const file = safeChildPath(ctx.projectRoot, relative);
+    if (await exists(file)) return { ok: true, artifacts: [] };
+    const { StateManager } = await import("../state/manager.js");
+    const { writeExportArtifact } = await import("../interaction/export-artifact.js");
+    try {
+      await mkdir(dirname(file), { recursive: true });
+      const out = await writeExportArtifact(
+        new StateManager(ctx.projectRoot),
+        ctx.id,
+        { format: "epub", outputPath: file },
+      );
+      ctx.onProgress?.(`Built ${out.chaptersExported} chapters into ${relative}`);
+      return { ok: true, artifacts: [relative.replace(/\\/g, "/")] };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  if (shape === "page-shaped" && ctx.type === "publication") {
+    const [{ openIssueContext }, runner] = await Promise.all([
+      import("./publication-context.js"),
+      import("./publication-runner.js"),
+    ]);
+    try {
+      const { ctx: issueCtx, issue } = await openIssueContext(ctx.projectRoot, ctx.id, {
+        ...(ctx.shimUrl ? { shimUrl: ctx.shimUrl } : {}),
+      });
+      if (issue.build?.pdf) return { ok: true, artifacts: [] };
+      const built = await runner.build(issueCtx, ctx.id);
+      const pdf = built.build?.pdf ?? null;
+      ctx.onProgress?.(pdf ? `Built ${pdf}` : "Affinity finished without writing a PDF");
+      return { ok: Boolean(pdf), artifacts: pdf ? [pdf] : [], ...(pdf ? {} : { error: "no PDF was written" }) };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  return {
+    ok: false,
+    artifacts: [],
+    error: `nothing builds ${ctx.type} yet (${shape})`
+      + " — the run is finished as far as this app can take it",
+  };
+};
+
 /** Stage id → what does it. Everything absent is owned by a runner, for now. */
 export const EXECUTORS: Readonly<Record<string, StageExecutor>> = {
   "design.artplan": artplan,
   "design.generate": generate,
   "design.review": review,
+  "build.layout": layout,
+  "build.export": exportWork,
 };
 
 export function executorFor(stage: string): StageExecutor | null {
