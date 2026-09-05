@@ -20,6 +20,16 @@ export const STUDIO_SSE_EVENTS = [
   "job:progress",
   "job:done",
   "job:failed",
+  // Proxied up from the shim. Comfy and Affinity are the two things that take
+  // minutes here, and both used to be silent for all of them.
+  "comfy:generate:start",
+  "comfy:generate:progress",
+  "comfy:generate:done",
+  "comfy:generate:fail",
+  "affinity:build:start",
+  "affinity:build:done",
+  "affinity:page:start",
+  "affinity:page:done",
   "book:creating",
   "book:created",
   "book:deleted",

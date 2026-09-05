@@ -6278,6 +6278,60 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * loop already exists.
    */
   /*
+   * The shim's own progress, folded into this stream.
+   *
+   * Comfy and Affinity are the two things on this machine that take minutes,
+   * and both were silent for all of them: a render was posted and the app
+   * waited, showing nothing, until an image appeared or a timeout did. The
+   * shim now says what it is doing; this carries that across so a browser opens
+   * one connection instead of two, and a render event arrives beside the
+   * pipeline events about the same run.
+   *
+   * Reconnecting rather than fatal: the shim restarts independently of the
+   * Studio, and a dropped stream must heal itself rather than need a restart of
+   * something else. The delay is fixed and unhurried — nothing here is urgent,
+   * and a tight retry against a shim that is down is just a busy loop.
+   */
+  function followShimEvents(): void {
+    let stop = false;
+    const listen = async (): Promise<void> => {
+      while (!stop) {
+        try {
+          const res = await fetch(`${shimUrl()}/events`);
+          if (!res.body) throw new Error("no stream");
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            /* SSE frames are separated by a blank line; anything after the last
+               one is a partial frame and stays in the buffer. */
+            const frames = buffer.split("\n\n");
+            buffer = frames.pop() ?? "";
+            for (const frame of frames) {
+              const line = frame.split("\n").find((l) => l.startsWith("data:"));
+              if (!line) continue; // a comment: the open marker or a heartbeat
+              try {
+                const payload = JSON.parse(line.slice(5).trim()) as { type?: string };
+                if (payload.type) broadcast(payload.type, payload);
+              } catch {
+                /* A frame we cannot read is dropped; the stream carries on. */
+              }
+            }
+          }
+        } catch {
+          /* The shim is down or restarting. Wait and try again. */
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+      }
+    };
+    void listen();
+  }
+  followShimEvents();
+
+  /*
    * A run that says it is running, at boot, is not.
    *
    * Nothing survives a restart, so that status on disk is left over from a
