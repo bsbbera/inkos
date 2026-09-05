@@ -386,6 +386,50 @@ svg { display: block; }
 .btn-bad   { --bg: transparent; --fg: var(--bad); border-color: color-mix(in oklab, var(--bad) 45%, transparent); }
 .btn-bad:hover   { --bg: var(--bad); --fg: #FFF; border-color: var(--bad); }
 .btn-sm { font-size: 11px; padding: 6px 11px; gap: 6px; }
+
+/* Read-aloud: one control, not two.
+
+   The speaker and its speed were separate pills with a gap between them, so a
+   toolbar that wanted one control for "read this to me" showed two and the row
+   read as clutter. The border lives on the group; the halves inside give theirs
+   up, and a hairline divides them. */
+.speak-group {
+  display: inline-flex; align-items: stretch; flex: none;
+  border: 1.5px solid var(--line); border-radius: var(--r-ctl); overflow: hidden;
+}
+.speak-group.on-char { border-color: var(--line-char); }
+.speak-group > .btn { border: 0; border-radius: 0; }
+/* `.btn:hover` sets `background` outright, not the --bg it normally reads, so a
+   quiet button still flashes vermilion. Alone that is the house hover; joined
+   to the rate it would light one half of a single control and not the other.
+   Both halves take the quiet fill instead. */
+.speak-group > .btn:hover { background: var(--bg); transform: none; box-shadow: none; }
+.speak-rate:hover { background: var(--putty-2); }
+.on-char .speak-rate:hover { background: var(--char-2); }
+
+/* The rate half. The real <select> sits transparent on top of a visible label,
+   so the platform's own list opens under the pointer while the face keeps the
+   app's type — styling a <select>'s own text across platforms does not work. */
+.speak-rate { position: relative; display: inline-flex; align-items: center; }
+.speak-rate::before {
+  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
+  border-left: 1px solid var(--line);
+}
+.on-char .speak-rate::before { border-left-color: var(--line-char); }
+.speak-rate > select {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  opacity: 0; cursor: pointer; appearance: none; border: 0; padding: 0;
+}
+.speak-rate > span {
+  padding: 6px 10px; font-size: 11px; font-weight: 500;
+  font-variant-numeric: tabular-nums; color: var(--ink-2); pointer-events: none;
+}
+.on-char .speak-rate > span { color: var(--on-char-2); }
+.speak-rate:hover > span { color: var(--ink); }
+.on-char .speak-rate:hover > span { color: var(--on-char); }
+/* The select is invisible, so its focus ring has to be drawn by the group. */
+.speak-rate > select:focus-visible { opacity: 0; }
+.speak-rate:focus-within { outline: 2px solid var(--vermilion); outline-offset: -2px; }
 .dark .btn-line, .on-char .btn-line { --fg: var(--on-char); border-color: var(--line-char); }
 .dark .btn-quiet, .on-char .btn-quiet { --fg: var(--on-char-2); }
 .dark .btn-quiet:hover, .on-char .btn-quiet:hover { --bg: var(--char-2); --fg: var(--on-char); }
@@ -1371,7 +1415,11 @@ button.wf-state:hover { background: var(--line-soft); }
    Not quite edge to edge. A textarea flush against the bezel is uncomfortable
    to write in, and the inset keeps the backdrop visible as a frame, which is
    what tells you this is a layer over the page rather than a new screen. */
-.fullscreen-edit {
+/* Scoped to [open]. The UA hides a closed dialog with `dialog:not([open])
+   { display: none }`, but that is a user-agent rule and ANY author rule beats
+   it whatever the specificity — so a bare `.fullscreen-edit { display: flex }`
+   renders the editor inline, on the page, always. It did. */
+.fullscreen-edit[open] {
   width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh;
   margin: 0; border: 0; padding: 22px clamp(20px, 5vw, 64px) 0;
   background: var(--char); color: var(--on-char);

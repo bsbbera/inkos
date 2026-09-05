@@ -1644,20 +1644,33 @@ function PageColumn({
             </div>
           </div>
 
+          {/* Save keeps its word because it writes to the manuscript and a
+              person should be able to read what they are about to do. The
+              other two are glyphs everyone already knows — an X closes, four
+              corner brackets mean full screen — and spelling them out was
+              three sentences of chrome under a page of prose. */}
           <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
             <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
               <Icon name="check" size={16} />
-              {saving ? "Saving…" : "Save the page"}
+              {saving ? "Saving…" : "Save"}
             </button>
-            <button type="button" className="btn btn-line" onClick={() => onMode("read")}>
-              Cancel
+            <button
+              type="button"
+              className="btn btn-quiet"
+              aria-label="Discard these edits"
+              title="Discard these edits"
+              onClick={() => onMode("read")}
+            >
+              <Icon name="x" size={16} />
             </button>
-            {/* The column is a third of the window, and prose written in a
-                third of a window reads like prose written in a third of a
-                window. This is the same draft, given the whole screen. */}
-            <button type="button" className="btn btn-line" onClick={() => setFull(true)}>
-              <Icon name="grid" size={15} />
-              Full screen
+            <button
+              type="button"
+              className="btn btn-quiet"
+              aria-label="Edit with the whole screen"
+              title="Edit with the whole screen"
+              onClick={() => setFull(true)}
+            >
+              <Icon name="expand" size={16} />
             </button>
             <span className="grow" />
             <span className="dim mono" style={{ fontSize: 11 }}>
@@ -1763,13 +1776,14 @@ function FullScreenEditor({
         />
       </div>
 
+      {/* No "Done" beside Save. The header already carries a close, Escape
+          already closes, and a second way out sitting next to the primary
+          action only makes a person read both to find out which one keeps
+          their work. */}
       <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
         <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
           <Icon name="check" size={16} />
-          {saving ? "Saving…" : "Save the page"}
-        </button>
-        <button type="button" className="btn btn-line" onClick={onClose}>
-          Done
+          {saving ? "Saving…" : "Save"}
         </button>
         <span className="grow" />
         <span className="dim mono" style={{ fontSize: 11 }}>

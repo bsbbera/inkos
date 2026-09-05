@@ -582,28 +582,36 @@ export function useSpeech() {
 }
 
 /**
- * The speed picker, shaped like the one everybody already knows.
+ * The speed, as part of the sound control rather than a thing beside it.
  *
- * A native select rather than a menu of our own: it is one element, it is
- * reachable from the keyboard, it opens the platform's own list on a phone,
- * and a popover written by hand would have to earn all three back.
+ * It used to be a second pill of its own, so a toolbar that wanted one control
+ * for "read this to me" got two, and the row read as clutter. They are one
+ * bordered unit now: the speaker is the left half, the rate is the right half,
+ * and it is obvious the number belongs to the voice.
+ *
+ * Still a native select underneath. It is one element, it takes the keyboard
+ * for free, it opens the platform's own list, and a menu written by hand would
+ * have to earn all three back.
  */
-export function SpeechRate({ dark = false }: { readonly dark?: boolean }) {
+function SpeechRate() {
   const { supported, rate, setRate } = useSpeech();
   if (!supported) return null;
   return (
-    <select
-      className={`btn btn-sm ${dark ? "btn-quiet" : "btn-line"}`}
-      style={{ paddingRight: 6, fontVariantNumeric: "tabular-nums" }}
-      value={rate}
-      aria-label="Reading speed"
-      title="Reading speed"
-      onChange={(e) => setRate(Number(e.target.value))}
-    >
-      {SPEECH_RATES.map((r) => (
-        <option key={r} value={r}>{r}x</option>
-      ))}
-    </select>
+    <span className="speak-rate">
+      <select
+        value={rate}
+        aria-label="Reading speed"
+        title="Reading speed"
+        onChange={(e) => setRate(Number(e.target.value))}
+      >
+        {SPEECH_RATES.map((r) => (
+          <option key={r} value={r}>{r}x</option>
+        ))}
+      </select>
+      {/* The visible face. The select above it is transparent and on top, so
+          the platform's own list opens where a person clicked. */}
+      <span aria-hidden="true">{rate}x</span>
+    </span>
   );
 }
 
@@ -630,19 +638,19 @@ export function ReadAloud({
   if (!supported || !text.trim()) return null;
   const title = speaking ? "Stop reading" : label;
   return (
-    <span className="rowflex" style={{ gap: 5, flex: "none" }}>
+    <span className={`speak-group${dark ? " on-char" : ""}`}>
       <button
         type="button"
-        className={`btn btn-sm ${dark ? "btn-quiet" : "btn-line"}`}
+        className="btn btn-sm btn-quiet"
         onClick={() => (speaking ? stop() : speak(text))}
         aria-pressed={speaking}
-        aria-label={iconOnly ? title : undefined}
-        title={iconOnly ? title : undefined}
+        aria-label={title}
+        title={title}
       >
         <Icon name={speaking ? "mute" : "speak"} size={15} />
         {iconOnly ? null : speaking ? "Stop" : label}
       </button>
-      {rateControl ? <SpeechRate dark={dark} /> : null}
+      {rateControl ? <SpeechRate /> : null}
     </span>
   );
 }

@@ -36,6 +36,9 @@ export const ICONS = {
   arrL:  '<path d="M20.2 12H4.8"/><path d="m10.6 6.2-5.8 5.8 5.8 5.8"/>',
 
   copy:  '<path d="M9 9h11.2v11.2H9z"/><path d="M15.4 9V3.8H3.8V15.4H9"/>',
+  // Four corner brackets opening outwards: the glyph every player and viewer
+  // uses for "give this the whole screen", so it needs no label to be read.
+  expand:'<path d="M4.2 9.4V4.2h5.2"/><path d="M14.6 4.2h5.2v5.2"/><path d="M19.8 14.6v5.2h-5.2"/><path d="M9.4 19.8H4.2v-5.2"/>',
   check: '<path d="m4.4 12.4 5.4 5.4L19.6 6.6"/>',
   x:     '<path d="M6 6 18 18"/><path d="M18 6 6 18"/>',
   plus:  '<path d="M12 4.8v14.4"/><path d="M4.8 12h14.4"/>',
