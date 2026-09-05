@@ -262,9 +262,19 @@ export class ReviserAgent extends BaseAgent {
     const lengthGuidanceBlock = mode !== "auto" && options?.lengthSpec
       ? `\n## 字数护栏\n目标字数：${options.lengthSpec.target}\n允许区间：${options.lengthSpec.softMin}-${options.lengthSpec.softMax}\n极限区间：${options.lengthSpec.hardMin}-${options.lengthSpec.hardMax}\n如果修正后超出允许区间，请优先压缩冗余解释、重复动作和弱信息句，不得新增支线或删掉核心事实。\n`
       : "";
-    const styleGuideBlock = reducedControlBlock.length === 0
-      ? `\n## 文风指南\n${styleGuide}`
-      : "";
+    /*
+     * The voice, always.
+     *
+     * This used to be dropped whenever a composed control block existed - and
+     * `reviseDraft` builds one unconditionally, so in practice the style guide
+     * never reached a revision at all. The control block lists rule *names*
+     * (hard, soft, diagnostic), and `ruleFilesFor` did not carry style_guide.md
+     * either, so nothing recovered it downstream. The result was an app where
+     * importing an author's voice changed new chapters and left every revised
+     * one untouched - the opposite of what someone asking for a rewrite in
+     * that voice expects.
+     */
+    const styleGuideBlock = `\n## 文风指南\n${styleGuide}`;
 
     const userPrompt = `请修正第${chapterNumber}章。
 

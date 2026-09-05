@@ -819,6 +819,14 @@ export {
 } from "./pipeline/storybook-runner.js";
 export { StorybookAgent, type SpreadPlan, type SpreadText } from "./agents/storybook.js";
 export {
+  writeStyleGuide,
+  deterministicGuide as deterministicStyleGuide,
+  styleSystemPrompt,
+  MIN_SAMPLE_FOR_LLM,
+  type StyleChat,
+  type WriteStyleGuideResult,
+} from "./pipeline/style-guide.js";
+export {
   enqueue as enqueueJob,
   cancel as cancelJob,
   listJobs,

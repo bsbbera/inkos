@@ -1,9 +1,23 @@
+/*
+ * Style. Where a piece of work is told whose voice to write in.
+ *
+ * The old page was a Tailwind island from before the Vermilion work: its own
+ * card colours, its own spacing, `text-xl font-bold` numerals that lined up
+ * with nothing else in the app. It also lied twice. It ran every sample
+ * through the Chinese analyser, so an English paste came back as "1%
+ * vocabulary diversity" with counts suffixed 次, and it offered the guide to
+ * books alone, which is eight production types that could not be told to sound
+ * like anybody.
+ *
+ * Both are fixed behind this screen. What is left for the screen itself is to
+ * say what the numbers mean - a fingerprint is not self-explanatory, and
+ * "sentence std dev" told nobody anything - and to be honest that importing
+ * replaces whatever voice was there before.
+ */
 import { useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
-import type { Theme } from "../hooks/use-theme";
-import type { TFunction } from "../hooks/use-i18n";
-import { useColors } from "../hooks/use-colors";
-import { Wand2, Upload, BarChart3 } from "lucide-react";
+import { Empty } from "../components/ui/states";
+import { Icon } from "../components/ui/icon";
 
 interface StyleProfile {
   readonly sourceName: string;
@@ -13,14 +27,16 @@ interface StyleProfile {
   readonly vocabularyDiversity: number;
   readonly topPatterns: ReadonlyArray<string>;
   readonly rhetoricalFeatures: ReadonlyArray<string>;
+  /** Which analyser actually ran. The old page could not say. */
+  readonly language?: "zh" | "en";
 }
 
-interface BookSummary {
+interface StyleTarget {
+  readonly type: string;
+  readonly label: string;
   readonly id: string;
-  readonly title: string;
+  readonly hasStyle: boolean;
 }
-
-interface Nav { toDashboard: () => void }
 
 export interface StyleStatusNotice {
   readonly tone: "error" | "success" | "info";
@@ -39,23 +55,38 @@ export function buildStyleStatusNotice(analyzeStatus: string, importStatus: stri
   return { tone: "success", message };
 }
 
-export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
-  const c = useColors(theme);
+/**
+ * What each number is, in words.
+ *
+ * A fingerprint is only useful to someone who can read it, and none of these
+ * names read on their own. The unit differs by language and that is the whole
+ * point of saying it: characters for Chinese, words for English.
+ */
+function statUnit(language: "zh" | "en" | undefined): string {
+  return language === "en" ? "words" : "characters";
+}
+
+export function StyleManager() {
   const [text, setText] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [profile, setProfile] = useState<StyleProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [analyzeStatus, setAnalyzeStatus] = useState("");
-  const [importBookId, setImportBookId] = useState("");
+  const [target, setTarget] = useState("");
   const [importStatus, setImportStatus] = useState("");
-  const { data: booksData } = useApi<{ books: ReadonlyArray<BookSummary> }>("/books");
+  const [importing, setImporting] = useState(false);
+  const { data: targetData, refetch: refetchTargets } =
+    useApi<{ targets: ReadonlyArray<StyleTarget> }>("/style/targets");
   const statusNotice = buildStyleStatusNotice(analyzeStatus, importStatus);
+  const targets = targetData?.targets ?? [];
+  const unit = statUnit(profile?.language);
 
   const handleAnalyze = async () => {
     if (!text.trim()) return;
     setLoading(true);
     setProfile(null);
     setAnalyzeStatus("");
+    setImportStatus("");
     try {
       const data = await fetchJson<StyleProfile>("/style/analyze", {
         method: "POST",
@@ -70,146 +101,234 @@ export function StyleManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
   };
 
   const handleImport = async () => {
-    if (!importBookId || !text.trim()) return;
-    setImportStatus("Importing...");
+    if (!target || !text.trim()) return;
+    const [type, ...rest] = target.split(":");
+    const id = rest.join(":");
+    setImporting(true);
+    setImportStatus("Reading the sample and writing the guide...");
     try {
-      await postApi(`/books/${importBookId}/style/import`, { text, sourceName: sourceName || "sample" });
-      setImportStatus("Style guide imported successfully!");
+      const result = await postApi<{ deterministic?: boolean; note?: string }>(
+        `/productions/${type}/${encodeURIComponent(id)}/style/import`,
+        { text, sourceName: sourceName || "sample" },
+      );
+      setImportStatus(
+        result?.deterministic
+          ? `Guide written from the fingerprint alone. ${result.note ?? ""}`.trim()
+          : `Voice imported into ${id}. New writing and revisions will use it.`,
+      );
+      void refetchTargets();
     } catch (e) {
       setImportStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
     }
+    setImporting(false);
   };
 
+  const chosen = targets.find((t) => `${t.type}:${t.id}` === target);
+
   return (
-    <div className="space-y-8">
-      <h1 className="q-title text-3xl flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Wand2 size={19} /></span>
-        {t("style.title")}
-      </h1>
+    <div className="stack-lg">
+      <section className="crop" style={{ paddingBottom: 0 }}>
+        <span className="disc stroke" style={{ width: 190, height: 190, left: -88, top: -92, opacity: 0.3 }} />
+        <div className="head">
+          <h2 className="h-page">Write it in somebody else&rsquo;s hand</h2>
+          <p>
+            Paste a few pages by an author whose sentences you want. Quire measures how they are
+            built, has a model describe the habits behind them, and hands the result to a piece of
+            work as its voice. The craft rules stay underneath either way &mdash; this changes how
+            the prose sounds, not what counts as good prose.
+          </p>
+        </div>
+      </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Input */}
-        <div className="space-y-4">
-          <div>
-            <label className="q-label block mb-2">{t("style.sourceName")}</label>
-            <input
-              type="text"
-              value={sourceName}
-              onChange={(e) => setSourceName(e.target.value)}
-              placeholder={t("style.sourceExample")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm focus:outline-none focus:border-primary"
-            />
+      <section className="cols" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+        <div className="panel">
+          <div className="panel-head">
+            <span className="grow">
+              <h3 className="h-panel">The sample</h3>
+              <span className="dim" style={{ fontSize: 11 }}>
+                A page or two reads better than a paragraph. Under 500 characters and only the
+                measurements are taken.
+              </span>
+            </span>
           </div>
-          <div>
-            <label className="q-label block mb-2">{t("style.textSample")}</label>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              rows={12}
-              placeholder={t("style.pasteHint")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm focus:outline-none focus:border-primary resize-none font-mono"
-            />
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleAnalyze}
-              disabled={!text.trim() || loading}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30 flex items-center gap-2`}
-            >
-              <BarChart3 size={14} />
-              {loading ? t("style.analyzing") : t("style.analyze")}
-            </button>
+          <div className="panel-body stack">
+            <div className="field">
+              <label htmlFor="style-source">Whose voice is this</label>
+              <input
+                id="style-source"
+                className="input"
+                type="text"
+                value={sourceName}
+                onChange={(e) => setSourceName(e.target.value)}
+                placeholder="Ursula K. Le Guin, Chapter 1"
+              />
+            </div>
+            <div className="field">
+              <label htmlFor="style-sample">The writing</label>
+              <textarea
+                id="style-sample"
+                className="input"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                rows={14}
+                placeholder="Paste the passage here."
+                style={{ minHeight: 260, fontFamily: "var(--font-mono)", fontSize: 13 }}
+              />
+            </div>
+            <div className="rowflex">
+              <button
+                type="button"
+                className="btn"
+                onClick={handleAnalyze}
+                disabled={!text.trim() || loading}
+              >
+                <Icon name="pulse" className="ico" />
+                {loading ? "Measuring…" : "Measure this voice"}
+              </button>
+              <span className="dim tnum" style={{ fontSize: 11 }}>
+                {text.trim().length.toLocaleString()} characters
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Results */}
-        <div className="space-y-4">
-          {profile && (
-            <div className={`border ${c.cardStatic} rounded-lg p-5 space-y-4`}>
-              <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">{t("style.results")}</h3>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div className="bg-secondary/30 rounded-lg p-3">
-                  <div className="text-muted-foreground text-xs">{t("style.avgSentence")}</div>
-                  <div className="text-xl font-bold">{profile.avgSentenceLength.toFixed(1)}</div>
-                </div>
-                <div className="bg-secondary/30 rounded-lg p-3">
-                  <div className="text-muted-foreground text-xs">{t("style.vocabDiversity")}</div>
-                  <div className="text-xl font-bold">{(profile.vocabularyDiversity * 100).toFixed(0)}%</div>
-                </div>
-                <div className="bg-secondary/30 rounded-lg p-3">
-                  <div className="text-muted-foreground text-xs">{t("style.avgParagraph")}</div>
-                  <div className="text-xl font-bold">{profile.avgParagraphLength.toFixed(0)}</div>
-                </div>
-                <div className="bg-secondary/30 rounded-lg p-3">
-                  <div className="text-muted-foreground text-xs">{t("style.sentenceStdDev")}</div>
-                  <div className="text-xl font-bold">{profile.sentenceLengthStdDev.toFixed(1)}</div>
-                </div>
-              </div>
-              {profile.topPatterns.length > 0 && (
-                <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("style.topPatterns")}</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {profile.topPatterns.map((p) => (
-                      <span key={p} className="px-2 py-1 text-xs bg-secondary rounded">{p}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {profile.rhetoricalFeatures.length > 0 && (
-                <div>
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("style.rhetoricalFeatures")}</div>
-                  <div className="flex gap-2 flex-wrap">
-                    {profile.rhetoricalFeatures.map((f) => (
-                      <span key={f} className="px-2 py-1 text-xs bg-primary/10 text-primary rounded">{f}</span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Import to book */}
-              <div className="border-t border-border pt-4 mt-4 space-y-3">
-                <h4 className="font-semibold text-sm flex items-center gap-2">
-                  <Upload size={14} />
-                  {t("style.importToBook")}
-                </h4>
-                <select
-                  value={importBookId}
-                  onChange={(e) => setImportBookId(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm"
-                >
-                  <option value="">{t("style.selectBook")}</option>
-                  {booksData?.books.map((b) => (
-                    <option key={b.id} value={b.id}>{b.title}</option>
-                  ))}
-                </select>
-                <button
-                  onClick={handleImport}
-                  disabled={!importBookId}
-                  className={`px-4 py-2 text-sm rounded-lg ${c.btnSecondary} disabled:opacity-30`}
-                >
-                  {t("style.importGuide")}
-                </button>
-                {importStatus && <div className="text-xs text-muted-foreground">{importStatus}</div>}
-              </div>
-            </div>
-          )}
+        <div className="stack">
           {!profile && !loading && (
-            <div className={`border border-dashed ${c.cardStatic} rounded-lg p-8 text-center text-muted-foreground text-sm italic`}>
-              {t("style.emptyHint")}
-            </div>
+            <Empty icon="drop" title="Nothing measured yet.">
+              Paste a passage and press measure. You will get the shape of the prose &mdash;
+              sentence length, rhythm, vocabulary, the openings the author reaches for &mdash;
+              before you commit it to anything.
+            </Empty>
+          )}
+
+          {profile && (
+            <>
+              <div className="panel">
+                <div className="panel-head">
+                  <span className="grow">
+                    <h3 className="h-panel">{profile.sourceName}</h3>
+                    <span className="dim" style={{ fontSize: 11 }}>
+                      Read as {profile.language === "en" ? "English" : "Chinese"}, measured in {unit}
+                    </span>
+                  </span>
+                </div>
+                <div className="panel-body stack">
+                  <div className="cols" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+                    <div>
+                      <span className="label">Sentence length</span>
+                      <div className="numeral tnum">{profile.avgSentenceLength.toFixed(1)}</div>
+                      <p className="dim" style={{ fontSize: 11 }}>{unit} per sentence, on average</p>
+                    </div>
+                    <div>
+                      <span className="label">Sentence variety</span>
+                      <div className="numeral tnum">{profile.sentenceLengthStdDev.toFixed(1)}</div>
+                      <p className="dim" style={{ fontSize: 11 }}>
+                        how far length swings. Low is even, high alternates long and short
+                      </p>
+                    </div>
+                    <div>
+                      <span className="label">Paragraph length</span>
+                      <div className="numeral tnum">{profile.avgParagraphLength.toFixed(0)}</div>
+                      <p className="dim" style={{ fontSize: 11 }}>{unit} per paragraph</p>
+                    </div>
+                    <div>
+                      <span className="label">Vocabulary range</span>
+                      <div className="numeral tnum">{(profile.vocabularyDiversity * 100).toFixed(0)}%</div>
+                      <p className="dim" style={{ fontSize: 11 }}>
+                        share of {unit} used only once. Higher means less repetition
+                      </p>
+                    </div>
+                  </div>
+
+                  {profile.topPatterns.length > 0 && (
+                    <div className="stack-xs">
+                      <span className="label">Openings they reach for</span>
+                      <div className="rowflex">
+                        {profile.topPatterns.map((p) => (
+                          <span key={p} className="chip">{p}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {profile.rhetoricalFeatures.length > 0 && (
+                    <div className="stack-xs">
+                      <span className="label">Figures of speech found</span>
+                      <div className="rowflex">
+                        {profile.rhetoricalFeatures.map((f) => (
+                          <span key={f} className="chip">{f}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-head">
+                  <span className="grow">
+                    <h3 className="h-panel">Give this voice to</h3>
+                    <span className="dim" style={{ fontSize: 11 }}>
+                      Every kind of work except magazines, which take their voice from their
+                      series house style
+                    </span>
+                  </span>
+                </div>
+                <div className="panel-body stack">
+                  <div className="field">
+                    <label htmlFor="style-target">The work</label>
+                    <select
+                      id="style-target"
+                      className="input"
+                      value={target}
+                      onChange={(e) => setTarget(e.target.value)}
+                    >
+                      <option value="">Choose one…</option>
+                      {targets.map((t) => (
+                        <option key={`${t.type}:${t.id}`} value={`${t.type}:${t.id}`}>
+                          {t.label} · {t.id}{t.hasStyle ? " (has a voice)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {targets.length === 0 && (
+                    <p className="dim" style={{ fontSize: 11 }}>
+                      Nothing to give it to yet. Start a book, a short or a script first and it
+                      will appear here.
+                    </p>
+                  )}
+
+                  {chosen?.hasStyle && (
+                    <p className="muted" style={{ fontSize: 11 }}>
+                      {chosen.id} already has a voice. Importing replaces it — a guide holds one
+                      voice, not two.
+                    </p>
+                  )}
+
+                  <div className="rowflex">
+                    <button
+                      type="button"
+                      className="btn btn-line"
+                      onClick={handleImport}
+                      disabled={!target || importing}
+                    >
+                      <Icon name="send" className="ico" />
+                      {importing ? "Writing the guide…" : "Import this voice"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
         </div>
-      </div>
+      </section>
 
       {statusNotice && (
         <div
-          className={`px-4 py-3 rounded-lg text-sm ${
-            statusNotice.tone === "error"
-              ? "bg-destructive/10 text-destructive"
-              : statusNotice.tone === "info"
-                ? "bg-secondary text-muted-foreground"
-                : "bg-success/10 text-success"
-          }`}
+          role="status"
+          className={statusNotice.tone === "error" ? "fail" : "note"}
+          style={{ fontSize: 14 }}
         >
           {statusNotice.message}
         </div>

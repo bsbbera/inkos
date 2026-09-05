@@ -280,7 +280,7 @@ export function App() {
       {route.page === "daemon" && <DaemonControl t={t} sse={sse} />}
       {route.page === "logs" && <LogViewer t={t} />}
       {route.page === "genres" && <GenreManager nav={nav} theme={theme} t={t} />}
-      {route.page === "style" && <StyleManager nav={nav} theme={theme} t={t} />}
+      {route.page === "style" && <StyleManager />}
       {route.page === "translation" && <TranslationManager nav={nav} theme={theme} t={t} />}
       {route.page === "import" && <ImportManager nav={nav} theme={theme} t={t} initialTab={route.tab} />}
       {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} />}

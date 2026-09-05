@@ -7238,16 +7238,154 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   // --- Style Analyze ---
 
+  /**
+   * Where a kind of work keeps its style guide.
+   *
+   * A book keeps its truth files under `story/`; everything else keeps its
+   * whole rule set loose in its own folder, which is the directory
+   * `buildRuleStack` is handed. Putting the guide anywhere else would mean
+   * writing a file nothing reads.
+   */
+  function styleDirFor(type: string, id: string): string {
+    const spec = PRODUCTIONS.find((p) => p.id === type);
+    const dir = join(root, spec?.outDir ?? type, id);
+    return type === "book" ? join(dir, "story") : dir;
+  }
+
+  /**
+   * Which language to read a sample in.
+   *
+   * Explicit wins, then the book's own setting, then the project's. Never a
+   * silent default: guessing wrong here does not fail, it produces confident
+   * nonsense, which is how an English sample came back with 1% vocabulary
+   * diversity and Chinese count suffixes on the screen.
+   */
+  async function resolveStyleLanguage(
+    requested?: string,
+    bookId?: string,
+  ): Promise<"zh" | "en"> {
+    if (requested === "en" || requested === "zh") return requested;
+    if (bookId) {
+      const book = await state.loadBookConfig(bookId).catch(() => null);
+      if (book?.language === "en" || book?.language === "zh") return book.language;
+    }
+    const config = await loadCurrentProjectConfig({ requireApiKey: false }).catch(() => null);
+    return config?.language === "en" ? "en" : "zh";
+  }
+
   app.post("/api/v1/style/analyze", async (c) => {
-    const { text, sourceName } = await c.req.json<{ text: string; sourceName: string }>();
+    const { text, sourceName, language } = await c.req.json<{
+      text: string; sourceName?: string; language?: string;
+    }>();
     if (!text?.trim()) return c.json({ error: "text is required" }, 400);
 
     try {
       const { analyzeStyle } = await import("@actalk/quire-core");
-      const profile = analyzeStyle(text, sourceName ?? "unknown");
-      return c.json(profile);
+      /*
+       * The language, which this call used to leave out entirely.
+       *
+       * `analyzeStyle` defaults to Chinese, so an English sample was split on
+       * punctuation it does not contain, measured in characters instead of
+       * words, and scored for vocabulary diversity over the 26 letters of the
+       * alphabet - reported back as a confident 1%. Every number on the screen
+       * was wrong, and nothing said so. The English path already existed; it
+       * was simply never selected.
+       */
+      const resolved = await resolveStyleLanguage(language);
+      const profile = analyzeStyle(text, sourceName ?? "unknown", resolved);
+      return c.json({ ...profile, language: resolved });
     } catch (e) {
       return c.json({ error: String(e) }, 500);
+    }
+  });
+
+  /*
+   * Every piece of work a voice can be given to.
+   *
+   * Not `/audit/projects`: that walks files, so a work with nothing written in
+   * it yet does not appear - and setting the voice before the first word is
+   * exactly when you would want to. This walks the production directories
+   * instead, so an empty short is offered the same as a finished one.
+   *
+   * Magazines are left out. A publication's voice is its series house style,
+   * and an author's fingerprint has no business on a page of research.
+   */
+  app.get("/api/v1/style/targets", async (c) => {
+    const targets: Array<{ type: string; label: string; id: string; hasStyle: boolean }> = [];
+    for (const spec of PRODUCTIONS) {
+      if (spec.id === "publication") continue;
+      const dir = join(root, spec.outDir);
+      const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
+        const guide = join(styleDirFor(spec.id, entry.name), "style_guide.md");
+        targets.push({
+          type: spec.id,
+          label: spec.label,
+          id: entry.name,
+          hasStyle: await readFile(guide, "utf-8").then(() => true).catch(() => false),
+        });
+      }
+    }
+    return c.json({ targets });
+  });
+
+  /*
+   * Give a voice to any kind of work.
+   *
+   * The book-only route below still exists because the book path also needs a
+   * genre profile and a book config; this one is for everything else, which
+   * keeps its whole rule set in one folder and therefore needs nothing but the
+   * folder.
+   */
+  app.post("/api/v1/productions/:type/:id/style/import", async (c) => {
+    const type = c.req.param("type");
+    const id = c.req.param("id");
+    const spec = PRODUCTIONS.find((p) => p.id === type);
+    if (!spec) return c.json({ error: `Unknown production type: ${type}` }, 404);
+    if (type === "publication") {
+      return c.json({ error: "A magazine takes its voice from its series house style, not an imported author." }, 400);
+    }
+
+    const { text, sourceName, language } = await c.req.json<{
+      text: string; sourceName?: string; language?: string;
+    }>().catch(() => ({ text: "", sourceName: undefined, language: undefined }));
+    if (!text?.trim()) return c.json({ error: "text is required" }, 400);
+
+    const workDir = join(root, spec.outDir, id);
+    if (!(await stat(workDir).then((st) => st.isDirectory()).catch(() => false))) {
+      return c.json({ error: `No ${spec.label.toLowerCase()} called "${id}"` }, 404);
+    }
+
+    broadcast("style:start", { type, id });
+    try {
+      const { writeStyleGuide } = await import("@actalk/quire-core");
+      const config = await buildPipelineConfig();
+      const result = await writeStyleGuide({
+        dir: styleDirFor(type, id),
+        referenceText: text,
+        language: await resolveStyleLanguage(language, type === "book" ? id : undefined),
+        ...(sourceName ? { sourceName } : {}),
+        chat: async (system, user) => {
+          const response = await runWorkerAgent(config.client, config.model, [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ], { temperature: 0.3 });
+          return response.content;
+        },
+      });
+      broadcast("style:complete", { type, id });
+      return c.json({
+        ok: true,
+        type,
+        id,
+        profile: result.profile,
+        deterministic: result.deterministic,
+        ...(result.note ? { note: result.note } : {}),
+      });
+    } catch (e) {
+      broadcast("style:error", { type, id, error: String(e) });
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 500);
     }
   });
 

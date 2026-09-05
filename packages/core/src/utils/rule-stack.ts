@@ -40,12 +40,19 @@ const NARRATIVE: ReadonlySet<RuleKind> = new Set<RuleKind>(["book", "short", "sc
  */
 export function ruleFilesFor(kind: RuleKind): readonly string[] {
   if (kind === "book") {
-    return ["book_rules.md", "story_bible.md", "author_intent.md", "current_focus.md"];
+    return ["book_rules.md", "story_bible.md", "author_intent.md", "style_guide.md", "current_focus.md"];
   }
   if (kind === "publication") {
+    // No style_guide.md: a magazine's voice is the series house style, which
+    // is already two lines up. An imported author's voice does not belong on
+    // a page of research anyway.
     return ["series_rules.md", "house_style.md", "current_focus.md"];
   }
-  return ["current_focus.md"];
+  // Shorts, scripts and storyboards keep their whole rule set in one folder,
+  // so a style guide dropped there is picked up with no runner change. This is
+  // what makes "write in the voice of X" available to every kind of work
+  // rather than to books alone.
+  return ["style_guide.md", "current_focus.md"];
 }
 
 export interface RuleStackOptions {
