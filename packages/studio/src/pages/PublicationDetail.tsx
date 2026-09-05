@@ -486,7 +486,9 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                     >
                       {busy === `render-${p.n}` ? "Rendering…" : "Render spread"}
                     </button>
-                    {p.body ? <ReadAloud text={p.body} label="Hear the page" /> : null}
+                    {/* One row per page, so no picker here: the speed is set once on the
+                        passage below and applies to all of them. */}
+                    {p.body ? <ReadAloud rateControl={false} text={p.body} label="Hear the page" /> : null}
                     {preview[p.n] ? (
                       <span className="dim mono" style={{ fontSize: 11, alignSelf: "center" }}>
                         {preview[p.n]}

@@ -1361,6 +1361,31 @@ button.wf-state:hover { background: var(--line-soft); }
 .dialog p { color: var(--on-char-2); font-size: 14px; margin-top: 8px; max-width: 44ch; }
 .dialog-foot { display: flex; align-items: center; gap: 10px; margin-top: 20px; }
 
+/* Editing a page with the whole window.
+
+   A native <dialog> shrink-wraps its content and centres itself in the viewport
+   with a UA margin, so an editor that wants the screen has to ask for it: the
+   size is set here, the UA margin is cleared, and the column inside is a flex
+   column so the textarea can take whatever the header and the button row leave.
+
+   Not quite edge to edge. A textarea flush against the bezel is uncomfortable
+   to write in, and the inset keeps the backdrop visible as a frame, which is
+   what tells you this is a layer over the page rather than a new screen. */
+.fullscreen-edit {
+  width: 100vw; height: 100vh; max-width: 100vw; max-height: 100vh;
+  margin: 0; border: 0; padding: 22px clamp(20px, 5vw, 64px) 0;
+  background: var(--char); color: var(--on-char);
+  display: flex; flex-direction: column; gap: 14px;
+}
+.fullscreen-edit::backdrop { background: rgb(0 0 0 / 55%); backdrop-filter: blur(3px); }
+/* The verdict bar is sticky to a scrolling card elsewhere; here it is the
+   bottom of a flex column and sticky would leave a gap under it. */
+.fullscreen-edit .verdict {
+  position: static;
+  margin-inline: clamp(-64px, -5vw, -20px);
+  padding-inline: clamp(20px, 5vw, 64px);
+}
+
 /* Empty is never blank. A disc composition, one heading, one action. */
 .empty { position: relative; overflow: hidden; padding: 54px 30px; text-align: left; border-radius: var(--r-card); border: 1px solid var(--line); }
 .empty h3 { font-size: 27.5px; letter-spacing: -.03em; max-width: 18ch; }

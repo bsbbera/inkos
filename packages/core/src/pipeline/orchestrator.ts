@@ -15,7 +15,7 @@
  */
 
 import { join } from "node:path";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { commitAtomicFileSet } from "../utils/atomic-file-set.js";
 import { PRODUCTIONS, type ProductionPipeline, type ProductionSpec, type PipelineGate } from "../productions/registry.js";
 import { executorFor, type StageResult } from "./executors.js";
@@ -413,6 +413,114 @@ export interface WaitingProduction {
  * The whole of the "waiting on you" list, which until now could not be built
  * because no two production kinds recorded waiting the same way.
  */
+/**
+ * Every run this workspace knows about, whatever state it is in.
+ *
+ * Walks the out-directory of each type that runs a pipeline. It is a scan of
+ * the disk rather than an index, which is fine at this size and is the thing a
+ * cache would later be built from — the files stay the truth either way.
+ */
+export async function allRuns(projectRoot: string): Promise<ReadonlyArray<{
+  readonly ref: ProductionRef;
+  readonly state: PipelineState;
+}>> {
+  const out: Array<{ ref: ProductionRef; state: PipelineState }> = [];
+  for (const spec of PRODUCTIONS) {
+    if (!spec.pipeline) continue;
+    let ids: string[];
+    try {
+      ids = (await readdir(join(projectRoot, spec.outDir), { withFileTypes: true }))
+        .filter((e) => e.isDirectory())
+        .map((e) => e.name);
+    } catch {
+      continue; // A type with no folder simply has no runs.
+    }
+    // The magazine keeps its issues one level down, which is why a plain
+    // listing of its out dir finds "issues" and nothing else.
+    if (ids.length === 1 && ids[0] === "issues") {
+      try {
+        ids = (await readdir(join(projectRoot, spec.outDir, "issues"), { withFileTypes: true }))
+          .filter((e) => e.isDirectory())
+          .map((e) => e.name);
+      } catch {
+        continue;
+      }
+    }
+    for (const id of ids) {
+      const ref = { type: spec.id, id };
+      const state = await loadPipeline(projectRoot, ref);
+      if (state) out.push({ ref, state });
+    }
+  }
+  return out;
+}
+
+/**
+ * Tell the truth about runs the last shutdown interrupted.
+ *
+ * `status: "running"` written to disk means a stage was in flight when the
+ * process ended. Nothing survives a restart, so on boot that status is a lie —
+ * and it is the lie that made a killed Studio look like it was still working:
+ * the screen showed a run in progress that no longer had anything behind it,
+ * forever, with no control to restart it.
+ *
+ * The unit is recorded as failed-but-resumable rather than done, because
+ * whether it finished is exactly what nobody knows. Re-running a stage that had
+ * in fact completed is cheap and safe — every executor checks for its own
+ * output first — and losing a chapter is not.
+ */
+export async function markInterrupted(projectRoot: string): Promise<ReadonlyArray<ProductionRef>> {
+  const touched: ProductionRef[] = [];
+  for (const { ref, state } of await allRuns(projectRoot)) {
+    if (state.status !== "running") continue;
+    const next: PipelineState = {
+      ...state,
+      status: "failed",
+      units: {
+        ...state.units,
+        failed: [
+          ...state.units.failed.filter((f) => f.unit !== 0),
+          { unit: 0, error: `interrupted at ${state.stage} — the app stopped mid-stage`, resumable: true },
+        ],
+      },
+      history: [...state.history, {
+        at: new Date().toISOString(),
+        event: "run:interrupted",
+        stage: state.stage,
+      }],
+    };
+    await savePipeline(projectRoot, ref, next);
+    touched.push(ref);
+  }
+  return touched;
+}
+
+/**
+ * Pick a run back up.
+ *
+ * Clears the interruption mark and hands the state back; the caller starts the
+ * stage, because starting work is the Studio's job and this module's whole
+ * point is that deciding and doing stay apart.
+ */
+export async function resume(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+}): Promise<PipelineState> {
+  const state = await loadPipeline(input.projectRoot, input.ref);
+  if (!state) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  const failed = state.units.failed.filter((f) => f.unit !== 0);
+  const next: PipelineState = {
+    ...state,
+    status: gateOf(state.stage) ? "waiting-gate" : "running",
+    units: { ...state.units, failed },
+    history: [...state.history, {
+      at: new Date().toISOString(), event: "run:resumed", stage: state.stage,
+    }],
+  };
+  await savePipeline(input.projectRoot, input.ref, next);
+  return next;
+}
+
 export function waitingOn(
   states: ReadonlyArray<{ readonly ref: ProductionRef; readonly state: PipelineState }>,
 ): ReadonlyArray<WaitingProduction> {

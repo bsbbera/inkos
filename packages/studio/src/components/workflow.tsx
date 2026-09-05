@@ -18,7 +18,7 @@
  * wherever it appears, because it is the text itself rather than a report
  * about the text.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Icon } from "./ui/icon";
 
 /* -------------------------------------------------------------- the shapes */
@@ -486,9 +486,52 @@ export function Grip({
  * Guarded rather than assumed: the API is missing in some embeddings, and a
  * button that throws is worse than one that never appears.
  */
+/**
+ * The speeds offered, and where the choice lives.
+ *
+ * One rate for the whole app, not one per button. A screen can show a dozen
+ * read-aloud buttons - a magazine issue has one per page - and a speed set on
+ * one of them that the next one ignores is not a setting, it is a surprise.
+ * So the choice sits outside React in a module the buttons subscribe to, and
+ * is remembered across sessions: a person who reads at 1.5x reads at 1.5x
+ * tomorrow too.
+ */
+export const SPEECH_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] as const;
+
+const RATE_KEY = "quire.readAloud.rate";
+const rateListeners = new Set<() => void>();
+
+function readStoredRate(): number {
+  if (typeof localStorage === "undefined") return 1;
+  const raw = Number(localStorage.getItem(RATE_KEY));
+  return SPEECH_RATES.includes(raw as (typeof SPEECH_RATES)[number]) ? raw : 1;
+}
+
+let currentRate = readStoredRate();
+
+function subscribeRate(fn: () => void): () => void {
+  rateListeners.add(fn);
+  return () => { rateListeners.delete(fn); };
+}
+
+function setStoredRate(rate: number): void {
+  currentRate = rate;
+  try {
+    localStorage.setItem(RATE_KEY, String(rate));
+  } catch {
+    /* A browser with storage refused still gets the speed for this session. */
+  }
+  for (const fn of rateListeners) fn();
+}
+
 export function useSpeech() {
   const [speaking, setSpeaking] = useState(false);
   const ownRef = useRef<SpeechSynthesisUtterance | null>(null);
+  /* What is being read, kept so a speed change can restart it. The Web Speech
+     API fixes rate at the moment an utterance starts and offers no way to
+     change it mid-sentence, so "faster" means saying the same thing again. */
+  const textRef = useRef("");
+  const rate = useSyncExternalStore(subscribeRate, () => currentRate, () => 1);
 
   const supported = typeof window !== "undefined"
     && typeof window.speechSynthesis !== "undefined";
@@ -497,6 +540,7 @@ export function useSpeech() {
     if (!supported) return;
     window.speechSynthesis.cancel();
     ownRef.current = null;
+    textRef.current = "";
     setSpeaking(false);
   }, [supported]);
 
@@ -506,46 +550,99 @@ export function useSpeech() {
        read over each other is the one outcome nobody wants. */
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    /* Slower than default: this is prose being judged, not a notification. */
-    utterance.rate = 0.95;
+    /* Read at whatever speed the person set. The old fixed 0.95 is gone: it
+       was a reasonable default nobody could argue with, which is exactly the
+       problem - some prose wants to be crawled over and some wants skimming. */
+    utterance.rate = currentRate;
     utterance.onend = () => { ownRef.current = null; setSpeaking(false); };
     utterance.onerror = () => { ownRef.current = null; setSpeaking(false); };
     ownRef.current = utterance;
+    textRef.current = text;
     window.speechSynthesis.speak(utterance);
     setSpeaking(true);
   }, [supported]);
+
+  /**
+   * Change the speed, and apply it to what is being said right now.
+   *
+   * Setting a speed that only takes effect on the next passage is the thing
+   * that makes a speed control feel broken - you press 2x, nothing happens,
+   * you press it again. So a change while speaking restarts the same text.
+   */
+  const setRate = useCallback((next: number) => {
+    setStoredRate(next);
+    if (speaking && textRef.current) speak(textRef.current);
+  }, [speaking, speak]);
 
   /* Leaving the screen must stop the voice. Without this it keeps reading a
      paragraph that is no longer on screen, with no control left to stop it. */
   useEffect(() => stop, [stop]);
 
-  return { supported, speaking, speak, stop };
+  return { supported, speaking, speak, stop, rate, setRate };
 }
 
-/** The button for it. Absent rather than broken where the browser has no voice. */
+/**
+ * The speed picker, shaped like the one everybody already knows.
+ *
+ * A native select rather than a menu of our own: it is one element, it is
+ * reachable from the keyboard, it opens the platform's own list on a phone,
+ * and a popover written by hand would have to earn all three back.
+ */
+export function SpeechRate({ dark = false }: { readonly dark?: boolean }) {
+  const { supported, rate, setRate } = useSpeech();
+  if (!supported) return null;
+  return (
+    <select
+      className={`btn btn-sm ${dark ? "btn-quiet" : "btn-line"}`}
+      style={{ paddingRight: 6, fontVariantNumeric: "tabular-nums" }}
+      value={rate}
+      aria-label="Reading speed"
+      title="Reading speed"
+      onChange={(e) => setRate(Number(e.target.value))}
+    >
+      {SPEECH_RATES.map((r) => (
+        <option key={r} value={r}>{r}x</option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * The button for it, with the speed beside it.
+ *
+ * Absent rather than broken where the browser has no voice. The speed sits
+ * next to the button rather than behind a menu somewhere else, because it is
+ * only ever wanted at the moment something is being read - and it is the same
+ * speed everywhere, so setting it here sets it for every passage on screen.
+ */
 export function ReadAloud({
-  text, label = "Read it aloud", dark = false, iconOnly = false,
+  text, label = "Read it aloud", dark = false, iconOnly = false, rateControl = true,
 }: {
   readonly text: string;
   readonly label?: string;
   readonly dark?: boolean;
   /** For a row that is already full: the glyph carries it, the label is the tooltip. */
   readonly iconOnly?: boolean;
+  /** Off for a row that shows many of these; one speed picker is enough. */
+  readonly rateControl?: boolean;
 }) {
   const { supported, speaking, speak, stop } = useSpeech();
   if (!supported || !text.trim()) return null;
   const title = speaking ? "Stop reading" : label;
   return (
-    <button
-      type="button"
-      className={`btn btn-sm ${dark ? "btn-quiet" : "btn-line"}`}
-      onClick={() => (speaking ? stop() : speak(text))}
-      aria-pressed={speaking}
-      aria-label={iconOnly ? title : undefined}
-      title={iconOnly ? title : undefined}
-    >
-      <Icon name={speaking ? "mute" : "speak"} size={15} />
-      {iconOnly ? null : speaking ? "Stop" : label}
-    </button>
+    <span className="rowflex" style={{ gap: 5, flex: "none" }}>
+      <button
+        type="button"
+        className={`btn btn-sm ${dark ? "btn-quiet" : "btn-line"}`}
+        onClick={() => (speaking ? stop() : speak(text))}
+        aria-pressed={speaking}
+        aria-label={iconOnly ? title : undefined}
+        title={iconOnly ? title : undefined}
+      >
+        <Icon name={speaking ? "mute" : "speak"} size={15} />
+        {iconOnly ? null : speaking ? "Stop" : label}
+      </button>
+      {rateControl ? <SpeechRate dark={dark} /> : null}
+    </span>
   );
 }

@@ -16,7 +16,7 @@
  * your intent, round dots are the file's own state; they never mean the same
  * thing inside one row.
  */
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TypeMark } from "../components/TypeMark";
 import type { SSEMessage } from "../hooks/use-sse";
 import { fetchJson, useApi } from "../hooks/use-api";
@@ -1470,6 +1470,16 @@ function PageColumn({
   readonly onAccept: () => void;
   readonly onIgnore: () => void;
 }) {
+  /* Above the early return: a hook cannot sit behind a condition. */
+  const [full, setFull] = useState(false);
+
+  /* Full screen is a way of editing this page, not a mode of its own. Leaving
+     edit, or moving to a different page, closes it - otherwise the overlay
+     stays up over prose it is no longer editing. */
+  useEffect(() => {
+    if (mode !== "edit") setFull(false);
+  }, [mode, path]);
+
   if (!path) {
     return (
       <div className="dark crop" style={{ height: "100%", display: "grid", placeItems: "center", padding: 32 }}>
@@ -1642,14 +1652,131 @@ function PageColumn({
             <button type="button" className="btn btn-line" onClick={() => onMode("read")}>
               Cancel
             </button>
+            {/* The column is a third of the window, and prose written in a
+                third of a window reads like prose written in a third of a
+                window. This is the same draft, given the whole screen. */}
+            <button type="button" className="btn btn-line" onClick={() => setFull(true)}>
+              <Icon name="grid" size={15} />
+              Full screen
+            </button>
             <span className="grow" />
             <span className="dim mono" style={{ fontSize: 11 }}>
               {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
             </span>
           </div>
+
+          <FullScreenEditor
+            open={full}
+            name={name}
+            place={placeOf(path)}
+            draft={draft}
+            onDraft={onDraft}
+            onSave={onSave}
+            saving={saving}
+            onClose={() => setFull(false)}
+          />
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The page, edited with the whole window.
+ *
+ * A native `<dialog>` opened modally rather than a div pretending to be one:
+ * the platform already gives the backdrop, the focus trap, Escape to close and
+ * inertness for everything behind it, and a hand-rolled overlay has to earn
+ * all four back and usually earns two.
+ *
+ * It edits the same `draft` the column does - no second copy of the text, so
+ * there is no version to reconcile when it closes and no way to lose an edit
+ * by closing the wrong one.
+ */
+function FullScreenEditor({
+  open, name, place, draft, onDraft, onSave, saving, onClose,
+}: {
+  readonly open: boolean;
+  readonly name: string;
+  readonly place: string;
+  readonly draft: string;
+  readonly onDraft: (t: string) => void;
+  readonly onSave: () => void;
+  readonly saving: boolean;
+  readonly onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  /* showModal() is a method, not an attribute, so open/closed has to be driven
+     imperatively or the element renders as an inert block in the flow. */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open && !el.open) el.showModal();
+    if (!open && el.open) el.close();
+  }, [open]);
+
+  return (
+    <dialog
+      ref={ref}
+      className="dark fullscreen-edit"
+      aria-label={`Edit ${name}`}
+      /* Escape fires `cancel`, and the parent owns the open flag, so the state
+         has to come back here or the dialog closes and React reopens it. */
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
+      onClose={onClose}
+    >
+      <div className="spread" style={{ alignItems: "flex-start", gap: 12, flex: "none" }}>
+        <div style={{ minWidth: 0 }}>
+          <div className="label">{place}</div>
+          <h3 style={{ fontSize: 17, marginTop: 5, overflowWrap: "anywhere" }}>{name}</h3>
+        </div>
+        <div className="rowflex" style={{ gap: 9, flex: "none" }}>
+          <ReadAloud dark iconOnly text={draft} label="Read the whole page" />
+          <button
+            type="button"
+            className="btn btn-quiet btn-sm"
+            aria-label="Leave full screen"
+            title="Leave full screen"
+            onClick={onClose}
+          >
+            <Icon name="x" size={15} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{
+        border: "1.5px solid var(--vermilion)",
+        borderRadius: "var(--r-card)",
+        background: "var(--char-2)",
+        padding: "16px 20px",
+        flex: 1,
+        minHeight: 0,
+        display: "flex",
+      }}>
+        <textarea
+          className="read-field"
+          style={{ color: "var(--on-char)", "--rs": "16.5px", "--rm": "78ch", flex: 1 } as React.CSSProperties}
+          aria-label="Edit the page"
+          value={draft}
+          onChange={(e) => onDraft(e.target.value)}
+        />
+      </div>
+
+      <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
+        <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
+          <Icon name="check" size={16} />
+          {saving ? "Saving…" : "Save the page"}
+        </button>
+        <button type="button" className="btn btn-line" onClick={onClose}>
+          Done
+        </button>
+        <span className="grow" />
+        <span className="dim mono" style={{ fontSize: 11 }}>
+          {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+        </span>
+      </div>
+    </dialog>
   );
 }
 

@@ -171,6 +171,37 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     },
   },
   {
+    /*
+     * The type the uniform rails were built to prove.
+     *
+     * A storybook is a picture book: a spread is one unit of everything — the
+     * words on it, the picture beside them, the page it is laid out on — which
+     * is why it needs no orchestrator change to exist. It declares the same
+     * three macro-stages as everything else and gets the same gates, the same
+     * hand-off and the same build, from the graph alone.
+     *
+     * No destyle stage: the prose is a few hundred words a child hears read
+     * aloud, and running a de-AI rewrite over it would flatten exactly the
+     * cadence that makes it worth reading twice.
+     */
+    id: "storybook",
+    label: "Storybook",
+    outDir: "storybooks",
+    skills: ["quire-storybook"],
+    factCheck: false,
+    images: true,
+    auditable: true,
+    pipeline: {
+      content: ["plan", "write", "audit"],
+      design: ["artplan", "generate", "review"],
+      build: ["layout", "export"],
+      gates: ["content", "design", "build"],
+      buildShape: "page-shaped",
+      outputs: ["print-pdf"],
+      unit: "spread",
+    },
+  },
+  {
     id: "storyboard",
     label: "Storyboard",
     outDir: "storyboards",

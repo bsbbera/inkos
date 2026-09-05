@@ -12,6 +12,14 @@ export const STUDIO_SSE_EVENTS = [
   // The orchestrator's own events. A name missing from this list is dropped
   // silently by the client, so adding one here is part of emitting it.
   "pipeline:stage",
+  // A gate opening and a job moving are the two things the run view has to
+  // hear about without polling. Named here because the client drops anything
+  // that is not.
+  "pipeline:gate",
+  "job:queued",
+  "job:progress",
+  "job:done",
+  "job:failed",
   "book:creating",
   "book:created",
   "book:deleted",

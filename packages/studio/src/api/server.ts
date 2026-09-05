@@ -138,6 +138,11 @@ import {
   listIssues,
   advancePipeline,
   runStage as runPipelineStage,
+  allPipelineRuns,
+  markPipelineInterrupted,
+  resumePipeline,
+  registerExecutor,
+  detectAndRewrite,
   approvePipelineGate,
   approvePublication,
   approvePublicationDesign,
@@ -6254,6 +6259,90 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     });
   }
 
+  /**
+   * The de-slop pass, as a stage the run performs rather than a button.
+   *
+   * The detector has always scored a chapter and the reviser has always been
+   * able to rewrite one, but the two were wired together in exactly one place:
+   * the background daemon, and only when auto-rewrite was switched on. A book
+   * written from the app reached `content.destyle`, and there the run sat while
+   * a person opened every chapter and pressed the button themselves.
+   *
+   * Registered from here rather than declared in the engine because it needs
+   * the project's model routing — the per-agent override that decides which
+   * model does a de-slop pass lives in the Studio's config, not in the stage
+   * table.
+   *
+   * Books only for now. Every other type keeps the manual button, which still
+   * reports the stage done; this is the one whose units are chapters and whose
+   * loop already exists.
+   */
+  /*
+   * A run that says it is running, at boot, is not.
+   *
+   * Nothing survives a restart, so that status on disk is left over from a
+   * stage that was in flight when the process ended. Left alone it shows as a
+   * run in progress with nothing behind it, forever. Detached: this reads
+   * every state file and the server must not wait on the disk to start
+   * listening.
+   */
+  void markPipelineInterrupted(root)
+    .then((refs) => {
+      for (const ref of refs) {
+        broadcast("pipeline:stage", {
+          kind: "stage:blocked", ref, reason: "interrupted by a restart — resume it when you are ready",
+        });
+      }
+    })
+    .catch(() => { /* A workspace that cannot be scanned still serves the app. */ });
+
+  registerExecutor("content.destyle", async (ctx) => {
+    if (ctx.type !== "book") {
+      return { ok: false, artifacts: [], error: `no automatic de-slop for ${ctx.type} yet` };
+    }
+    try {
+      const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as {
+        detection?: unknown;
+      };
+      const detection = DetectionConfigSchema.safeParse(raw.detection);
+      if (!detection.success) {
+        return {
+          ok: false, artifacts: [],
+          error: "no detection settings on this project — set a threshold before the de-slop stage can run",
+        };
+      }
+
+      const pipeline = new PipelineRunner(await buildPipelineConfig({ bookIdForSettings: ctx.id }));
+      const bookDir = join(root, "books", ctx.id);
+      const chapters = await readdir(join(bookDir, "chapters"));
+      const pad = String(ctx.unit).padStart(4, "0");
+      const file = chapters.find((n) => n.startsWith(`${pad}_`) && n.endsWith(".md"));
+      if (!file) {
+        return { ok: false, artifacts: [], error: `chapter ${ctx.unit} has no file to de-slop` };
+      }
+
+      const relative = `books/${ctx.id}/chapters/${file}`;
+      const content = await readFile(join(bookDir, "chapters", file), "utf-8");
+      const out = await detectAndRewrite(
+        detection.data,
+        pipeline.createAgentContext("destyler", ctx.id),
+        bookDir,
+        content,
+        ctx.unit,
+      );
+      ctx.onProgress?.(
+        `Chapter ${ctx.unit}: ${out.originalScore} → ${out.finalScore}`
+        + ` after ${out.attempts} pass${out.attempts === 1 ? "" : "es"}`,
+      );
+      /* A chapter that would not come down under the threshold is not a
+         failure of the stage: the pass ran, the score is recorded, and whether
+         that is good enough is the question the content gate exists to ask. */
+      return { ok: true, artifacts: [relative] };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   app.post("/api/v1/productions/:type/:id/gates/:gate/approve", async (c) => {
     const ref = productionRefFrom(c);
     const gate = asGate(c.req.param("gate"));
@@ -6364,6 +6453,30 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
+  });
+
+  /**
+   * Pick up a run the last shutdown cut short.
+   *
+   * The stage is re-run rather than assumed complete: nobody knows how far it
+   * got, every executor checks for its own output before doing the work again,
+   * and re-reading a chapter costs a great deal less than losing one.
+   */
+  app.post("/api/v1/productions/:type/:id/resume", async (c) => {
+    const ref = productionRefFrom(c);
+    try {
+      const state = await resumePipeline({ projectRoot: root, ref });
+      broadcast("pipeline:stage", { kind: "stage:start", ref, stage: state.stage });
+      startStage(ref);
+      return c.json({ ref, state });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
+  /** Every run, whatever state it is in - what a run list and a resume screen read. */
+  app.get("/api/v1/productions/runs", async (c) => {
+    return c.json({ runs: await allPipelineRuns(root) });
   });
 
   /** Every run that cannot move until a person acts - the "waiting on you" list. */

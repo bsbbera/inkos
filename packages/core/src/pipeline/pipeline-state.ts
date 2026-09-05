@@ -60,6 +60,13 @@ export interface GateRecord {
    * written instead of waiting for the whole book.
    */
   readonly perUnit?: Readonly<Record<string, GateState>>;
+  /**
+   * Units whose approved work was made from something that has since been
+   * withdrawn upstream. The artefacts are still on disk — this is a mark, not
+   * a deletion — so the screen can say which ones need another look and the
+   * rest can be reused rather than regenerated.
+   */
+  readonly stale?: ReadonlyArray<number>;
 }
 
 export interface HistoryEntry {
@@ -352,12 +359,15 @@ export function approve(input: {
   const units = unitsOrAll(state, input.units);
   const perUnit = withPerUnit(state.gates[gate], units, "approved");
   const settled = everyUnitIs(perUnit, state.units.total, "approved");
+  // Signing off is the moment a stale unit stops being stale: the person has
+  // now seen the work an upstream withdrawal made questionable.
+  const record = clearStale(state.gates[gate] ?? { state: "waiting" }, units);
   return {
     ...state,
     gates: {
       ...state.gates,
       [gate]: {
-        ...state.gates[gate],
+        ...record,
         state: settled ? "approved" : "waiting",
         at: now(),
         ...(input.by ? { by: input.by } : {}),
@@ -450,6 +460,41 @@ export function withdraw(input: {
   const there = sequence.indexOf(gateStage);
   const rewind = there !== -1 && here !== -1 && here > there;
 
+  /*
+   * Everything downstream loses its sign-off for these units too.
+   *
+   * A cover was drawn from copy that has just been withdrawn, so the approval
+   * of that cover was an approval of a picture of something else. Leaving it
+   * standing is how a run reaches the build gate carrying art nobody has
+   * agreed to since the words under it changed.
+   *
+   * The units are marked stale rather than cleared: the file stays on disk
+   * with its recipe beside it, so re-approving the copy can reuse the art it
+   * already has instead of paying for it twice, and only the stale units come
+   * back for review.
+   */
+  const downstream = input.pipeline
+    ? input.pipeline.gates.slice(input.pipeline.gates.indexOf(gate) + 1)
+    : [];
+  const gates: Record<string, GateRecord> = {
+    ...state.gates,
+    [gate]: { ...record, state: "waiting", at: now(), perUnit },
+  };
+  for (const later of downstream) {
+    const laterRecord = state.gates[later];
+    if (!laterRecord) continue;
+    const laterUnits = units.filter(
+      (u) => (laterRecord.perUnit?.[String(u)] ?? laterRecord.state) === "approved",
+    );
+    const stale = [...new Set([...(laterRecord.stale ?? []), ...units])].sort((a, b) => a - b);
+    gates[later] = {
+      ...laterRecord,
+      ...(laterRecord.state === "approved" ? { state: "waiting" as const } : {}),
+      ...(laterUnits.length ? { perUnit: withPerUnit(laterRecord, laterUnits, "waiting") } : {}),
+      stale,
+    };
+  }
+
   return {
     ...state,
     ...(rewind
@@ -461,15 +506,26 @@ export function withdraw(input: {
           units: { ...state.units, done: [], failed: [] },
         }
       : {}),
-    gates: {
-      ...state.gates,
-      [gate]: { ...record, state: "waiting", at: now(), perUnit },
-    },
+    gates,
     history: log(state, {
       at: now(), event: "gate:withdrawn", gate, units,
       ...(rewind ? { stage: gateStage, note: `run returned from ${state.stage}` } : {}),
     }),
   };
+}
+
+/**
+ * Clear the stale mark on units that have been looked at again.
+ *
+ * Approving a gate is the moment its stale units stop being stale: the person
+ * has now seen what the withdrawal made questionable and said yes to it.
+ */
+function clearStale(record: GateRecord, units: ReadonlyArray<number>): GateRecord {
+  if (!record.stale?.length) return record;
+  const left = record.stale.filter((u) => !units.includes(u));
+  if (left.length === record.stale.length) return record;
+  const { stale: _dropped, ...rest } = record;
+  return left.length ? { ...rest, stale: left } : rest;
 }
 
 /** Units still owed a decision at a gate — what a "waiting on you" list shows. */

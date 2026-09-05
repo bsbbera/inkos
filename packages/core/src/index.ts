@@ -789,13 +789,16 @@ export {
   reportUnitDone,
   runStage,
   reportUnitFailed,
+  allRuns as allPipelineRuns,
+  markInterrupted as markPipelineInterrupted,
+  resume as resumePipeline,
   specFor as productionSpecFor,
   tryTrack as trackPipeline,
   waitingOn as pipelineWaitingOn,
   withdraw as withdrawPipelineGate,
 } from "./pipeline/orchestrator.js";
 export {
-  EXECUTORS, executorFor, exportWork, layout, splitNegative, subjectOf,
+  EXECUTORS, executorFor, exportWork, layout, registerExecutor, splitNegative, subjectOf,
   type ArtBrief, type StageContext, type StageExecutor, type StageResult,
 } from "./pipeline/executors.js";
 export type {

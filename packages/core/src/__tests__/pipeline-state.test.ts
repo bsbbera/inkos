@@ -73,6 +73,58 @@ describe("reachStage puts a run where the work actually happened", () => {
   });
 });
 
+describe("withdrawal makes downstream work stale", () => {
+  /** Walk a run to the design gate with both gates signed off. */
+  function throughDesign(total: number) {
+    const { state, pipeline } = start("book", total);
+    let next = reachStage(state, pipeline, "content.write", now);
+    for (const stage of ["content.write", "content.audit", "content.destyle"]) {
+      next = reachStage(next, pipeline, stage, now);
+      next = advance(finishStage(next), pipeline, now).state;
+    }
+    next = approve({ state: next, gate: "content", now });
+    next = advance(next, pipeline, now).state;
+    for (const stage of ["design.artplan", "design.generate", "design.review"]) {
+      next = reachStage(next, pipeline, stage, now);
+      next = advance(finishStage(next), pipeline, now).state;
+    }
+    next = approve({ state: next, gate: "design", now });
+    return { state: next, pipeline };
+  }
+
+  it("un-approves the design of a unit whose copy was withdrawn", () => {
+    // The cover was drawn from words that no longer stand, so approving it
+    // was approving a picture of something else.
+    const { state, pipeline } = throughDesign(2);
+    expect(state.gates.design?.state).toBe("approved");
+    const back = withdraw({ state, gate: "content", units: [1], pipeline, now });
+    expect(back.gates.design?.state).toBe("waiting");
+    expect(back.gates.design?.perUnit?.["1"]).toBe("waiting");
+    // The unit nobody touched keeps its sign-off.
+    expect(back.gates.design?.perUnit?.["2"]).toBe("approved");
+  });
+
+  it("marks the unit stale rather than erasing what was made", () => {
+    const { state, pipeline } = throughDesign(2);
+    const back = withdraw({ state, gate: "content", units: [1], pipeline, now });
+    expect(back.gates.design?.stale).toEqual([1]);
+  });
+
+  it("clears the mark when that unit is signed off again", () => {
+    const { state, pipeline } = throughDesign(2);
+    const back = withdraw({ state, gate: "content", units: [1], pipeline, now });
+    const again = approve({ state: back, gate: "design", units: [1], now });
+    expect(again.gates.design?.stale).toBeUndefined();
+  });
+
+  it("leaves an upstream gate alone: staleness only runs downhill", () => {
+    const { state, pipeline } = throughDesign(1);
+    const back = withdraw({ state, gate: "design", units: [1], pipeline, now });
+    expect(back.gates.content?.stale).toBeUndefined();
+    expect(back.gates.content?.state).toBe("approved");
+  });
+});
+
 describe("stageSequence", () => {
   it("walks content, design and build with a gate after each", () => {
     expect(stageSequence(spec("book"))).toEqual([

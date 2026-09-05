@@ -381,6 +381,24 @@ export const EXECUTORS: Readonly<Record<string, StageExecutor>> = {
   "build.export": exportWork,
 };
 
+/**
+ * Stages the host wires in at boot.
+ *
+ * Some stages cannot live in this file honestly. A de-slop pass needs a model,
+ * and a model here means the project's router, its per-agent overrides and its
+ * key handling — all of which live in the Studio, above this layer. Importing
+ * that down into the engine would invert the dependency and drag the whole
+ * server into every test that touches a stage.
+ *
+ * So the Studio hands the stage in instead. Registration is the only mutable
+ * thing here and it happens once, at start-up, before any run moves.
+ */
+const registered = new Map<string, StageExecutor>();
+
+export function registerExecutor(stage: string, executor: StageExecutor): void {
+  registered.set(stage, executor);
+}
+
 export function executorFor(stage: string): StageExecutor | null {
-  return EXECUTORS[stage] ?? null;
+  return registered.get(stage) ?? EXECUTORS[stage] ?? null;
 }
