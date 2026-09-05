@@ -772,7 +772,9 @@ export {
 export type { SearchSource, SearchSweep, SourcedResult } from "./utils/search-sources.js";
 export { modelCapabilities, modelSearchesWeb } from "./llm/providers/lookup.js";
 
-export { PRODUCTIONS, auditableRoots, productionByDir } from "./productions/registry.js";
+export {
+  PRODUCTIONS, auditableRoots, productionByDir, refFromPath, type UnitRef,
+} from "./productions/registry.js";
 export type {
   ProductionSpec, ProductionPipeline, PipelineGate, BuildShape, BuildOutput,
 } from "./productions/registry.js";
@@ -788,6 +790,7 @@ export {
   runStage,
   reportUnitFailed,
   specFor as productionSpecFor,
+  tryTrack as trackPipeline,
   waitingOn as pipelineWaitingOn,
   withdraw as withdrawPipelineGate,
 } from "./pipeline/orchestrator.js";
@@ -798,7 +801,7 @@ export {
 export type {
   ProductionRef, OrchestratorEvent, AdvanceResult, WaitingProduction,
 } from "./pipeline/orchestrator.js";
-export { pendingUnits, stageSequence } from "./pipeline/pipeline-state.js";
+export { pendingUnits, reachStage, stageSequence } from "./pipeline/pipeline-state.js";
 export type { PipelineState, PipelineStatus, GateState } from "./pipeline/pipeline-state.js";
 
 export { validateDefinition, renderTemplate } from "./publications/types.js";

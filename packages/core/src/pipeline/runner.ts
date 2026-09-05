@@ -27,6 +27,7 @@ import { readGenreProfile } from "../agents/rules-reader.js";
 import { analyzeAITells } from "../agents/ai-tells.js";
 import { analyzeSensitiveWords } from "../agents/sensitive-words.js";
 import { StateManager } from "../state/manager.js";
+import { ensurePipeline, reportUnitDone, tryTrack } from "./orchestrator.js";
 import { archiveChapterVersion, readChapterUserBrief } from "../state/chapter-workspace.js";
 import { MemoryDB, type Fact } from "../state/memory-db.js";
 import { dispatchNotification, dispatchWebhookEvent } from "../notify/dispatcher.js";
@@ -1904,6 +1905,7 @@ export class PipelineRunner {
     this.throwIfOperationAborted();
     const releaseLock = await this.state.acquireBookLock(bookId);
     try {
+      await this.trackBookPipeline(bookId);
       const results: ChapterPipelineResult[] = [];
       for (let index = 0; index < chapterCount; index += 1) {
         this.throwIfOperationAborted();
@@ -1914,6 +1916,18 @@ export class PipelineRunner {
           options.externalContext ?? this.config.externalContext,
         );
         results.push(result);
+        // Only a chapter that survived its own audit counts as written. A
+        // degraded or failed one stays open, which is what leaves the run
+        // sitting on content.write with a visible gap instead of silently
+        // walking on to the gate a chapter short.
+        if (result.status === "ready-for-review") {
+          await tryTrack(() => reportUnitDone({
+            projectRoot: this.config.projectRoot,
+            ref: { type: "book", id: bookId },
+            unit: result.chapterNumber,
+            satisfies: "content.write",
+          }));
+        }
         options.onChapterComplete?.(result, results.length, chapterCount);
         if (result.status !== "ready-for-review") break;
       }
@@ -1921,6 +1935,25 @@ export class PipelineRunner {
     } finally {
       await releaseLock();
     }
+  }
+
+  /**
+   * Make sure this book has a run to report into.
+   *
+   * The total is the book's own `targetChapters`, not the count asked for in
+   * this call: writing four chapters of a twelve-chapter book must not open the
+   * content gate on a third of a book. `ensurePipeline` keeps whatever total
+   * was recorded first, so a later short call cannot shrink it either.
+   */
+  private async trackBookPipeline(bookId: string): Promise<void> {
+    await tryTrack(async () => {
+      const book = await this.state.loadBookConfig(bookId);
+      await ensurePipeline({
+        projectRoot: this.config.projectRoot,
+        ref: { type: "book", id: bookId },
+        totalUnits: book.targetChapters,
+      });
+    });
   }
 
   async repairChapterState(bookId: string, chapterNumber?: number): Promise<ChapterPipelineResult> {

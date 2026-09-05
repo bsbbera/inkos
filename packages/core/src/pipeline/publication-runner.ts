@@ -17,6 +17,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { PublicationDefinition } from "../publications/types.js";
 import { renderTemplate } from "../publications/types.js";
+import { ensurePipeline, reportUnitDone, tryTrack } from "./orchestrator.js";
 import * as styles from "../publications/styles.js";
 import {
   allSearchSources,
@@ -787,6 +788,14 @@ export async function runPlan(ctx: RunnerContext, id: string): Promise<Publicati
     .sort((a, b) => a.n - b.n)) as PublicationPage[];
   issue.warnings = checkPlan(def, issue);
   issue.status = "planned";
+  // The flatplan is the first moment the page count is real, so it is the first
+  // moment this issue can be a run. Before the plan there is a subject and an
+  // extent, and an extent is a target, not a set of units anyone signs off.
+  await tryTrack(() => ensurePipeline({
+    projectRoot: ctx.projectRoot,
+    ref: { type: "publication", id },
+    totalUnits: issue.pages.length,
+  }));
   emit(ctx, "publication:stage", { id, stage: "plan", state: "done", pages: issue.pages.length });
   return save(ctx, issue);
 }
@@ -965,6 +974,15 @@ export async function writePage(
     id, stage: "write", state: "done", page: page.n, words: page.words,
   });
   await save(ctx, issue);
+  // Written pages are the units of a magazine's content stage. Pages are
+  // written one call at a time and in any order, and `completeUnit` is a set,
+  // so rewriting p7 reports it done twice and the count stays honest.
+  await tryTrack(() => reportUnitDone({
+    projectRoot: ctx.projectRoot,
+    ref: { type: "publication", id },
+    unit: page.n,
+    satisfies: "content.write",
+  }));
   return page;
 }
 

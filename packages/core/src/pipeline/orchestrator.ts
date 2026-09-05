@@ -29,8 +29,10 @@ import {
   gateOf,
   initialState,
   pendingUnits,
+  reachStage,
   PIPELINE_STATE_VERSION,
   type PipelineState,
+  type StageId,
   type UnitFailure,
 } from "./pipeline-state.js";
 
@@ -256,20 +258,60 @@ export async function withdraw(input: {
 }
 
 /**
- * Record a unit of the current stage as finished, and advance if that was the
- * last one. This is what a runner calls when it has written a chapter.
+ * Record a unit as finished, and advance if that was the last one. This is what
+ * a runner calls when it has written a chapter.
+ *
+ * `satisfies` names the stage the caller actually did. Pass it whenever the
+ * caller knows — a writer knows it wrote, an audit knows it read — because
+ * without it the unit is credited to whichever stage the run happens to be
+ * standing on, and for any type that declares a stage nothing has wired yet
+ * (a book's `plan`) that is the wrong one. It only ever moves the run forward
+ * and never past a gate; a report for a stage already left is ignored.
  */
 export async function reportUnitDone(input: {
   readonly projectRoot: string;
   readonly ref: ProductionRef;
   readonly unit: number;
+  readonly satisfies?: StageId;
   readonly emit?: EventSink;
 }): Promise<AdvanceResult> {
   const current = await loadPipeline(input.projectRoot, input.ref);
   if (!current) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
-  const next = completeUnit(current, input.unit);
+  const pipeline = pipelineFor(input.ref.type);
+  if (!pipeline) throw new Error(`${input.ref.type} does not run a pipeline`);
+
+  const at = input.satisfies ? reachStage(current, pipeline, input.satisfies) : current;
+  if (input.satisfies && at.stage !== input.satisfies) {
+    // The run is past this stage, or a gate stands between. Either way the
+    // report is stale and crediting it would move work that is already signed
+    // off. Say where the run actually is rather than silently doing nothing.
+    return { state: at, moved: false, reason: `run is at ${at.stage}, not ${input.satisfies}` };
+  }
+  const next = completeUnit(at, input.unit);
   await savePipeline(input.projectRoot, input.ref, next);
   return advance({ ...input, state: next });
+}
+
+/**
+ * Report to the pipeline without ever letting bookkeeping cost real work.
+ *
+ * Every runner needs this and none of them should own it. A runner's job is to
+ * write the book; telling the state machine about it is secondary, and a run
+ * that threw because `pipeline.json` was locked would lose prose that was
+ * already on disk. So the failure is reported to the caller's progress line and
+ * swallowed: a stale state file is a nuisance, a lost draft is not.
+ */
+export async function tryTrack(
+  step: () => Promise<unknown>,
+  onProgress?: (message: string) => void,
+): Promise<void> {
+  try {
+    await step();
+  } catch (error) {
+    onProgress?.(
+      `Pipeline state not updated: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 export async function reportUnitFailed(input: {

@@ -4,6 +4,7 @@ import {
   createProductionRunSnapshot,
   writeProductionRunSnapshot,
 } from "../production/harness.js";
+import { ensurePipeline, reportUnitDone, tryTrack } from "../pipeline/orchestrator.js";
 import {
   loadTranslationChapter,
   loadTranslationGlossary,
@@ -48,6 +49,15 @@ export async function runTranslationProject(
 
   try {
     let manifest = await loadTranslationManifest(projectRoot, projectId);
+    // A translation's unit is a chapter, and the manifest is the only thing
+    // that knows how many there are. Registering before the loop means a run
+    // stopped half-way still shows how far it got rather than nothing at all.
+    const ref = { type: "translation", id: projectId };
+    await tryTrack(() => ensurePipeline({
+      projectRoot,
+      ref,
+      totalUnits: manifest.chapters.length,
+    }));
     let glossary = [...await loadTranslationGlossary(projectRoot, projectId)];
     const reportLines = [`# Translation Review`, ""];
     let translatedSegments = 0;
@@ -124,6 +134,9 @@ export async function runTranslationProject(
     }
     manifest = updateChapterStatus(manifest, chapterInfo.number, status);
     await saveTranslationManifest(projectRoot, manifest);
+    await tryTrack(() => reportUnitDone({
+      projectRoot, ref, unit: chapterInfo.number, satisfies: "content.write",
+    }));
   }
 
     const reportPath = `translations/${projectId}/review-report.md`;

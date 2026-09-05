@@ -23,6 +23,7 @@ import {
   type ScriptTargetFormat,
   type StoryboardCreationInput,
 } from "../agents/script-storyboard.js";
+import { ensurePipeline, reportUnitDone, tryTrack } from "./orchestrator.js";
 import { safeChildPath } from "../utils/path-safety.js";
 import { toPosixPath } from "../utils/posix-path.js";
 import { buildRuleStack } from "../utils/rule-stack.js";
@@ -150,6 +151,28 @@ export interface StoryboardAssetsManifest {
   readonly assets: readonly StoryboardImageAsset[];
 }
 
+/**
+ * Tell the pipeline this project exists and its text is written.
+ *
+ * All three runners here deliver in one pass — a script, a storyboard, an
+ * interactive-film package each land as a single committed set of files — so
+ * they are one unit, and the whole hand-off is these two calls made together
+ * once the artifacts are on disk. Reporting before the commit would open a gate
+ * on files that a failed validation was about to throw away.
+ */
+async function trackOneShot(
+  projectRoot: string,
+  type: string,
+  projectId: string,
+  onProgress?: (message: string) => void,
+): Promise<void> {
+  const ref = { type, id: projectId };
+  await tryTrack(async () => {
+    await ensurePipeline({ projectRoot, ref, totalUnits: 1 });
+    await reportUnitDone({ projectRoot, ref, unit: 1, satisfies: "content.write" });
+  }, onProgress);
+}
+
 export async function runScriptCreation(
   options: ScriptCreationRunOptions,
 ): Promise<ScriptCreationRunResult> {
@@ -198,6 +221,8 @@ export async function runScriptCreation(
     }),
     validate: () => assertNonEmptyArtifacts(artifacts),
   });
+
+  await trackOneShot(options.projectRoot, "script", projectId, options.onProgress);
 
   return {
     projectId,
@@ -333,6 +358,8 @@ export async function runInteractiveFilmCreation(
     validate: () => assertNonEmptyArtifacts(artifacts),
   });
 
+  await trackOneShot(options.projectRoot, "interactive-film", projectId, options.onProgress);
+
   return {
     projectId,
     baseDir,
@@ -435,6 +462,8 @@ export async function runStoryboardCreation(
     }),
     validate: () => assertNonEmptyArtifacts(artifacts),
   });
+
+  await trackOneShot(options.projectRoot, "storyboard", projectId, options.onProgress);
 
   return {
     projectId,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   advance, approve, completeUnit, failUnit, initialState,
-  pendingUnits, reject, stageSequence, withdraw,
+  pendingUnits, reachStage, reject, stageSequence, withdraw,
   type PipelineState,
 } from "../pipeline/pipeline-state.js";
 import { PRODUCTIONS } from "../productions/registry.js";
@@ -28,6 +28,50 @@ function finishStage(state: PipelineState): PipelineState {
   for (let unit = 1; unit <= state.units.total; unit += 1) next = completeUnit(next, unit, now);
   return next;
 }
+
+describe("reachStage puts a run where the work actually happened", () => {
+  it("walks forward over stages nothing has wired yet", () => {
+    // A book opens on content.plan because it declares one, but nothing runs
+    // the architect through the pipeline. Without this the writer's first
+    // chapter would complete the *plan* stage and the run would spend the rest
+    // of its life one step behind itself.
+    const { state, pipeline } = start("book", 3);
+    expect(state.stage).toBe("content.plan");
+    const moved = reachStage(state, pipeline, "content.write", now);
+    expect(moved.stage).toBe("content.write");
+    expect(moved.status).toBe("running");
+    expect(moved.history.at(-1)?.event).toBe("stage:skipped");
+  });
+
+  it("does nothing when the run is already there", () => {
+    const { state, pipeline } = start("book", 3);
+    const at = reachStage(state, pipeline, "content.write", now);
+    expect(reachStage(at, pipeline, "content.write", now)).toBe(at);
+  });
+
+  it("refuses to drag a run backwards", () => {
+    // A page rewritten after its gate opened must not pull the whole issue
+    // back into the writing stage.
+    const { state, pipeline } = start("book", 3);
+    const ahead = reachStage(state, pipeline, "content.destyle", now);
+    expect(reachStage(ahead, pipeline, "content.write", now).stage).toBe("content.destyle");
+  });
+
+  it("never crosses a gate, because a gate is a person", () => {
+    const { state, pipeline } = start("book", 3);
+    const atDestyle = reachStage(state, pipeline, "content.destyle", now);
+    // design.artplan sits on the far side of gate:content.
+    expect(reachStage(atDestyle, pipeline, "design.artplan", now).stage).toBe("content.destyle");
+  });
+
+  it("leaves the units of the stage it is leaving behind", () => {
+    const { state, pipeline } = start("book", 3);
+    const withProgress = completeUnit(state, 1, now);
+    expect(withProgress.units.done).toEqual([1]);
+    // Unit 1 of the plan stage is not unit 1 of the write stage.
+    expect(reachStage(withProgress, pipeline, "content.write", now).units.done).toEqual([]);
+  });
+});
 
 describe("stageSequence", () => {
   it("walks content, design and build with a gate after each", () => {

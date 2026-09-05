@@ -149,6 +149,55 @@ function log(state: PipelineState, entry: HistoryEntry): ReadonlyArray<HistoryEn
   return [...state.history, entry];
 }
 
+/**
+ * Put the run on the stage a runner has just done, if it is not there already.
+ *
+ * Units are credited to whatever stage the run is standing on, which is only
+ * safe when every stage before it has actually run. Most of them have not: a
+ * book declares `plan` before `write`, nothing wires the architect to the
+ * pipeline yet, and so reporting a written chapter used to complete the *plan*
+ * stage and leave the whole run one step behind itself for the rest of its
+ * life. The audits then completed `write`, and the destyle stage was never
+ * reached at all.
+ *
+ * So a runner says which stage it satisfied and this walks the run there,
+ * recording the skipped stages rather than pretending they happened. Three
+ * rules keep that honest:
+ *
+ * - It only ever moves forward. A report for a stage the run has already left
+ *   is stale — a page rewritten after its gate opened — and is ignored, which
+ *   is what stops a late call from dragging a run backwards.
+ * - It never crosses a gate. A gate is a person, and no runner may walk one.
+ * - It clears unit progress on the way, because the units done in the stage
+ *   being left belong to that stage, not to the one being entered.
+ */
+export function reachStage(
+  state: PipelineState,
+  pipeline: ProductionPipeline,
+  stage: StageId,
+  now: Now = systemNow,
+): PipelineState {
+  if (state.stage === stage) return state;
+  const sequence = stageSequence(pipeline);
+  const from = sequence.indexOf(state.stage);
+  const to = sequence.indexOf(stage);
+  if (from < 0 || to < 0 || to < from) return state;
+  const crossed = sequence.slice(from, to);
+  if (crossed.some((s) => isGate(s))) return state;
+  return {
+    ...state,
+    stage,
+    status: "running",
+    units: { ...state.units, done: [], failed: [] },
+    history: log(state, {
+      at: now(),
+      event: "stage:skipped",
+      stage,
+      note: `entered from ${state.stage}`,
+    }),
+  };
+}
+
 /** Mark one unit finished in the current stage. Does not move the pipeline. */
 export function completeUnit(
   state: PipelineState,

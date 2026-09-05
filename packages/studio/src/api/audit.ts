@@ -30,7 +30,7 @@ import {
   type StoryAudit,
 } from "@actalk/quire-core";
 import {
-  loadPipeline, pipelineFor, productionByDir, reportUnitDone,
+  loadPipeline, pipelineFor, refFromPath, reportUnitDone,
 } from "@actalk/quire-core";
 import { gateState, publicationWorkflow, stageStates } from "./publications.js";
 import { projectWorkflow, type Workflow } from "./workflow.js";
@@ -270,9 +270,10 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
    * connection, and it is deliberately narrow - it fires only when the run is
    * standing on the audit stage, so auditing a file again later moves nothing.
    *
-   * Only work-shaped productions (a short, a translation) are reported. A book
-   * audits per chapter and needs a chapter-to-unit map that does not exist
-   * yet; reporting unit 1 for it would claim the whole book had been read.
+   * Which unit a path is comes from `refFromPath`, so a book reports the
+   * chapter that was actually read rather than nothing at all. Auditing four
+   * chapters of a twelve-chapter book advances four units and leaves the run
+   * on `content.audit`, which is the truth: eight are still unread.
    *
    * `satisfies` is which stage this run was: a de-AI pass is the destyle
    * stage, a read is the audit stage. Sending one for the other would let a
@@ -282,20 +283,29 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     paths: ReadonlyArray<string>,
     satisfies: "content.audit" | "content.destyle",
   ): Promise<void> {
-    const refs = new Map<string, { type: string; id: string }>();
+    // Keyed by run so several chapters of one book are reported together, and
+    // by unit inside it so the same file listed twice is read once.
+    const runs = new Map<string, { type: string; id: string; units: Set<number> }>();
     for (const path of paths) {
-      const [dir, id] = path.split("/");
-      if (!dir || !id) continue;
-      const spec = productionByDir(dir);
-      if (!spec?.pipeline || spec.pipeline.unit !== "work") continue;
-      refs.set(`${spec.id}/${id}`, { type: spec.id, id });
+      const found = refFromPath(path);
+      if (!found) continue;
+      const key = `${found.type}/${found.id}`;
+      const run = runs.get(key) ?? { type: found.type, id: found.id, units: new Set<number>() };
+      run.units.add(found.unit);
+      runs.set(key, run);
     }
-    for (const ref of refs.values()) {
+    for (const { type, id, units } of runs.values()) {
+      const ref = { type, id };
       try {
-        const state = await loadPipeline(root, ref);
-        if (!state || state.stage !== satisfies) continue;
-        if (!pipelineFor(ref.type)) continue;
-        await reportUnitDone({ projectRoot: root, ref, unit: 1 });
+        if (!pipelineFor(type)) continue;
+        for (const unit of [...units].sort((a, b) => a - b)) {
+          // Re-read on every unit: the first one can be what carries the run
+          // off this stage, and reporting the rest against a stage the run has
+          // already left would credit the wrong work.
+          const state = await loadPipeline(root, ref);
+          if (!state || state.stage !== satisfies) break;
+          await reportUnitDone({ projectRoot: root, ref, unit });
+        }
         broadcast("pipeline:stage", { kind: "stage:start", ref, stage: satisfies });
       } catch {
         // Bookkeeping never costs the audit that already ran.

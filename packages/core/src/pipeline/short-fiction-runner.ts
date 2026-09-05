@@ -41,7 +41,7 @@ import {
   writeProductionRunSnapshot,
   type ProductionObservation,
 } from "../production/harness.js";
-import { ensurePipeline, reportUnitDone } from "./orchestrator.js";
+import { ensurePipeline, reportUnitDone, tryTrack } from "./orchestrator.js";
 import { buildLengthSpec, countChapterLength } from "../utils/length-metrics.js";
 import { buildRuleStack } from "../utils/rule-stack.js";
 import { safeChildPath } from "../utils/path-safety.js";
@@ -183,18 +183,17 @@ async function trackShortPipeline(
   onProgress?: (message: string) => void,
 ): Promise<void> {
   const ref = { type: "short", id: storyId };
-  try {
-    if (step === "start") {
-      await ensurePipeline({ projectRoot: root, ref, totalUnits: 1 });
-      return;
-    }
-    // Advances out of content.write and parks at content.audit, which is where
-    // it should sit: the audit has not run yet, and claiming otherwise is how
-    // a gate opens on prose nothing has read.
-    await reportUnitDone({ projectRoot: root, ref, unit: 1 });
-  } catch (error) {
-    onProgress?.(`Pipeline state not updated: ${error instanceof Error ? error.message : String(error)}`);
+  if (step === "start") {
+    await tryTrack(() => ensurePipeline({ projectRoot: root, ref, totalUnits: 1 }), onProgress);
+    return;
   }
+  // Advances out of content.write and parks at content.audit, which is where
+  // it should sit: the audit has not run yet, and claiming otherwise is how
+  // a gate opens on prose nothing has read.
+  await tryTrack(
+    () => reportUnitDone({ projectRoot: root, ref, unit: 1, satisfies: "content.write" }),
+    onProgress,
+  );
 }
 
 async function produceShort(

@@ -155,7 +155,11 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
       gates: ["content", "build"],
       buildShape: "screenplay",
       outputs: ["screenplay-pdf"],
-      unit: "scene",
+      // One unit, not one per scene: the runner writes `script.md` in a single
+      // pass and there is no per-scene artifact to sign off. Declaring scenes
+      // would park the run forever waiting for scene 2 of a file that is
+      // already finished.
+      unit: "work",
     },
   },
   {
@@ -173,7 +177,9 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
       gates: ["content", "design", "build"],
       buildShape: "page-shaped",
       outputs: ["panel-sheet"],
-      unit: "panel",
+      // The panels live inside one `storyboard.md`; segmentation is an
+      // internal batching detail of the writer, not a unit anyone approves.
+      unit: "work",
     },
   },
   {
@@ -193,7 +199,9 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
       gates: ["content", "design"],
       buildShape: "not-paper",
       outputs: ["html"],
-      unit: "scene",
+      // Story tree, flags, script and storyboard land as one package from one
+      // agent turn. Nothing produces a scene on its own.
+      unit: "work",
     },
   },
   {
@@ -254,6 +262,46 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
 
 export function productionByDir(dir: string): ProductionSpec | undefined {
   return PRODUCTIONS.find((p) => p.outDir.toLowerCase() === dir.toLowerCase());
+}
+
+/** A production and one of its units, named the way a run refers to them. */
+export interface UnitRef {
+  readonly type: string;
+  readonly id: string;
+  readonly unit: number;
+}
+
+/**
+ * Which run, and which unit of it, a project-relative path belongs to.
+ *
+ * The audit screen knows paths and nothing else, so this is the one place that
+ * turns a file back into a place in a pipeline. Without it a book could sit at
+ * `content.audit` forever while somebody audited every chapter in it, because
+ * nothing connected the file that was read to the unit that was waiting.
+ *
+ * The number comes off the leaf filename: every unit-shaped type already pads
+ * one in there (`0003_the-door.md`, `chapter-0004.json`, `02-first-light.md`)
+ * and the first run of digits is that number in all three. A type whose unit is
+ * the whole work is unit 1 by definition and needs no number at all.
+ */
+export function refFromPath(path: string): UnitRef | null {
+  const parts = path.split("/").filter(Boolean);
+  const spec = productionByDir(parts[0] ?? "");
+  if (!spec?.pipeline) return null;
+
+  // The magazine keeps its issues one level below its out dir; everything else
+  // puts the id straight under it.
+  const id = parts[1] === "issues" ? parts[2] : parts[1];
+  if (!id) return null;
+  if (spec.pipeline.unit === "work") return { type: spec.id, id, unit: 1 };
+
+  const leaf = (parts[parts.length - 1] ?? "").replace(/\.[^.]+$/, "");
+  const digits = /(\d+)/.exec(leaf);
+  if (!digits) return null;
+  const unit = Number(digits[1]);
+  // A path that resolves to unit 0 is a naming we do not understand; guessing
+  // would report the wrong chapter as read.
+  return unit >= 1 ? { type: spec.id, id, unit } : null;
 }
 
 /** Where to look for finished work, with the label to file it under. */
