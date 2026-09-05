@@ -194,10 +194,17 @@ export const PRODUCTIONS: ReadonlyArray<ProductionSpec> = [
     pipeline: {
       content: ["plan", "write", "audit"],
       design: ["artplan", "generate", "review"],
-      build: ["layout", "export"],
+      // No layout stage, and html rather than the print-pdf this wants. A
+      // print PDF of a picture book means an Affinity document with a
+      // storybook master, and there is not one; declaring the output anyway
+      // would park every run on a stage nothing performs, which is the exact
+      // failure the book's build array was fixed for. What it builds instead
+      // is the proof copy — every spread, picture beside words, in one file —
+      // and that is honest about being a proof.
+      build: ["export"],
       gates: ["content", "design", "build"],
       buildShape: "page-shaped",
-      outputs: ["print-pdf"],
+      outputs: ["html"],
       unit: "spread",
     },
   },

@@ -17,6 +17,8 @@ export const STUDIO_SSE_EVENTS = [
   // that is not.
   "pipeline:gate",
   "job:queued",
+  "job:started",
+  "job:cancelled",
   "job:progress",
   "job:done",
   "job:failed",

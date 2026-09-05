@@ -346,6 +346,15 @@ export async function runStage(input: {
   readonly shimUrl?: string;
   readonly onProgress?: (message: string) => void;
   readonly emit?: EventSink;
+  /**
+   * Stop after the unit in hand.
+   *
+   * Checked between units and handed to the executor, which is the only pair of
+   * places where stopping is safe. A stage abandoned mid-unit would leave the
+   * half-written file that every executor's resume check then mistakes for
+   * finished work.
+   */
+  readonly signal?: AbortSignal;
 }): Promise<{
   readonly ran: boolean;
   readonly stage: string;
@@ -357,7 +366,7 @@ export async function runStage(input: {
 }> {
   const state = await loadPipeline(input.projectRoot, input.ref);
   if (!state) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
-  const executor = executorFor(state.stage);
+  const executor = executorFor(state.stage, input.ref.type);
   if (!executor || gateOf(state.stage) || state.stage === "done") {
     return { ran: false, stage: state.stage, artifacts: [], advanced: false };
   }
@@ -366,6 +375,13 @@ export async function runStage(input: {
   const artifacts: string[] = [];
   for (let unit = 1; unit <= state.units.total; unit += 1) {
     if (state.units.done.includes(unit)) continue;
+    if (input.signal?.aborted) {
+      // Units already finished stay finished; the run simply stands where it
+      // is, which is the same state a crash would leave and the same one
+      // `resume` picks up.
+      input.onProgress?.(`Cancelled before unit ${unit}`);
+      return { ran: true, stage, artifacts, advanced: false };
+    }
     const result = await executor({
       projectRoot: input.projectRoot,
       type: input.ref.type,
@@ -373,11 +389,20 @@ export async function runStage(input: {
       unit,
       ...(input.shimUrl ? { shimUrl: input.shimUrl } : {}),
       ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+      ...(input.signal ? { signal: input.signal } : {}),
     }).catch((error: unknown): StageResult => ({
       ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error),
     }));
 
     if (!result.ok) {
+      if (input.signal?.aborted) {
+        // The stage did not fail; it was stopped. Recording a failed unit here
+        // would put "fetch aborted" on the screen as though something broke,
+        // and leave the run marked failed for a decision somebody made on
+        // purpose. The unit stays untouched, which is where a cancel leaves it.
+        input.onProgress?.(`Cancelled during unit ${unit}`);
+        return { ran: true, stage, artifacts, advanced: false };
+      }
       await reportUnitFailed({
         projectRoot: input.projectRoot,
         ref: input.ref,
@@ -493,6 +518,34 @@ export async function markInterrupted(projectRoot: string): Promise<ReadonlyArra
     touched.push(ref);
   }
   return touched;
+}
+
+/**
+ * Say, on disk, that nobody is working on this any more.
+ *
+ * A cancelled stage leaves `status: "running"` behind, and that is the same lie
+ * a crash leaves — a run the screen shows as in progress with nothing behind
+ * it. `markInterrupted` only tells it at boot, which is far too late for a
+ * cancel: the app is still up and the person is looking at it.
+ *
+ * Idle rather than failed. Nothing went wrong; somebody changed their mind, and
+ * the work that was finished stays finished.
+ */
+export async function pause(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+}): Promise<PipelineState | null> {
+  const state = await loadPipeline(input.projectRoot, input.ref);
+  if (!state || state.status !== "running") return state;
+  const next: PipelineState = {
+    ...state,
+    status: "idle",
+    history: [...state.history, {
+      at: new Date().toISOString(), event: "run:cancelled", stage: state.stage,
+    }],
+  };
+  await savePipeline(input.projectRoot, input.ref, next);
+  return next;
 }
 
 /**

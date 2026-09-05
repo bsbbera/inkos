@@ -3,10 +3,11 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  advance, approve, ensurePipeline, loadPipeline, pipelinePath,
-  reject, reportUnitDone, reportUnitFailed, waitingOn, withdraw,
+  advance, approve, ensurePipeline, loadPipeline, pause, pipelinePath,
+  reject, reportUnitDone, reportUnitFailed, runStage, waitingOn, withdraw,
   type OrchestratorEvent, type ProductionRef,
 } from "../pipeline/orchestrator.js";
+import { registerExecutor } from "../pipeline/executors.js";
 
 let root = "";
 const book: ProductionRef = { type: "book", id: "the-tower" };
@@ -170,5 +171,60 @@ describe("waitingOn", () => {
       { ref: book, gate: "content", units: [2], stage: "gate:content" },
       { ref: script, gate: "content", units: [1], stage: "gate:content" },
     ]);
+  });
+});
+
+describe("stopping a stage", () => {
+  it("leaves the unit alone and does not call it a failure", async () => {
+    const controller = new AbortController();
+    registerExecutor("content.plan", async (ctx) => {
+      // Stopped while this unit was in flight, which is what an aborted render
+      // or model call looks like from here.
+      controller.abort();
+      return { ok: false, artifacts: [], error: `aborted at unit ${ctx.unit}` };
+    }, "book");
+
+    await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 2 });
+    const out = await runStage({ projectRoot: root, ref: book, signal: controller.signal });
+    expect(out.advanced).toBe(false);
+
+    const state = await loadPipeline(root, book);
+    expect(state?.units.failed).toEqual([]);
+    expect(state?.units.done).toEqual([]);
+    expect(state?.stage).toBe("content.plan");
+
+  });
+
+  it("stops the file claiming somebody is working on it", async () => {
+    await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 2 });
+    // One unit in, the run is under way — which is the state a cancel has to
+    // undo. A run that never started needs no undoing, and pause leaves it be.
+    await reportUnitDone({ projectRoot: root, ref: book, unit: 1 });
+    expect((await loadPipeline(root, book))?.status).toBe("running");
+
+    const paused = await pause({ projectRoot: root, ref: book });
+    expect(paused?.status).toBe("idle");
+    expect(paused?.history.at(-1)?.event).toBe("run:cancelled");
+
+    // Twice is not two cancellations.
+    const again = await pause({ projectRoot: root, ref: book });
+    expect(again?.history.filter((h) => h.event === "run:cancelled")).toHaveLength(1);
+  });
+
+  it("stops before the next unit when the signal is already raised", async () => {
+    const seen: number[] = [];
+    const controller = new AbortController();
+    registerExecutor("content.plan", async (ctx) => {
+      seen.push(ctx.unit);
+      controller.abort();
+      return { ok: true, artifacts: [] };
+    }, "book");
+
+    await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 3 });
+    await runStage({ projectRoot: root, ref: book, signal: controller.signal });
+
+    // Unit 1 ran and is credited; nothing after it was started.
+    expect(seen).toEqual([1]);
+    expect((await loadPipeline(root, book))?.units.done).toEqual([1]);
   });
 });

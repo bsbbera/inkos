@@ -792,6 +792,7 @@ export {
   allRuns as allPipelineRuns,
   markInterrupted as markPipelineInterrupted,
   resume as resumePipeline,
+  pause as pausePipeline,
   specFor as productionSpecFor,
   tryTrack as trackPipeline,
   waitingOn as pipelineWaitingOn,
@@ -804,6 +805,31 @@ export {
 export type {
   ProductionRef, OrchestratorEvent, AdvanceResult, WaitingProduction,
 } from "./pipeline/orchestrator.js";
+export {
+  createStorybook,
+  loadStorybook,
+  planStorybook,
+  writeStorybookSpread,
+  buildStorybookProof,
+  spreadPath as storybookSpreadPath,
+  spreadWords as storybookSpreadWords,
+  spreadArtNote as storybookSpreadArtNote,
+  renderSpread as renderStorybookSpread,
+  type StorybookMeta,
+} from "./pipeline/storybook-runner.js";
+export { StorybookAgent, type SpreadPlan, type SpreadText } from "./agents/storybook.js";
+export {
+  enqueue as enqueueJob,
+  cancel as cancelJob,
+  listJobs,
+  jobById,
+  pruneJobs,
+  resetJobs,
+  setJobSink,
+  type Job,
+  type JobStatus,
+  type JobWork,
+} from "./pipeline/jobs.js";
 export { pendingUnits, reachStage, stageSequence } from "./pipeline/pipeline-state.js";
 export type { PipelineState, PipelineStatus, GateState } from "./pipeline/pipeline-state.js";
 

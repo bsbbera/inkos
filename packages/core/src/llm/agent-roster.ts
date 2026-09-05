@@ -22,6 +22,7 @@ export type AgentGroup =
   | "book"
   | "checks"
   | "short"
+  | "storybook"
   | "script"
   | "magazine"
   | "interactive"
@@ -76,6 +77,11 @@ export const AGENT_ROSTER: ReadonlyArray<AgentRole> = [
   { id: "publication-reviser", label: "magazine reviser", does: "rewrites a page or one element of it", group: "magazine" },
   { id: "publication", label: "magazine (other)", does: "any magazine stage with no agent of its own yet", group: "magazine" },
 
+  // Picture books. One pin, not two: planning the spreads and writing them are
+  // the same voice a few hundred words apart, and splitting the row would offer
+  // a choice nobody has a reason to make differently.
+  { id: "storybook", label: "storybook", does: "plans and writes a picture book, spread by spread", group: "storybook" },
+
   // Interactive and live.
   { id: "interactive-film-creation", label: "interactive film", does: "writes the branching film", group: "interactive" },
   { id: "film-authoring", label: "film authoring", does: "edits a film from chat", group: "interactive" },
@@ -90,6 +96,7 @@ export const AGENT_GROUP_LABELS: Readonly<Record<AgentGroup, string>> = {
   book: "Books",
   checks: "Checks",
   short: "Short fiction",
+  storybook: "Storybook",
   script: "Script & storyboard",
   magazine: "Magazine",
   interactive: "Interactive & live",

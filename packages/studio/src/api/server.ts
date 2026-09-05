@@ -141,8 +141,16 @@ import {
   allPipelineRuns,
   markPipelineInterrupted,
   resumePipeline,
+  pausePipeline,
   registerExecutor,
   detectAndRewrite,
+  enqueueJob,
+  cancelJob,
+  listJobs,
+  setJobSink,
+  createStorybook,
+  planStorybook,
+  writeStorybookSpread,
   approvePipelineGate,
   approvePublication,
   approvePublicationDesign,
@@ -6240,23 +6248,50 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * and the run waits for its runner, exactly as before.
    */
   function startStage(ref: ProductionRef): void {
-    void runPipelineStage({
-      projectRoot: root,
-      ref,
-      shimUrl: shimUrl(),
-      onProgress: (message) => broadcast("pipeline:stage", { kind: "progress", ref, message }),
-      emit: (event) => broadcast("pipeline:stage", event),
-    }).then((out) => {
-      // A stage that finished may have opened the next one, which may also be
-      // ours to run. Chained rather than looped so a stage that produces
-      // nothing cannot spin.
-      if (out.advanced) startStage(ref);
-    }).catch((error: unknown) => {
-      broadcast("pipeline:stage", {
-        kind: "stage:blocked", ref,
-        reason: error instanceof Error ? error.message : String(error),
+    void (async () => {
+      // Named before it is queued, because the name is what makes two calls
+      // for the same work the same job. `startStage` is called by the approve
+      // route and again by the chain below, and without a name they would be
+      // two jobs running the same units twice.
+      const state = await loadPipeline(root, ref).catch(() => null);
+      const stage = state?.stage ?? "pipeline";
+      enqueueJob({
+        ref,
+        stage,
+        work: async ({ signal, onProgress }) => {
+          const out = await runPipelineStage({
+            projectRoot: root,
+            ref,
+            shimUrl: shimUrl(),
+            signal,
+            onProgress: (message) => {
+              onProgress(message);
+              broadcast("pipeline:stage", { kind: "progress", ref, message });
+            },
+            emit: (event) => broadcast("pipeline:stage", event),
+          }).catch((error: unknown) => {
+            broadcast("pipeline:stage", {
+              kind: "stage:blocked", ref,
+              reason: error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          });
+          if (signal.aborted) {
+            // The state file still says running, because the stage was stopped
+            // rather than finished. Left alone that reads as a run in progress
+            // with nothing behind it — the lie a crash tells, told while the
+            // app is up and someone is watching.
+            await pausePipeline({ projectRoot: root, ref });
+            broadcast("pipeline:stage", { kind: "stage:blocked", ref, reason: "cancelled" });
+            return;
+          }
+          // A stage that finished may have opened the next one, which may also
+          // be ours to run. Chained rather than looped so a stage that produces
+          // nothing cannot spin.
+          if (out.advanced) startStage(ref);
+        },
       });
-    });
+    })();
   }
 
   /**
@@ -6394,6 +6429,128 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return { ok: true, artifacts: [relative] };
     } catch (error) {
       return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /*
+   * Job news, on the stream the app already has open.
+   *
+   * The queue is in the engine and knows nothing about browsers; this is the
+   * one wire between them. Every job event is broadcast under its own name so
+   * a screen can listen for `job:progress` without also being woken by every
+   * pipeline transition.
+   */
+  setJobSink((event, job) => broadcast(event, job));
+
+  /** What is running, what is waiting, and what just finished. */
+  app.get("/api/v1/jobs", (c) => c.json({ jobs: listJobs() }));
+
+  /*
+   * Stop one.
+   *
+   * 404 rather than a silent ok when the id is unknown: "cancelled" about a job
+   * that was never there is the answer that made people click it twice.
+   *
+   * A cancel on a running job returns as soon as the signal is raised, not when
+   * the work stops — the unit in hand finishes, and the job flips to cancelled
+   * when it does. The screen learns that from `job:cancelled`, not from here.
+   */
+  app.post("/api/v1/jobs/:id/cancel", (c) => {
+    const id = c.req.param("id");
+    return cancelJob(id)
+      ? c.json({ ok: true, id })
+      : c.json({ ok: false, id, error: "no such job, or it has already finished" }, 404);
+  });
+
+  /*
+   * The storybook's two authoring stages.
+   *
+   * Registered for `storybook` alone. A bare registration would take over
+   * `content.plan` for books and scripts too, and a registered stage that
+   * refuses fails the unit where an unregistered one waits for its runner.
+   *
+   * They are here rather than in the engine for the same reason the de-slop
+   * pass is: they need a model, and a model means this project's routing table.
+   */
+  const storybookContext = async (id: string, signal?: AbortSignal) => {
+    const runner = new PipelineRunner(await buildPipelineConfig());
+    const base = runner.createAgentContext("storybook", id);
+    // The cancel signal, carried the last hop to the model call itself. Without
+    // it a cancel is only honoured between spreads, so a run stopped during a
+    // long completion holds the queue until that completion returns — which is
+    // exactly the wait the button exists to end.
+    return signal ? { ...base, signal } : base;
+  };
+
+  registerExecutor("content.plan", async (ctx) => {
+    try {
+      const artifacts = await planStorybook({
+        projectRoot: root,
+        id: ctx.id,
+        unit: ctx.unit,
+        agent: await storybookContext(ctx.id, ctx.signal),
+        ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      });
+      return { ok: true, artifacts };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }, "storybook");
+
+  registerExecutor("content.write", async (ctx) => {
+    try {
+      const artifacts = await writeStorybookSpread({
+        projectRoot: root,
+        id: ctx.id,
+        unit: ctx.unit,
+        agent: await storybookContext(ctx.id, ctx.signal),
+        ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      });
+      return { ok: true, artifacts };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }, "storybook");
+
+  /*
+   * Start a picture book.
+   *
+   * Creation writes what the book *is* and starts its pipeline; it deliberately
+   * writes no prose. The plan is a stage, and a stage that creation had already
+   * performed behind the pipeline's back is exactly the disconnected endpoint
+   * this whole thing replaced.
+   */
+  app.post("/api/v1/productions/storybook/create", async (c) => {
+    type CreateBody = {
+      title?: string; brief?: string; audience?: string; spreads?: number; id?: string;
+    };
+    const body = await c.req.json<CreateBody>().catch(() => ({} as CreateBody));
+    const title = body.title?.trim();
+    if (!title) return c.json({ error: "A storybook needs a title" }, 400);
+    if (!body.brief?.trim()) return c.json({ error: "A storybook needs a brief to plan from" }, 400);
+
+    const id = (body.id?.trim() || title)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || `storybook-${Date.now().toString(36)}`;
+
+    try {
+      const meta = await createStorybook({
+        projectRoot: root,
+        id,
+        title,
+        brief: body.brief,
+        ...(body.audience ? { audience: body.audience } : {}),
+        ...(body.spreads ? { spreads: body.spreads } : {}),
+      });
+      const ref: ProductionRef = { type: "storybook", id };
+      const state = await ensurePipeline({ projectRoot: root, ref, totalUnits: meta.spreads });
+      // The point of the rails: creating it starts it. Nothing else to click.
+      startStage(ref);
+      return c.json({ ref, meta, state });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
     }
   });
 

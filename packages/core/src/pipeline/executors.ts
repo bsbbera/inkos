@@ -32,6 +32,15 @@ export interface StageContext {
   /** Where the shim is. Stages that render need it; the rest ignore it. */
   readonly shimUrl?: string;
   readonly onProgress?: (message: string) => void;
+  /**
+   * Someone changed their mind.
+   *
+   * Passed down to whatever the stage waits on rather than polled here: a
+   * render is a fetch that can be aborted at the socket, and checking a flag
+   * between units would leave a cancelled job holding a GPU for the twenty
+   * minutes the current image still takes.
+   */
+  readonly signal?: AbortSignal;
 }
 
 export interface StageResult {
@@ -93,6 +102,53 @@ export function subjectOf(prompt: string): string {
 }
 
 /**
+ * A picture book plans art per spread, not per book.
+ *
+ * The generic art plan materialises one cover from the prompt the packaging
+ * agent wrote at the end of the content stage. A storybook has no such prompt
+ * and would not be served by one: the illustration is the unit, and the note
+ * describing it was written beside the words it belongs to, on the spread
+ * itself. So this reads that note rather than inventing a second one — the
+ * same rule as the cover, applied to a book where every page has a picture.
+ *
+ * Landscape, because a spread is two pages wide and a portrait brief would
+ * produce art that has to be cropped to fit the shape it was made for.
+ */
+const storybookArtplan = async (ctx: StageContext, dir: string): Promise<StageResult> => {
+  const source = join(dir, "spreads", `${String(ctx.unit).padStart(4, "0")}.md`);
+  let markdown: string;
+  try {
+    markdown = await readFile(safeChildPath(ctx.projectRoot, source), "utf-8");
+  } catch {
+    return { ok: false, artifacts: [], error: `spread ${ctx.unit} is not written yet (${source})` };
+  }
+  const { spreadArtNote } = await import("./storybook-runner.js");
+  const note = spreadArtNote(markdown);
+  if (!note) {
+    return { ok: false, artifacts: [], error: `spread ${ctx.unit} has no art note to plan from` };
+  }
+
+  const { prompt, negative } = splitNegative(note);
+  const brief: ArtBrief = {
+    slot: "spread",
+    unit: ctx.unit,
+    subject: subjectOf(prompt),
+    prompt,
+    negative,
+    width: 1344,
+    height: 768,
+    workflow: "default",
+    source,
+  };
+  const relative = join(dir, "art", "briefs", `${ctx.unit}-spread.json`);
+  const file = safeChildPath(ctx.projectRoot, relative);
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(brief, null, 2)}\n`, "utf-8");
+  ctx.onProgress?.(`Art brief written: ${relative}`);
+  return { ok: true, artifacts: [relative.replace(/\\/g, "/")] };
+};
+
+/**
  * Turn approved content into image briefs.
  *
  * For a short this materialises rather than invents: the packaging agent
@@ -103,6 +159,7 @@ export function subjectOf(prompt: string): string {
  */
 export const artplan: StageExecutor = async (ctx) => {
   const dir = join(outDirOf(ctx.type), ctx.id);
+  if (ctx.type === "storybook") return await storybookArtplan(ctx, dir);
   const source = join(dir, "final", "cover-prompt.md");
   let text: string;
   try {
@@ -188,6 +245,7 @@ export const generate: StageExecutor = async (ctx) => {
     const body = await fetch(`${shim}/comfy/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
+      ...(ctx.signal ? { signal: ctx.signal } : {}),
       body: JSON.stringify({
         prompt: brief.prompt,
         negative: brief.negative,
@@ -345,6 +403,22 @@ export const exportWork: StageExecutor = async (ctx) => {
     }
   }
 
+  if (ctx.type === "storybook") {
+    const { buildStorybookProof } = await import("./storybook-runner.js");
+    const relative = join(dir, "build", `${ctx.id}.html`);
+    if (await exists(safeChildPath(ctx.projectRoot, relative))) return { ok: true, artifacts: [] };
+    try {
+      const artifacts = await buildStorybookProof({
+        projectRoot: ctx.projectRoot,
+        id: ctx.id,
+        ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      });
+      return { ok: true, artifacts };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
   if (shape === "page-shaped" && ctx.type === "publication") {
     const [{ openIssueContext }, runner] = await Promise.all([
       import("./publication-context.js"),
@@ -395,10 +469,22 @@ export const EXECUTORS: Readonly<Record<string, StageExecutor>> = {
  */
 const registered = new Map<string, StageExecutor>();
 
-export function registerExecutor(stage: string, executor: StageExecutor): void {
-  registered.set(stage, executor);
+/**
+ * Register a stage, for one production type or for all of them.
+ *
+ * The type matters more than it looks. Registration wins over the table, and a
+ * stage id is shared: `content.plan` is a stage of a book, a script, a
+ * storyboard and a storybook. Registering the storybook's planner under the
+ * bare stage id would hand every book's plan stage to it — and because a
+ * registered executor that refuses is a *failed unit*, where no executor at all
+ * is a stage that waits for its own runner, that mistake does not degrade
+ * quietly. It fails every book at its first stage.
+ */
+export function registerExecutor(stage: string, executor: StageExecutor, type?: string): void {
+  registered.set(type ? `${type}:${stage}` : stage, executor);
 }
 
-export function executorFor(stage: string): StageExecutor | null {
-  return registered.get(stage) ?? EXECUTORS[stage] ?? null;
+export function executorFor(stage: string, type?: string): StageExecutor | null {
+  const forType = type ? registered.get(`${type}:${stage}`) : undefined;
+  return forType ?? registered.get(stage) ?? EXECUTORS[stage] ?? null;
 }
