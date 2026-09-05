@@ -827,6 +827,12 @@ export {
   type WriteStyleGuideResult,
 } from "./pipeline/style-guide.js";
 export {
+  restyleProse,
+  restyleTargets,
+  voiceOnly,
+  RestyleRefused,
+} from "./pipeline/restyle.js";
+export {
   enqueue as enqueueJob,
   cancel as cancelJob,
   listJobs,

@@ -14,7 +14,7 @@
  * "sentence std dev" told nobody anything - and to be honest that importing
  * replaces whatever voice was there before.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import { Empty } from "../components/ui/states";
 import { Icon } from "../components/ui/icon";
@@ -29,6 +29,14 @@ interface StyleProfile {
   readonly rhetoricalFeatures: ReadonlyArray<string>;
   /** Which analyser actually ran. The old page could not say. */
   readonly language?: "zh" | "en";
+}
+
+interface RestyleJob {
+  readonly id: string;
+  readonly status: "queued" | "running" | "done" | "failed" | "cancelled";
+  /** The queue calls it `message`; it is the latest line of progress. */
+  readonly message?: string;
+  readonly error?: string;
 }
 
 interface StyleTarget {
@@ -75,6 +83,8 @@ export function StyleManager() {
   const [target, setTarget] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
+  const [restyleJob, setRestyleJob] = useState<string | null>(null);
+  const [restyleStatus, setRestyleStatus] = useState("");
   const { data: targetData, refetch: refetchTargets } =
     useApi<{ targets: ReadonlyArray<StyleTarget> }>("/style/targets");
   const statusNotice = buildStyleStatusNotice(analyzeStatus, importStatus);
@@ -124,6 +134,64 @@ export function StyleManager() {
   };
 
   const chosen = targets.find((t) => `${t.type}:${t.id}` === target);
+
+  /*
+   * Rewriting the draft itself.
+   *
+   * Polled rather than streamed: the job queue already reports every step, the
+   * page only needs the latest line of it, and a chapter takes long enough
+   * that a second and a half of lag is invisible. Stopping is the point of
+   * showing it at all - this is rewriting somebody's prose, and being able to
+   * stop it halfway matters more than watching it.
+   */
+  const handleRestyle = async () => {
+    if (!target) return;
+    const [type, ...rest] = target.split(":");
+    const id = rest.join(":");
+    setRestyleStatus("Starting…");
+    try {
+      const started = await postApi<{ job: string; files: number }>(
+        `/productions/${type}/${encodeURIComponent(id)}/restyle`,
+        {},
+      );
+      setRestyleJob(started.job);
+      setRestyleStatus(`Rewriting ${started.files} file${started.files === 1 ? "" : "s"}…`);
+    } catch (e) {
+      setRestyleJob(null);
+      setRestyleStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  const handleStopRestyle = async () => {
+    if (!restyleJob) return;
+    await postApi(`/jobs/${restyleJob}/cancel`, {}).catch(() => null);
+    setRestyleStatus("Stopping after the file in hand…");
+  };
+
+  useEffect(() => {
+    if (!restyleJob) return;
+    let live = true;
+    const tick = async () => {
+      const data = await fetchJson<{ jobs: ReadonlyArray<RestyleJob> }>("/jobs").catch(() => null);
+      if (!live || !data) return;
+      const job = data.jobs.find((j) => j.id === restyleJob);
+      if (!job) return;
+      if (job.status === "running" || job.status === "queued") {
+        setRestyleStatus(job.message ?? "Working…");
+        return;
+      }
+      setRestyleJob(null);
+      setRestyleStatus(
+        job.status === "done" ? "Done. The draft is rewritten — the audit screen's Restore puts any file back."
+          : job.status === "cancelled" ? "Stopped. Files already rewritten stay rewritten."
+          : `Error: ${job.error ?? "the rewrite failed"}`,
+      );
+      void refetchTargets();
+    };
+    void tick();
+    const timer = setInterval(() => void tick(), 1500);
+    return () => { live = false; clearInterval(timer); };
+  }, [restyleJob, refetchTargets]);
 
   return (
     <div className="stack-lg">
@@ -319,6 +387,56 @@ export function StyleManager() {
                   </div>
                 </div>
               </div>
+
+              {chosen?.hasStyle && (
+                <div className="panel">
+                  <div className="panel-head">
+                    <span className="grow">
+                      <h3 className="h-panel">Rewrite what is already written</h3>
+                      <span className="dim" style={{ fontSize: 11 }}>
+                        Every page of {chosen.id}, put through the voice it now has
+                      </span>
+                    </span>
+                  </div>
+                  <div className="panel-body stack">
+                    <p className="muted" style={{ fontSize: 14, maxWidth: "56ch" }}>
+                      Events, names, numbers and what every line of dialogue means stay exactly as
+                      they are. Only the prose changes. Each file is copied first, so the audit
+                      screen&rsquo;s Restore puts any of it back.
+                    </p>
+                    <p className="dim" style={{ fontSize: 11, maxWidth: "56ch" }}>
+                      Files you have signed off are left alone. A rewrite that comes back much
+                      shorter than the original is refused rather than saved.
+                    </p>
+                    <div className="rowflex">
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={handleRestyle}
+                        disabled={Boolean(restyleJob)}
+                      >
+                        <Icon name="redo" className="ico" />
+                        {restyleJob ? "Rewriting…" : "Rewrite the draft in this voice"}
+                      </button>
+                      {restyleJob && (
+                        <button type="button" className="btn btn-bad" onClick={handleStopRestyle}>
+                          <Icon name="stop" className="ico" />
+                          Stop
+                        </button>
+                      )}
+                    </div>
+                    {restyleStatus && (
+                      <p
+                        role="status"
+                        className={restyleStatus.startsWith("Error:") ? "fail" : "muted"}
+                        style={{ fontSize: 14 }}
+                      >
+                        {restyleStatus}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>

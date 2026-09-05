@@ -91,6 +91,7 @@ import {
   createShortFictionRunTool,
   createPublicationCreateTool,
   PRODUCTIONS,
+  safeChildPath,
   createStoryboardCreationTool,
   createTranslationCreateTool,
   createFanficBookTool,
@@ -175,7 +176,7 @@ import {
   resolveRoutingTable,
   type ModelPin,
 } from "@actalk/quire-core";
-import { registerAuditRoutes } from "./audit.js";
+import { listAuditTargets, registerAuditRoutes } from "./audit.js";
 import { registerProductionContextRoutes } from "./production-context.js";
 import { isApproved, readAuditState } from "./audit-state.js";
 import { blockersFor, readFindings } from "./findings-store.js";
@@ -7246,6 +7247,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * `buildRuleStack` is handed. Putting the guide anywhere else would mean
    * writing a file nothing reads.
    */
+  /**
+   * Where a rewriting pass keeps the text as it stood before it ran.
+   *
+   * Deliberately the same name the audit's rewrite uses, so the Restore that
+   * already exists on the audit screen puts a restyled file back too. One
+   * backup convention, one way to undo.
+   */
+  function backupOf(path: string): string {
+    return path.replace(/(\.[^.]+)$/, ".pre-audit$1");
+  }
+
   function styleDirFor(type: string, id: string): string {
     const spec = PRODUCTIONS.find((p) => p.id === type);
     const dir = join(root, spec?.outDir ?? type, id);
@@ -7328,6 +7340,145 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       }
     }
     return c.json({ targets });
+  });
+
+  /**
+   * The files a restyle would rewrite, worked out once and shown before it
+   * runs.
+   *
+   * `listAuditTargets` walks everything a production owns, which for one short
+   * story is twenty-three files including the outline, two reviews, a sales
+   * blurb and style_guide.md itself. `restyleTargets` narrows that to the
+   * chapters, spreads, scenes or panels of the newest edition.
+   */
+  async function restylePlanFor(type: string, id: string): Promise<ReadonlyArray<string>> {
+    const { restyleTargets } = await import("@actalk/quire-core");
+    const owned = (await listAuditTargets(root))
+      .filter((t) => t.kind === type && t.project === id)
+      .map((t) => t.path);
+    return restyleTargets(owned);
+  }
+
+  /** What a rewrite would touch, so nobody finds out afterwards. */
+  app.get("/api/v1/productions/:type/:id/restyle/plan", async (c) => {
+    const type = c.req.param("type");
+    const id = c.req.param("id");
+    const files = await restylePlanFor(type, id);
+    const guide = join(styleDirFor(type, id), "style_guide.md");
+    return c.json({
+      files,
+      hasStyle: await readFile(guide, "utf-8").then(() => true).catch(() => false),
+    });
+  });
+
+  /*
+   * Rewrite what is already written, in the voice that was imported after it
+   * was written.
+   *
+   * This is the half of the feature that people actually mean. Importing a
+   * voice only ever reached prose that had not been written yet, so someone
+   * who pasted three pages of an author they admire was told it would apply
+   * from the next chapter on — which is not what they asked for.
+   *
+   * It runs through the job queue rather than the request, because a book is
+   * one model call per chapter and nobody should hold a socket open for that,
+   * and because a rewrite of somebody's draft is the single thing in this app
+   * most worth being able to stop halfway.
+   *
+   * Every file is backed up to `<name>.pre-audit.md` first, which is the same
+   * copy the audit screen's Restore already reads. A signed-off file is left
+   * alone unless `force` says otherwise: sign-off means someone has read it
+   * and agreed with it, and a rewrite behind their back is exactly what that
+   * mark exists to prevent.
+   */
+  app.post("/api/v1/productions/:type/:id/restyle", async (c) => {
+    const type = c.req.param("type");
+    const id = c.req.param("id");
+    const spec = PRODUCTIONS.find((p) => p.id === type);
+    if (!spec) return c.json({ error: `Unknown production type: ${type}` }, 404);
+
+    const body = await c.req.json<{ force?: boolean }>().catch(() => ({ force: false }));
+    const guidePath = join(styleDirFor(type, id), "style_guide.md");
+    const styleGuide = await readFile(guidePath, "utf-8").catch(() => null);
+    if (!styleGuide) {
+      return c.json({ error: "Import a voice into this work before rewriting it into one." }, 400);
+    }
+
+    const targets = await restylePlanFor(type, id);
+    if (targets.length === 0) {
+      return c.json({ error: "There is nothing written here yet to rewrite." }, 400);
+    }
+
+    const auditState = await readAuditState(root);
+    const language = await resolveStyleLanguage(undefined, type === "book" ? id : undefined);
+    const config = await buildPipelineConfig();
+
+    const job = enqueueJob({
+      ref: { type, id },
+      stage: "restyle",
+      work: async ({ signal, onProgress }) => {
+        const { restyleProse, RestyleRefused } = await import("@actalk/quire-core");
+        const done: string[] = [];
+        const skipped: Array<{ path: string; why: string }> = [];
+
+        for (const [index, path] of targets.entries()) {
+          if (signal.aborted) break;
+          const position = `${index + 1} of ${targets.length}`;
+          const name = path.split("/").pop() ?? path;
+
+          if (!body.force && isApproved(auditState, path)) {
+            skipped.push({ path, why: "signed off" });
+            onProgress(`${position}: ${name} is signed off, left alone`);
+            continue;
+          }
+
+          const file = safeChildPath(root, path);
+          const before = await readFile(file, "utf-8").catch(() => null);
+          if (before === null) {
+            skipped.push({ path, why: "gone" });
+            continue;
+          }
+
+          onProgress(`${position}: rewriting ${name}…`);
+          try {
+            const after = await restyleProse({
+              text: before,
+              styleGuide,
+              language,
+              chat: async (system, user) => {
+                const response = await runWorkerAgent(config.client, config.model, [
+                  { role: "system", content: system },
+                  { role: "user", content: user },
+                ], { temperature: 0.7, signal });
+                return response.content;
+              },
+            });
+            // Written only once the rewrite has come back whole, so a refusal
+            // or an abort leaves the draft exactly as it was.
+            if (signal.aborted) break;
+            await writeFile(backupOf(file), before, "utf-8");
+            await writeFile(file, after, "utf-8");
+            done.push(path);
+            broadcast("audit:text", { path, markdown: after });
+            onProgress(`${position}: ${name} rewritten`);
+          } catch (error) {
+            const why = error instanceof Error ? error.message : String(error);
+            skipped.push({ path, why });
+            onProgress(`${position}: ${name} left alone — ${why}`);
+            if (error instanceof RestyleRefused) continue;
+            // A routing or network failure will hit every remaining file the
+            // same way; better to stop than to spend a book's worth of calls
+            // finding that out one chapter at a time.
+            throw error;
+          }
+        }
+
+        broadcast("restyle:done", { type, id, rewritten: done.length, skipped });
+        return { rewritten: done, skipped };
+      },
+    });
+
+    return c.json({ ok: true, job: job.id, files: targets.length });
   });
 
   /*

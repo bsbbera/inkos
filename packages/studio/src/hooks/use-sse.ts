@@ -22,6 +22,9 @@ export const STUDIO_SSE_EVENTS = [
   "job:progress",
   "job:done",
   "job:failed",
+  // A restyle rewrites the draft itself, so the page that started it has to
+  // be told when it stops as well as while it runs.
+  "restyle:done",
   // Proxied up from the shim. Comfy and Affinity are the two things that take
   // minutes here, and both used to be silent for all of them.
   "comfy:generate:start",
