@@ -525,12 +525,51 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
     return item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "") || item.name;
   }, [items, page]);
 
+  /*
+   * The voice this work carries, and which of its files a restyle may touch.
+   *
+   * Asked of the server rather than worked out here: the plan is what keeps a
+   * restyle off the outline, the sales blurb and the style guide itself, and a
+   * screen that decided for itself which files were prose would eventually
+   * disagree with the job that does the rewriting.
+   */
+  const { data: stylePlan, refetch: refetchStylePlan } = useApi<{
+    files: ReadonlyArray<string>; hasStyle: boolean; voice?: string;
+  }>(picked ? `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/restyle/plan` : "");
+  const [restyling, setRestyling] = useState(false);
+
+  const restylePage = useCallback(async (whole: boolean) => {
+    if (!picked) return;
+    if (!whole && !page) return;
+    setRestyling(true);
+    try {
+      const out = await fetchJson<{ files: number }>(
+        `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/restyle`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(whole ? {} : { paths: [page] }),
+        },
+      );
+      const voice = stylePlan?.voice ? ` in ${stylePlan.voice}'s voice` : "";
+      toast(out.files === 1
+        ? `Rewriting this page${voice}. The rail shows it; stopping is on the run screen.`
+        : `Rewriting ${out.files} pages${voice}. Signed-off pages are left alone.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e));
+    }
+    setRestyling(false);
+  }, [picked, page, stylePlan?.voice]);
+
   /* A rewrite lands as `audit:text`; the panel showing that text redraws. */
   useNewSSEMessages(sse.messages, useCallback((m: SSEMessage) => {
+    /* A voice given to this work on the Style screen changes what the restyle
+       buttons here are offering to do, so the plan is asked again. */
+    if (m.event === "style:complete") { void refetchStylePlan(); return; }
     if (m.event !== "audit:text") return;
     const d = (m.data ?? {}) as { path?: string };
     if (d.path && d.path === page) void refetchPage();
-  }, [page, refetchPage]));
+  }, [page, refetchPage, refetchStylePlan]));
 
   /* ---- settling ---- */
 
@@ -654,6 +693,9 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
           onApprove={(yes, force) => void approveProject(yes, force)}
           onResume={(a, b) => void resume(a, b)}
           onRevise={(deslop) => void revisePage(deslop)}
+          onRestyle={(whole) => void restylePage(whole)}
+          voice={stylePlan?.voice ?? null}
+          restyling={restyling}
           items={items}
           allFindings={findings}
           here={items.find((i) => i.path === page) ?? null}
@@ -970,6 +1012,7 @@ function ScopeColumn({
  */
 function StateColumn({
   detail, busy, running, onApprove, onResume, onRevise,
+  onRestyle, voice, restyling,
   pipeRun, openGate, lastApproved, onGate,
   items, allFindings, here,
   pageName, queue, counts, filter, onFilter, at, onPick,
@@ -987,6 +1030,12 @@ function StateColumn({
   readonly onApprove: (approve: boolean, force?: boolean) => void;
   readonly onResume: (from: string, stopAt: string) => void;
   readonly onRevise: (deslop: boolean) => void;
+  /** Put the prose through the work's voice: this page, or all of it. */
+  readonly onRestyle: (whole: boolean) => void;
+  /** What that voice is called. Null when this work has not been given one. */
+  readonly voice: string | null;
+  /** Whether a restyle is in flight, so the buttons can say so. */
+  readonly restyling: boolean;
   /** Which whole-production rewrite is one press from running, if any. */
   /** Every file in this production, for the global tally. */
   readonly items: ReadonlyArray<Item>;
@@ -1299,6 +1348,40 @@ function StateColumn({
               >
                 {busy === "deslop" ? "Rewriting…" : "De-AI this page"}
               </button>
+              {/*
+                * Restyle, beside the two rewrites it is not.
+                *
+                * Revise fixes faults and is free to change what happens on the
+                * page; de-AI takes the machine out. Neither reads the style
+                * guide at all, so either can quietly walk a restyled chapter
+                * back out of its voice - which is the reason this belongs
+                * here, one press from the passes that undo it, rather than on
+                * another screen.
+                */}
+              {voice ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-line btn-sm"
+                    disabled={busy !== null || running || restyling || !here}
+                    title={here
+                      ? `Rewrites ${pageName || "this page"} in ${voice}'s voice. Events, names and dialogue stay; only the prose changes. The text as it stands is kept beside it as .pre-audit.`
+                      : "Pick a page first."}
+                    onClick={() => onRestyle(false)}
+                  >
+                    {restyling ? "Rewriting…" : `Restyle this page in ${voice}'s voice`}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-line btn-sm"
+                    disabled={busy !== null || running || restyling}
+                    title={`Rewrites every page of this work in ${voice}'s voice. Signed-off pages are left alone.`}
+                    onClick={() => onRestyle(true)}
+                  >
+                    {restyling ? "Rewriting…" : "Restyle the whole story"}
+                  </button>
+                </>
+              ) : null}
             </div>
 
             {/* The override, and only where there is something to override. It

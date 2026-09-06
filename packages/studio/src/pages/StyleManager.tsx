@@ -37,6 +37,19 @@ interface StyleTarget {
   readonly label: string;
   readonly id: string;
   readonly hasStyle: boolean;
+  /** What the voice it carries is called, when it carries one. */
+  readonly voice?: string;
+}
+
+/** A voice in the library, kept under the name somebody gave it. */
+interface SavedStyle {
+  readonly id: string;
+  readonly name: string;
+  readonly sourceName?: string;
+  readonly language: "zh" | "en";
+  readonly createdAt: string;
+  readonly sampleChars: number;
+  readonly deterministic: boolean;
 }
 
 export interface StyleStatusNotice {
@@ -93,6 +106,12 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
   const [target, setTarget] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
+  const [styleName, setStyleName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [picked, setPicked] = useState("");
+  const { data: styleData, refetch: refetchStyles } =
+    useApi<{ styles: ReadonlyArray<SavedStyle> }>("/styles");
+  const styles = styleData?.styles ?? [];
   const [restyleError, setRestyleError] = useState("");
   const { data: targetData, refetch: refetchTargets } =
     useApi<{ targets: ReadonlyArray<StyleTarget> }>("/style/targets");
@@ -119,21 +138,50 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
     setLoading(false);
   };
 
-  const handleImport = async () => {
-    if (!target || !text.trim()) return;
+  /*
+   * Keep the voice, under the name it was given.
+   *
+   * Separated from handing it to a work because they are different acts and
+   * used to be one: importing studied the sample *and* wrote it into a folder,
+   * so the same voice given to two pieces of work was studied twice and came
+   * back as two different voices. Studied once, named, then handed out.
+   */
+  const handleSave = async () => {
+    if (!styleName.trim() || !text.trim()) return;
+    setSaving(true);
+    setAnalyzeStatus("");
+    setImportStatus("");
+    try {
+      const result = await postApi<{
+        style: SavedStyle; deterministic?: boolean; note?: string;
+      }>("/styles", { name: styleName.trim(), text, sourceName: sourceName || undefined });
+      setImportStatus(
+        result?.deterministic
+          ? `Saved as "${result.style.name}" from the fingerprint alone. ${result.note ?? ""}`.trim()
+          : `Saved as "${result.style.name}". Give it to any piece of work below.`,
+      );
+      setPicked(result.style.id);
+      void refetchStyles();
+    } catch (e) {
+      setImportStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    setSaving(false);
+  };
+
+  const handleApply = async () => {
+    if (!target || !picked) return;
     const [type, ...rest] = target.split(":");
     const id = rest.join(":");
     setImporting(true);
-    setImportStatus("Reading the sample and writing the guide...");
+    setImportStatus("");
     try {
-      const result = await postApi<{ deterministic?: boolean; note?: string }>(
-        `/productions/${type}/${encodeURIComponent(id)}/style/import`,
-        { text, sourceName: sourceName || "sample" },
+      const result = await postApi<{ style: SavedStyle }>(
+        `/productions/${type}/${encodeURIComponent(id)}/style/apply`,
+        { styleId: picked },
       );
       setImportStatus(
-        result?.deterministic
-          ? `Guide written from the fingerprint alone. ${result.note ?? ""}`.trim()
-          : `Voice imported into ${id}. New writing and revisions will use it.`,
+        `${id} is now written in ${result.style.name}'s voice. New writing and revisions use it; `
+        + "the draft already written does not change until you rewrite it.",
       );
       void refetchTargets();
     } catch (e) {
@@ -142,7 +190,14 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
     setImporting(false);
   };
 
+  const handleForget = async (id: string) => {
+    await fetchJson(`/styles/${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+    if (picked === id) setPicked("");
+    void refetchStyles();
+  };
+
   const chosen = targets.find((t) => `${t.type}:${t.id}` === target);
+  const pickedVoice = styles.find((v) => v.id === picked) ?? null;
 
   /*
    * Rewriting the draft itself.
@@ -230,14 +285,29 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
           </div>
           <div className="panel-body stack">
             <div className="field">
-              <label htmlFor="style-source">Whose voice is this</label>
+              <label htmlFor="style-name">Call this voice</label>
+              <input
+                id="style-name"
+                className="input"
+                type="text"
+                value={styleName}
+                onChange={(e) => setStyleName(e.target.value)}
+                placeholder="Cold Coastal, Mercer, House Voice…"
+              />
+              <span className="dim" style={{ fontSize: 11 }}>
+                The name every screen will use for it. Saving under a name you have already used
+                replaces that voice.
+              </span>
+            </div>
+            <div className="field">
+              <label htmlFor="style-source">Where the sample is from</label>
               <input
                 id="style-source"
                 className="input"
                 type="text"
                 value={sourceName}
                 onChange={(e) => setSourceName(e.target.value)}
-                placeholder="Ursula K. Le Guin, Chapter 1"
+                placeholder="Ursula K. Le Guin, Chapter 1 — optional"
               />
             </div>
             <div className="field">
@@ -262,6 +332,16 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                 <Icon name="pulse" className="ico" />
                 {loading ? "Measuring…" : "Measure this voice"}
               </button>
+              <button
+                type="button"
+                className="btn btn-line"
+                onClick={handleSave}
+                disabled={!text.trim() || !styleName.trim() || saving}
+                title={styleName.trim() ? undefined : "Give it a name first"}
+              >
+                <Icon name="send" className="ico" />
+                {saving ? "Studying…" : "Save this voice"}
+              </button>
               <span className="dim tnum" style={{ fontSize: 11 }}>
                 {text.trim().length.toLocaleString()} characters
               </span>
@@ -279,7 +359,6 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
           )}
 
           {profile && (
-            <>
               <div className="panel">
                 <div className="panel-head">
                   <span className="grow">
@@ -340,6 +419,62 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                   )}
                 </div>
               </div>
+          )}
+
+          {/*
+            * The library.
+            *
+            * Outside the measured-profile block on purpose: the voices you
+            * already have are the reason to open this screen most days, and
+            * they used to be invisible until you pasted a fresh sample.
+            */}
+          <div className="panel">
+            <div className="panel-head">
+              <span className="grow">
+                <h3 className="h-panel">Your voices</h3>
+                <span className="dim" style={{ fontSize: 11 }}>
+                  Studied once, kept under the name you gave, given to as many pieces of work as
+                  you like
+                </span>
+              </span>
+            </div>
+            <div className="panel-body stack">
+              {styles.length === 0 ? (
+                <p className="dim" style={{ fontSize: 11 }}>
+                  None yet. Paste a passage, name it, and press Save this voice.
+                </p>
+              ) : (
+                <div className="rows">
+                  {styles.map((v) => (
+                    <div className="row" style={{ padding: "9px 4px", gap: 9 }} key={v.id}>
+                      <label className="rowflex" style={{ gap: 9, cursor: "pointer" }}>
+                        <input
+                          type="radio"
+                          name="voice"
+                          checked={picked === v.id}
+                          onChange={() => setPicked(v.id)}
+                        />
+                        <b>{v.name}</b>
+                      </label>
+                      <span className="grow" />
+                      <span className="meta">
+                        {v.sourceName ? `${v.sourceName} · ` : ""}
+                        {v.sampleChars.toLocaleString()} chars
+                        {v.deterministic ? " · fingerprint only" : ""}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-quiet btn-sm"
+                        onClick={() => void handleForget(v.id)}
+                      >
+                        Forget
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
 
               <div className="panel">
                 <div className="panel-head">
@@ -363,7 +498,8 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                       <option value="">Choose one…</option>
                       {targets.map((t) => (
                         <option key={`${t.type}:${t.id}`} value={`${t.type}:${t.id}`}>
-                          {t.label} · {t.id}{t.hasStyle ? " (has a voice)" : ""}
+                          {t.label} · {t.id}
+                          {t.voice ? ` — ${t.voice}` : t.hasStyle ? " — has a voice" : ""}
                         </option>
                       ))}
                     </select>
@@ -378,8 +514,8 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
 
                   {chosen?.hasStyle && (
                     <p className="muted" style={{ fontSize: 11 }}>
-                      {chosen.id} already has a voice. Importing replaces it — a guide holds one
-                      voice, not two.
+                      {chosen.id} is already in {chosen.voice ? `${chosen.voice}'s` : "a"} voice.
+                      Giving it another replaces that — a guide holds one voice, not two.
                     </p>
                   )}
 
@@ -387,11 +523,16 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                     <button
                       type="button"
                       className="btn btn-line"
-                      onClick={handleImport}
-                      disabled={!target || importing}
+                      onClick={handleApply}
+                      disabled={!target || !picked || importing}
+                      title={picked ? undefined : "Choose a voice above first"}
                     >
                       <Icon name="send" className="ico" />
-                      {importing ? "Writing the guide…" : "Import this voice"}
+                      {importing
+                        ? "Handing it over…"
+                        : pickedVoice
+                          ? `Give ${pickedVoice.name} to this work`
+                          : "Give a voice to this work"}
                     </button>
                   </div>
                 </div>
@@ -403,7 +544,8 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                     <span className="grow">
                       <h3 className="h-panel">Rewrite what is already written</h3>
                       <span className="dim" style={{ fontSize: 11 }}>
-                        Every page of {chosen.id}, put through the voice it now has
+                        Every page of {chosen.id}, put through
+                        {chosen.voice ? ` ${chosen.voice}'s voice` : " the voice it now has"}
                       </span>
                     </span>
                   </div>
@@ -425,7 +567,11 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                         disabled={running}
                       >
                         <Icon name="redo" className="ico" />
-                        {running ? "Rewriting…" : "Rewrite the draft in this voice"}
+                        {running
+                          ? "Rewriting…"
+                          : chosen.voice
+                            ? `Rewrite the draft in ${chosen.voice}'s voice`
+                            : "Rewrite the draft in this voice"}
                       </button>
                       {running && (
                         <button type="button" className="btn btn-bad" onClick={handleStopRestyle}>
@@ -446,8 +592,6 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                   </div>
                 </div>
               )}
-            </>
-          )}
         </div>
       </section>
 

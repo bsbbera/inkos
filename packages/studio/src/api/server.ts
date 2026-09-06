@@ -7322,20 +7322,124 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * Magazines are left out. A publication's voice is its series house style,
    * and an author's fingerprint has no business on a page of research.
    */
+  /*
+   * The library of voices.
+   *
+   * A voice used to exist only inside whichever work it was imported into, so
+   * giving the same one to a second piece of work meant finding the passage
+   * and pasting it again - and the second extraction was not the same voice,
+   * because the model is asked afresh every time. These keep it once, under a
+   * name somebody chose, and hand out copies.
+   */
+  app.get("/api/v1/styles", async (c) => {
+    const { listStyles } = await import("@actalk/quire-core");
+    return c.json({ styles: await listStyles(root) });
+  });
+
+  app.post("/api/v1/styles", async (c) => {
+    const { name, text, sourceName, language } = await c.req.json<{
+      name?: string; text?: string; sourceName?: string; language?: string;
+    }>().catch(() => ({}) as Record<string, string>);
+    if (!name?.trim()) return c.json({ error: "Give this voice a name." }, 400);
+    if (!text?.trim()) return c.json({ error: "text is required" }, 400);
+
+    const { writeStyleGuide, saveStyle, MIN_SAMPLE_FOR_LLM } = await import("@actalk/quire-core");
+    const resolved = await resolveStyleLanguage(language);
+    const config = await buildPipelineConfig();
+    /*
+     * Written to a scratch folder inside the library, then kept under the
+     * chosen name. `writeStyleGuide` owns extraction and takes a directory;
+     * duplicating its prompt here to get a string back would be a second
+     * definition of the voice that could drift from the one works receive.
+     */
+    const staging = join(root, "styles", ".staging");
+    const result = await writeStyleGuide({
+      dir: staging,
+      referenceText: text,
+      language: resolved,
+      ...(sourceName ? { sourceName } : {}),
+      chat: async (system, user) => {
+        const response = await runWorkerAgent(config.client, config.model, [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ], { temperature: 0.3 });
+        return response.content;
+      },
+    }).catch((error: unknown) => {
+      throw new Error(error instanceof Error ? error.message : String(error));
+    });
+
+    const meta = await saveStyle({
+      root,
+      name: name.trim(),
+      guide: result.guide,
+      profile: result.profile,
+      language: resolved,
+      sampleChars: text.trim().length,
+      deterministic: result.deterministic,
+      ...(sourceName ? { sourceName } : {}),
+    });
+    await rm(staging, { recursive: true, force: true }).catch(() => null);
+
+    broadcast("style:complete", { style: meta.id });
+    return c.json({
+      ok: true,
+      style: meta,
+      profile: result.profile,
+      deterministic: result.deterministic,
+      ...(result.note ? { note: result.note } : {}),
+      minSample: MIN_SAMPLE_FOR_LLM,
+    });
+  });
+
+  app.delete("/api/v1/styles/:id", async (c) => {
+    const { deleteStyle } = await import("@actalk/quire-core");
+    const gone = await deleteStyle(root, c.req.param("id"));
+    return gone ? c.json({ ok: true }) : c.json({ error: "no such voice" }, 404);
+  });
+
+  /** Give a library voice to a piece of work. */
+  app.post("/api/v1/productions/:type/:id/style/apply", async (c) => {
+    const type = c.req.param("type");
+    const id = c.req.param("id");
+    const spec = PRODUCTIONS.find((p) => p.id === type);
+    if (!spec) return c.json({ error: `Unknown production type: ${type}` }, 404);
+    if (type === "publication") {
+      return c.json({ error: "A magazine takes its voice from its series house style." }, 400);
+    }
+    const { styleId } = await c.req.json<{ styleId?: string }>()
+      .catch(() => ({}) as { styleId?: string });
+    if (!styleId) return c.json({ error: "styleId is required" }, 400);
+
+    const { applyStyleTo } = await import("@actalk/quire-core");
+    const meta = await applyStyleTo({ root, id: styleId, dir: styleDirFor(type, id) });
+    if (!meta) return c.json({ error: "no such voice" }, 404);
+    broadcast("style:complete", { type, id, voice: meta.name });
+    return c.json({ ok: true, style: meta });
+  });
+
   app.get("/api/v1/style/targets", async (c) => {
-    const targets: Array<{ type: string; label: string; id: string; hasStyle: boolean }> = [];
+    const { voiceNameFor } = await import("@actalk/quire-core");
+    const targets: Array<{
+      type: string; label: string; id: string; hasStyle: boolean; voice?: string;
+    }> = [];
     for (const spec of PRODUCTIONS) {
       if (spec.id === "publication") continue;
       const dir = join(root, spec.outDir);
       const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
       for (const entry of entries) {
         if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-        const guide = join(styleDirFor(spec.id, entry.name), "style_guide.md");
+        const styleDir = styleDirFor(spec.id, entry.name);
+        const guide = join(styleDir, "style_guide.md");
+        const hasStyle = await readFile(guide, "utf-8").then(() => true).catch(() => false);
+        // Named, because "has a voice" is not the fact anyone came for.
+        const voice = hasStyle ? await voiceNameFor(styleDir) : undefined;
         targets.push({
           type: spec.id,
           label: spec.label,
           id: entry.name,
-          hasStyle: await readFile(guide, "utf-8").then(() => true).catch(() => false),
+          hasStyle,
+          ...(voice ? { voice } : {}),
         });
       }
     }
@@ -7364,11 +7468,14 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const type = c.req.param("type");
     const id = c.req.param("id");
     const files = await restylePlanFor(type, id);
-    const guide = join(styleDirFor(type, id), "style_guide.md");
-    return c.json({
-      files,
-      hasStyle: await readFile(guide, "utf-8").then(() => true).catch(() => false),
-    });
+    const styleDir = styleDirFor(type, id);
+    const hasStyle = await readFile(join(styleDir, "style_guide.md"), "utf-8")
+      .then(() => true).catch(() => false);
+    const { voiceNameFor } = await import("@actalk/quire-core");
+    // The screen offering the button has to be able to say what pressing it
+    // will make the prose sound like.
+    const voice = hasStyle ? await voiceNameFor(styleDir) : undefined;
+    return c.json({ files, hasStyle, ...(voice ? { voice } : {}) });
   });
 
   /*
@@ -7397,7 +7504,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const spec = PRODUCTIONS.find((p) => p.id === type);
     if (!spec) return c.json({ error: `Unknown production type: ${type}` }, 404);
 
-    const body = await c.req.json<{ force?: boolean }>().catch(() => ({ force: false }));
+    const body = await c.req.json<{ force?: boolean; paths?: ReadonlyArray<string> }>()
+      .catch(() => ({ force: false }) as { force?: boolean; paths?: ReadonlyArray<string> });
     const guidePath = join(styleDirFor(type, id), "style_guide.md");
     const styleGuide = await readFile(guidePath, "utf-8").catch(() => null);
     /*
@@ -7408,16 +7516,28 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
      * statement as "this page is in it", and the screen could only ever make
      * the first one.
      */
-    const voice = await readFile(join(styleDirFor(type, id), "style_profile.json"), "utf-8")
-      .then((raw) => (JSON.parse(raw) as { sourceName?: string }).sourceName)
-      .catch(() => undefined);
+    const { voiceNameFor } = await import("@actalk/quire-core");
+    const voice = await voiceNameFor(styleDirFor(type, id));
     if (!styleGuide) {
       return c.json({ error: "Import a voice into this work before rewriting it into one." }, 400);
     }
 
-    const targets = await restylePlanFor(type, id);
-    if (targets.length === 0) {
+    const plan = await restylePlanFor(type, id);
+    if (plan.length === 0) {
       return c.json({ error: "There is nothing written here yet to rewrite." }, 400);
+    }
+    /*
+     * One page, when the audit screen asks for one page.
+     *
+     * Intersected with the plan rather than trusted: the plan is what makes a
+     * restyle safe - it is why a sales blurb and `style_guide.md` itself are
+     * never rewritten - and a path list from a caller that skipped it would
+     * skip that too.
+     */
+    const wanted = new Set(body.paths ?? []);
+    const targets = wanted.size > 0 ? plan.filter((path) => wanted.has(path)) : plan;
+    if (targets.length === 0) {
+      return c.json({ error: "None of those pages are prose this can rewrite." }, 400);
     }
 
     const auditState = await readAuditState(root);
@@ -7588,11 +7708,29 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           return response.content;
         },
       });
-      broadcast("style:complete", { type, id });
+      /*
+       * The name, written beside the guide.
+       *
+       * This route predates the library and its only label was `sourceName`
+       * on the fingerprint, which no screen ever showed back. A voice imported
+       * through here is now named like any other, so the audit screen can say
+       * whose hand a chapter is in whichever door the voice came through.
+       */
+      const name = (sourceName ?? "").trim();
+      if (name) {
+        await writeFile(
+          join(styleDirFor(type, id), "style.json"),
+          `${JSON.stringify({ id: "", name, appliedAt: new Date().toISOString() }, null, 2)}
+`,
+          "utf-8",
+        );
+      }
+      broadcast("style:complete", { type, id, ...(name ? { voice: name } : {}) });
       return c.json({
         ok: true,
         type,
         id,
+        ...(name ? { voice: name } : {}),
         profile: result.profile,
         deterministic: result.deterministic,
         ...(result.note ? { note: result.note } : {}),

@@ -833,6 +833,19 @@ export {
   RestyleRefused,
 } from "./pipeline/restyle.js";
 export {
+  STYLES_DIR,
+  STYLE_MARK,
+  applyStyleTo,
+  deleteStyle,
+  listStyles,
+  readStyleMeta,
+  saveStyle,
+  styleSlug,
+  voiceNameFor,
+  type StyleMark,
+  type StyleMeta,
+} from "./pipeline/style-library.js";
+export {
   recomposeShortFiction,
   composedDirOf,
   chapterBody,
