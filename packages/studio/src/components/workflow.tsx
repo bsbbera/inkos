@@ -541,13 +541,26 @@ export const READING_SIZES = [13.5, 15.5, 17.5, 20, 23] as const;
 const SIZE_KEY = "quire.reading.size";
 const sizeListeners = new Set<() => void>();
 
-function readStoredSize(): number {
-  if (typeof localStorage === "undefined") return 15.5;
+function readStoredSize(): number | null {
+  if (typeof localStorage === "undefined") return null;
   const raw = Number(localStorage.getItem(SIZE_KEY));
-  return READING_SIZES.includes(raw as (typeof READING_SIZES)[number]) ? raw : 15.5;
+  return READING_SIZES.includes(raw as (typeof READING_SIZES)[number]) ? raw : null;
 }
 
-let currentSize = readStoredSize();
+/**
+ * Null until somebody chooses.
+ *
+ * The size used to default to 15.5px, which is a number picked for a
+ * comfortable pane and wrong in a narrow one: at 363px it left 45 characters
+ * on a line, and a measure that short is read as a column of fragments. While
+ * nobody has expressed a preference the stylesheet sizes the type from the
+ * width of the pane instead, holding the line near 65 characters wherever the
+ * seam is dragged. The moment somebody presses A it becomes their number and
+ * stays their number - a person who asked for bigger text meant it, and a
+ * measure that overrules them is not a preference.
+ */
+let currentSize: number | null = readStoredSize();
+const DEFAULT_SIZE = 15.5;
 
 function subscribeSize(fn: () => void): () => void {
   sizeListeners.add(fn);
@@ -555,21 +568,25 @@ function subscribeSize(fn: () => void): () => void {
 }
 
 export function useReadingSize() {
-  const size = useSyncExternalStore(subscribeSize, () => currentSize, () => 15.5);
+  const chosen = useSyncExternalStore(subscribeSize, () => currentSize, () => null);
+  const size = chosen ?? DEFAULT_SIZE;
   const step = useCallback((direction: 1 | -1) => {
     const at = READING_SIZES.indexOf(size as (typeof READING_SIZES)[number]);
-    const next = READING_SIZES[Math.min(READING_SIZES.length - 1, Math.max(0, at + direction))];
-    if (next === undefined || next === size) return;
+    const from = at >= 0 ? at : READING_SIZES.indexOf(DEFAULT_SIZE);
+    const next = READING_SIZES[Math.min(READING_SIZES.length - 1, Math.max(0, from + direction))];
+    if (next === undefined) return;
     currentSize = next;
     try { localStorage.setItem(SIZE_KEY, String(next)); } catch { /* this session only */ }
     for (const fn of sizeListeners) fn();
   }, [size]);
   return {
     size,
+    /** Null while the pane is choosing for itself. */
+    chosen,
     bigger: () => step(1),
     smaller: () => step(-1),
-    atLargest: size === READING_SIZES[READING_SIZES.length - 1],
-    atSmallest: size === READING_SIZES[0],
+    atLargest: chosen === READING_SIZES[READING_SIZES.length - 1],
+    atSmallest: chosen === READING_SIZES[0],
   };
 }
 
@@ -581,7 +598,8 @@ export function useReadingSize() {
  * the control is used twice and then left alone.
  */
 export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
-  const { size, bigger, smaller, atLargest, atSmallest } = useReadingSize();
+  const { size, chosen, bigger, smaller, atLargest, atSmallest } = useReadingSize();
+  const now = chosen ? `${size}px` : "sized to the pane";
   return (
     <span className={`speak-group${dark ? " on-char" : ""}`}>
       <button
@@ -590,7 +608,7 @@ export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
         onClick={smaller}
         disabled={atSmallest}
         aria-label="Smaller text"
-        title={`Smaller text (now ${size}px)`}
+        title={`Smaller text (${now})`}
       >
         <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>A</span>
       </button>
@@ -600,7 +618,7 @@ export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
         onClick={bigger}
         disabled={atLargest}
         aria-label="Bigger text"
-        title={`Bigger text (now ${size}px)`}
+        title={`Bigger text (${now})`}
       >
         <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1 }}>A</span>
       </button>

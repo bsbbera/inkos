@@ -1491,7 +1491,7 @@ function PageColumn({
   const [full, setFull] = useState(false);
   /* Up here for the same reason. The editor is the same prose at the same size
      as the reader, so switching modes must not resize it under you. */
-  const { size } = useReadingSize();
+  const { chosen } = useReadingSize();
 
   /* Full screen is a way of editing this page, not a mode of its own. Leaving
      edit, or moving to a different page, closes it - otherwise the overlay
@@ -1664,7 +1664,12 @@ function PageColumn({
             }}>
               <textarea
                 className="read-field"
-                style={{ color: "var(--on-char)", "--rs": `${size}px`, "--rm": "100%", flex: 1 } as React.CSSProperties}
+                style={{
+                  color: "var(--on-char)",
+                  ...(chosen ? { "--rs": `${chosen}px` } : {}),
+                  "--rm": "100%",
+                  flex: 1,
+                } as React.CSSProperties}
                 aria-label="Edit the page"
                 value={draft}
                 onChange={(e) => onDraft(e.target.value)}
@@ -1871,7 +1876,7 @@ function MarkedText({
   readonly onPick: (id: string) => void;
 }) {
   // Set once for the whole app, so the size survives moving between pages.
-  const { size } = useReadingSize();
+  const { chosen } = useReadingSize();
   const parts: React.ReactNode[] = [];
   const located = findings
     .filter((f) => f.start >= 0 && f.end > f.start && f.end <= text.length)
@@ -1903,7 +1908,11 @@ function MarkedText({
   return (
     <div
       className="read"
-      style={{ color: "var(--on-char)", "--rs": `${size}px`, "--rm": "62ch" } as React.CSSProperties}
+      style={{
+        color: "var(--on-char)",
+        ...(chosen ? { "--rs": `${chosen}px` } : {}),
+        "--rm": "66ch",
+      } as React.CSSProperties}
     >
       <p style={{ whiteSpace: "pre-wrap" }}>{parts}</p>
     </div>

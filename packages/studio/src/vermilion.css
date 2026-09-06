@@ -947,16 +947,28 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      column, and the container query below steps the size back down when there
      is genuinely no room, so the text always belongs to the space it is in
      rather than to the space it was designed in. */
-  font-size: var(--rs, 16.5px); line-height: var(--rl, 1.72);
-  max-width: min(var(--rm, 64ch), 100%);
+  /* The measure decides the size, not the other way round.
+     A flat pixel size holds the line at whatever the pane happens to allow -
+     at 363px that was 45 characters, which reads as a column of fragments
+     rather than prose. `cqi` is a percentage of this pane; Literata measured
+     at 0.605em average advance in this stack, so 2.3cqi holds the line near 66
+     characters at any width the seam is dragged to. Below about 450px the pane
+     cannot have both a legible size and a real measure, and legibility wins.
+     `--rs` is only set once somebody has pressed A: their number then wins
+     outright, because a person who asked for bigger text meant it. */
+  font-size: var(--rs, clamp(11.5px, 2.3cqi, 19px));
+  line-height: var(--rl, 1.72);
+  max-width: min(var(--rm, 66ch), 100%);
   /* A URL or a path has nowhere to break, and one of them used to decide the
      width of the whole reading column. */
   overflow-wrap: anywhere;
   text-wrap: pretty; font-optical-sizing: auto;
-  /* The measure is deliberately not transitioned. It is dragged on a slider,
-     and reflowing a long column on every frame of a drag is the one place in
-     this app where motion makes the text harder to read, not easier. */
-  transition: font-size var(--med) var(--ease), line-height var(--med) var(--ease);
+  /* Nothing here is transitioned. The size is now a function of the pane, so
+     it changes on every frame of a seam drag - and easing a font-size that is
+     already moving continuously is two animations fighting over the same
+     number, with a reflow of the whole column behind each frame. The size
+     steps land instantly instead, which is what a person pressing A expects
+     anyway. */
 }
 .read p + p { margin-top: .8em; text-indent: 1.3em; }
 
@@ -971,17 +983,18 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 @container reading (max-width: 620px) {
   .readhead { padding: 13px 15px 10px; }
   .readbody { padding: 0 15px; }
-  .read { font-size: max(13px, calc(var(--rs, 16.5px) * .9)); line-height: 1.62; }
+  .read { line-height: 1.64; }
   .readhead h3 { font-size: 15px; }
   /* The head is a row of controls beside a name. When the row cannot hold
-     both, the controls drop under the name rather than squeezing it away. */
+     both, the controls drop under the name - and stay against the right edge
+     they were on, because a control that moves across the pane when the pane
+     narrows is a control you have to find again. */
   .readhead > .spread { flex-wrap: wrap; }
-  .readhead > .spread > .rowflex { flex: 1 0 100%; justify-content: flex-start; }
+  .readhead > .spread > .rowflex { flex: 1 0 100%; justify-content: flex-end; }
 }
 @container reading (max-width: 430px) {
   .readhead { padding: 10px 11px 8px; }
   .readbody { padding: 0 11px; }
-  .read { font-size: max(12.5px, calc(var(--rs, 16.5px) * .8)); }
   .read p + p { text-indent: 1em; }
   /* At this width the label above the file name is the first thing to go:
      it repeats the folder, and the name is the thing being looked at. */
