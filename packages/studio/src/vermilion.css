@@ -969,10 +969,14 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .readbody { padding: 0 22px; }
 
 @container reading (max-width: 620px) {
-  .readhead { padding: 12px 14px 9px; }
-  .readbody { padding: 0 14px; }
+  .readhead { padding: 13px 15px 10px; }
+  .readbody { padding: 0 15px; }
   .read { font-size: max(13px, calc(var(--rs, 16.5px) * .9)); line-height: 1.62; }
   .readhead h3 { font-size: 15px; }
+  /* The head is a row of controls beside a name. When the row cannot hold
+     both, the controls drop under the name rather than squeezing it away. */
+  .readhead > .spread { flex-wrap: wrap; }
+  .readhead > .spread > .rowflex { flex: 1 0 100%; justify-content: flex-start; }
 }
 @container reading (max-width: 430px) {
   .readhead { padding: 10px 11px 8px; }
@@ -1159,18 +1163,18 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 /* Smaller sheets. At 74px a fourteen-chapter short filled the column and
    pushed the work list off the top; the sheet is a place marker, not a
    preview, so it only has to be big enough to carry a folio and a flag. */
-.pgs { display: grid; gap: 7px; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
+.pgs { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(66px, 1fr)); }
 .pgs .sheet { border-radius: 3px; }
 /* Prose, at the size prose reads as texture rather than words. */
 .pgs .sheet .rule {
-  position: absolute; inset: 7px 6px auto 6px; height: 24px;
+  position: absolute; inset: 8px 7px auto 7px; height: 28px;
   background: repeating-linear-gradient(
     to bottom, var(--ink-3) 0 1px, transparent 1px 5px);
   opacity: .17;
 }
-.pgs .folio { font-size: 13px; right: 4px; bottom: 1px; }
+.pgs .folio { font-size: 15px; right: 5px; bottom: 2px; }
 .pgs .pill { position: absolute; top: 3px; right: 3px; font-size: 9px; padding: 0 3px; line-height: 13px; }
-.pgs .cap { margin-top: 4px; gap: 4px; font-size: 9.5px; min-width: 0; }
+.pgs .cap { margin-top: 5px; gap: 5px; font-size: 11px; min-width: 0; }
 .pgs .cap .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The page you have open. A ring alone was too quiet to find in a grid of

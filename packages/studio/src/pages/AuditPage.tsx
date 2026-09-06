@@ -806,12 +806,14 @@ function ScopeColumn({
       <div className="panel-head panel-head-thin">
         <span className="grow trunc" style={{ minWidth: 0 }}>
           {picked ? (
-            <>
-              <span className="name" style={{ fontSize: 14 }} title={picked.id}>
+            <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
+              <span className="trunc" style={{ fontSize: 14, fontWeight: 600 }} title={picked.id}>
                 {titleOf(picked.id)}
               </span>
-              <span className="meta">{items.length} file{items.length === 1 ? "" : "s"}</span>
-            </>
+              <span className="dim" style={{ fontSize: 11, flex: "none" }}>
+                {items.length} file{items.length === 1 ? "" : "s"}
+              </span>
+            </span>
           ) : null}
         </span>
         <Seg
@@ -1518,16 +1520,15 @@ function PageColumn({
             style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
 
       <div className="readhead" style={{ position: "relative", flex: "none" }}>
-        <div className="spread" style={{ alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
-          <div style={{ minWidth: 0, flex: "1 1 120px" }}>
+        <div className="spread" style={{ alignItems: "flex-start", gap: 12 }}>
+          <div style={{ minWidth: 0 }}>
             <div className="label">{placeOf(path)}</div>
-            {/* `overflow-wrap: anywhere` put `0007.md` down the column one
-                character per line the moment the pane got narrow. A file name
-                is one token: it truncates or it does not fit, it does not
-                stack. */}
+            {/* Truncates rather than breaking: `overflow-wrap: anywhere` put
+                `0007.md` down the column one character per line as soon as the
+                pane got narrow. A file name is one token. */}
             <h3 className="trunc" style={{ fontSize: 17, marginTop: 5 }} title={name}>{name}</h3>
           </div>
-          <div className="rowflex" style={{ gap: 6, flex: "0 1 auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div className="rowflex" style={{ gap: 9, flex: "none" }}>
             {/* The whole page, out of the app or read to you. They belong to
                 the page, not to one mode of looking at it, so they sit with
                 the page's own controls and act on whichever text is in front
