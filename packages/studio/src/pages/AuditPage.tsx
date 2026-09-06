@@ -804,7 +804,16 @@ function ScopeColumn({
           on every work in it. The only thing in this row that says anything
           is the toggle, so the row is the toggle. */}
       <div className="panel-head panel-head-thin">
-        <span className="grow" style={{ minWidth: 0 }} />
+        <span className="grow trunc" style={{ minWidth: 0 }}>
+          {picked ? (
+            <>
+              <span className="name" style={{ fontSize: 14 }} title={picked.id}>
+                {titleOf(picked.id)}
+              </span>
+              <span className="meta">{items.length} file{items.length === 1 ? "" : "s"}</span>
+            </>
+          ) : null}
+        </span>
         <Seg
           compact
           value={view}
@@ -819,10 +828,14 @@ function ScopeColumn({
       <div className="panel-body grows" style={{ padding: "6px 14px 10px" }}>
         {projects.length > 1 ? (
           <>
-            <div className="label" style={{ padding: "8px 2px 6px" }}><span>The work</span></div>
+            {/* No "The work" heading, and no row for the work you are already
+                in - its name is in the head above, and its pages are the grid
+                below. What is left here is the other works, which is what the
+                list is for: getting to one of them. */}
             <div className="rows">
               {projects.map((p) => {
                 const open = picked?.kind === p.kind && picked.id === p.id;
+                if (open) return <Fragment key={`${p.kind}/${p.id}`}>{files}</Fragment>;
                 return (
                   <Fragment key={`${p.kind}/${p.id}`}>
                     <button
@@ -843,11 +856,7 @@ function ScopeColumn({
                         <span className="meta">{p.files} files</span>
                       </span>
                     </button>
-                    {/* The pages belong to the work above them, so they hang off
-                        it rather than sitting under the whole list. With four
-                        productions the files were below all four, and the one
-                        you had open had already scrolled off the top. */}
-                    {open ? <div className="work-files">{files}</div> : null}
+
                   </Fragment>
                 );
               })}
@@ -1053,6 +1062,12 @@ function StateColumn({
           <div className="label" style={{ marginBottom: 8 }}>
             <span>All {global.pages} page{global.pages === 1 ? "" : "s"}</span>
           </div>
+          {/* The figures and the four stages are one block, not two stacked
+              ones. They answer the same question - where is this - and stacking
+              them pushed the gate, the buttons and the findings a whole panel
+              further down for no reason but the order they were written in. */}
+          <div className="statusrow">
+          <div className="statusrow-figures">
           <div className="stats">
             <span><b>{global.read}/{global.pages}</b><em>read</em></span>
             <span>
@@ -1070,6 +1085,27 @@ function StateColumn({
             <span><b>{global.revisions}</b><em>rewrites</em></span>
             <span><b>{global.deslops}</b><em>de-AI</em></span>
             <span><b>{global.notes}</b><em>notes</em></span>
+          </div>
+          </div>
+          {workflow ? (
+            <div className="statusrow-stages stack-xs">
+              {workflow.stages.map((st) => (
+                <div
+                  key={st.stage}
+                  className="rowflex"
+                  style={{ gap: 8, alignItems: "baseline", fontSize: 12 }}
+                >
+                  <span className={`st ${st.state === "done" ? "done" : st.state === "partial" ? "now" : ""}`}>
+                    <i />
+                  </span>
+                  <span style={{ width: 52, fontWeight: 500 }}>{st.stage}</span>
+                  <span className="grow dim trunc" style={{ fontSize: 11 }} title={st.detail}>
+                    {st.detail}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
           </div>
         </div>
 
@@ -1120,24 +1156,6 @@ function StateColumn({
             </div>
           ) : null}
 
-          {/* ------------------------------------------------------ stages */}
-          <div className="panel-body" style={{ padding: "10px 16px" }}>
-            <div className="stack-xs">
-              {workflow.stages.map((s) => (
-                <div
-                  key={s.stage}
-                  className="rowflex"
-                  style={{ gap: 9, alignItems: "baseline", fontSize: 12 }}
-                >
-                  <span className={`st ${s.state === "done" ? "done" : s.state === "partial" ? "now" : ""}`}>
-                    <i />
-                  </span>
-                  <span style={{ width: 68, fontWeight: 500 }}>{s.stage}</span>
-                  <span className="grow dim" style={{ fontSize: 11.5 }}>{s.detail}</span>
-                </div>
-              ))}
-            </div>
-          </div>
 
           {/* ------------------------------------------------------- gates */}
           <div className="panel-body" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)" }}>
@@ -1495,17 +1513,21 @@ function PageColumn({
   const pageText = mode === "edit" ? draft : text;
 
   return (
-    <div className="dark crop colpanel" data-tabscope>
+    <div className="dark crop colpanel reads" data-tabscope>
       <span className="disc dots dots-light" aria-hidden="true"
             style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
 
-      <div style={{ padding: "16px 22px 12px", position: "relative", flex: "none" }}>
-        <div className="spread" style={{ alignItems: "flex-start", gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
+      <div className="readhead" style={{ position: "relative", flex: "none" }}>
+        <div className="spread" style={{ alignItems: "flex-start", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0, flex: "1 1 120px" }}>
             <div className="label">{placeOf(path)}</div>
-            <h3 style={{ fontSize: 17, marginTop: 5, overflowWrap: "anywhere" }}>{name}</h3>
+            {/* `overflow-wrap: anywhere` put `0007.md` down the column one
+                character per line the moment the pane got narrow. A file name
+                is one token: it truncates or it does not fit, it does not
+                stack. */}
+            <h3 className="trunc" style={{ fontSize: 17, marginTop: 5 }} title={name}>{name}</h3>
           </div>
-          <div className="rowflex" style={{ gap: 9, flex: "none" }}>
+          <div className="rowflex" style={{ gap: 6, flex: "0 1 auto", flexWrap: "wrap", justifyContent: "flex-end" }}>
             {/* The whole page, out of the app or read to you. They belong to
                 the page, not to one mode of looking at it, so they sit with
                 the page's own controls and act on whichever text is in front
@@ -1546,7 +1568,7 @@ function PageColumn({
 
       {mode === "read" ? (
         <>
-          <div className="grows reads" style={{ padding: "0 22px", position: "relative" }}>
+          <div className="grows readbody" style={{ position: "relative" }}>
             {loading ? (
               <p className="muted" style={{ fontSize: 14 }}>Opening the page…</p>
             ) : text ? (
@@ -1630,7 +1652,7 @@ function PageColumn({
         </>
       ) : (
         <>
-          <div className="grows reads" style={{ padding: "0 22px", position: "relative" }}>
+          <div className="grows readbody" style={{ position: "relative" }}>
             <div style={{
               border: "1.5px solid var(--vermilion)",
               borderRadius: "var(--r-card)",
