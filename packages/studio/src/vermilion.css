@@ -955,7 +955,7 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      end for a panel this wide. */
   font-size: var(--rs, var(--rs-auto, 16px));
   line-height: var(--rl, 1.72);
-  max-width: min(var(--rm, 56ch), 100%);
+  max-width: var(--rm, var(--col-read, min(56ch, 100%)));
   /* Centred, because the alternative is not "wider" - it is the same column of
      text with every spare pixel piled against one edge. A 550px measure in a
      1050px pane left 450px of dead charcoal on the right and read as a bug.
@@ -1000,11 +1000,36 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   --pad-read: clamp(11px, 2.4cqi, 26px);
   /* The rhythm above and below the head, on the same fraction. */
   --pad-read-top: clamp(10px, 2cqi, 22px);
+  /* One column, and everything in the panel stands on it.
+
+     Not written in `ch`. The head is set in the interface face and the
+     manuscript in Literata, so `56ch` means two different numbers of pixels in
+     the two places - which is exactly how the panel ended up with the file
+     name on the left edge, the toolbar on the right edge and the prose
+     floating between them, three alignments in one panel. A multiple of the
+     manuscript's own size is the same number everywhere.
+
+     33em is 75 characters: Literata averages .440em per character of English
+     prose, measured in this stack. */
+  --col-read: min(calc(33 * var(--rs, var(--rs-auto, 16px))), 100%);
 }
+
+/* The column itself. Head, manuscript, editor and the revise bar all carry
+   this, so the panel has one left edge and one right edge at every width and
+   in every mode. */
+.readcol { width: 100%; max-width: var(--col-read); margin-inline: auto; }
 .readhead {
   display: flex; align-items: flex-start; gap: 16px;
   padding: var(--pad-read-top) var(--pad-read) 0;
 }
+/* The body reserves a scrollbar gutter on both edges; these two do not scroll,
+   so without the same reservation their content box is a scrollbar wider than
+   the manuscript's and the file name sits ten pixels left of the prose under
+   it. `overflow: hidden` makes them scroll containers for the purposes of
+   `scrollbar-gutter` without ever showing a scrollbar, which reserves exactly
+   the same width the body reserves - whatever that is on this platform - with
+   no number written down anywhere. */
+.readhead, .revisebar { overflow: hidden; scrollbar-gutter: stable both-edges; }
 /* The head holds one row, and that row is the width of the head. Without this
    the row is a flex item at its content width, `space-between` has no slack to
    hand out, and the toolbar parks itself against the title in the middle of
@@ -1016,8 +1041,17 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    exactly the kind of 10px error that reads as "the margins are wrong" without
    ever looking like a scrollbar. */
 .readbody { padding: 0 var(--pad-read); scrollbar-gutter: stable both-edges; }
+.revisebar {
+  padding: 12px var(--pad-read) 16px; position: relative; flex: none;
+  border-top: 1px solid var(--line-char);
+}
 
 @container reading (max-width: 620px) {
+  /* The column is full width down here, so it reaches the corner where the
+     desktop shell pins its Settings button. Wider than this and the column
+     stops well short of it, and the extra clearance would only push the bar
+     off the axis everything else stands on. */
+  .revisebar { padding-right: 60px; }
   .read { line-height: 1.64; }
   .readhead h3 { font-size: 15px; }
   /* The head is a row of controls beside a name. When the row cannot hold
@@ -1088,10 +1122,13 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      longer than a reading one, and both are 56ch - 75 characters - so the
      caret does not move when you switch between them. */
   font-size: var(--rs, var(--rs-auto, 16px)); line-height: var(--rl, 1.72);
-  padding: 0 max(0px, calc((100% - var(--rm, 56ch)) / 2));
+  padding: 0 max(0px, calc((100% - var(--rm, var(--col-read, 56ch))) / 2));
   scrollbar-gutter: stable; text-wrap: pretty;
 }
 .read-field:focus { outline: none; }
+/* Already on the column - centring itself again inside it would inset it
+   twice and put the caret off the axis the prose sits on. */
+.readcol .read-field { padding-inline: 0; }
 
 /* The review bar inside the reading card. Sticky to the card, not the page,
    so approving never means scrolling back up to find the control. */

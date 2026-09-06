@@ -1520,7 +1520,7 @@ function PageColumn({
             style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
 
       <div className="readhead" style={{ position: "relative", flex: "none" }}>
-        <div className="spread" style={{ alignItems: "flex-start", gap: 12 }}>
+        <div className="spread readcol" style={{ alignItems: "flex-start", gap: 12 }}>
           <div style={{ minWidth: 0 }}>
             <div className="label">{placeOf(path)}</div>
             {/* Truncates rather than breaking: `overflow-wrap: anywhere` put
@@ -1624,15 +1624,14 @@ function PageColumn({
             </div>
           ) : null}
 
-          {/* Rewrite the whole page from one sentence of instruction. The
-              right padding clears the desktop shell's Settings button, which
-              is fixed to that corner of the window and knows nothing about
-              what the workbench has put under it. */}
-          <div style={{
-            padding: "12px 60px 16px 22px", position: "relative", flex: "none",
-            borderTop: "1px solid var(--line-char)",
-          }}>
-            <div className="rowflex" style={{ gap: 8 }}>
+          {/* Rewrite the whole page from one sentence of instruction. It
+              stands on the same column as the prose above it - a bar that runs
+              edge to edge under a centred manuscript is a fourth alignment in
+              a panel that should have one. Clearing the desktop shell's fixed
+              Settings button is the stylesheet's job now, and only at the
+              widths where the column actually reaches that corner. */}
+          <div className="revisebar">
+            <div className="rowflex readcol" style={{ gap: 8 }}>
               <input
                 className="input grow"
                 value={note}
@@ -1650,7 +1649,7 @@ function PageColumn({
               </button>
             </div>
             {history ? (
-              <p className="hint" style={{ marginTop: 7, color: "var(--on-char-2)" }}>
+              <p className="hint readcol" style={{ marginTop: 7, color: "var(--on-char-2)" }}>
                 So far: {history}.
               </p>
             ) : null}
@@ -1659,7 +1658,7 @@ function PageColumn({
       ) : (
         <>
           <div className="grows readbody" style={{ position: "relative" }}>
-            <div style={{
+            <div className="readcol" style={{
               border: "1.5px solid var(--vermilion)",
               borderRadius: "var(--r-card)",
               background: "var(--char-2)",
@@ -1784,7 +1783,7 @@ function FullScreenEditor({
       onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClose={onClose}
     >
-      <div className="spread" style={{ alignItems: "flex-start", gap: 12, flex: "none" }}>
+      <div className="spread readcol" style={{ alignItems: "flex-start", gap: 12, flex: "none" }}>
         <div style={{ minWidth: 0 }}>
           <div className="label">{place}</div>
           <h3 style={{ fontSize: 17, marginTop: 5, overflowWrap: "anywhere" }}>{name}</h3>
@@ -1804,7 +1803,7 @@ function FullScreenEditor({
         </div>
       </div>
 
-      <div style={{
+      <div className="readcol" style={{
         border: "1.5px solid var(--vermilion)",
         borderRadius: "var(--r-card)",
         background: "var(--char-2)",
@@ -1835,14 +1834,16 @@ function FullScreenEditor({
           action only makes a person read both to find out which one keeps
           their work. */}
       <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
-        <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
-          <Icon name="check" size={16} />
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <span className="grow" />
-        <span className="dim mono" style={{ fontSize: 11 }}>
-          {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
-        </span>
+        <div className="rowflex readcol" style={{ gap: 10 }}>
+          <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
+            <Icon name="check" size={16} />
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <span className="grow" />
+          <span className="dim mono" style={{ fontSize: 11 }}>
+            {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
+          </span>
+        </div>
       </div>
     </dialog>
   );
