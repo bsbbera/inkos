@@ -986,13 +986,14 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    ones, which is why full screen no longer needs a scale of its own. */
 .reads, .fullscreen-edit[open] {
   container-type: inline-size; container-name: reading;
-  /* The face. Not a plain percentage of the pane: a third of a window is a
-     small number, and 2.3cqi of a 540px column is 12.4px - which pinned 1440px
-     and 1280px laptops, the two commonest desks this runs on, to the floor. A
-     pane that narrow has already earned the smallest face worth reading. So it
-     starts at 15px and rises with the column: 15px to 400px wide, 18px at 800,
-     22px past 1330 and in full screen. */
-  --rs-auto: clamp(15px, calc(12px + 0.75cqi), 22px);
+  /* The face, and it is the only thing standing between a full-width column
+     and an unreadable one. The prose fills the panel now (see `--col-read`),
+     so line length is governed by how big the type is rather than by a cap on
+     the column: 15px in a squeezed 330px pane, 16px at 540, 20px at 770, 25px
+     at 1100, 26px beyond. That holds the line between roughly 70 and 95
+     characters across the widths this panel is actually dragged to, without
+     ever leaving a third of the panel empty to do it. */
+  --rs-auto: clamp(15px, calc(7px + 1.65cqi), 26px);
   /* The gutter. One value, spent by the head and the body alike, so the file
      name can never sit on a different vertical edge from the prose under it -
      which it did, because the head and the body each carried their own number
@@ -1000,18 +1001,23 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   --pad-read: clamp(11px, 2.4cqi, 26px);
   /* The rhythm above and below the head, on the same fraction. */
   --pad-read-top: clamp(10px, 2cqi, 22px);
-  /* One column, and everything in the panel stands on it.
+  /* One column, and everything in the panel stands on it: the head, the
+     manuscript, the editor's frame and the revise bar, here and in full
+     screen. That is what keeps the file name, the prose and the toolbar on the
+     same two edges at every width.
 
-     Not written in `ch`. The head is set in the interface face and the
-     manuscript in Literata, so `56ch` means two different numbers of pixels in
-     the two places - which is exactly how the panel ended up with the file
-     name on the left edge, the toolbar on the right edge and the prose
-     floating between them, three alignments in one panel. A multiple of the
-     manuscript's own size is the same number everywhere.
+     The column is the panel. A 75-character measure is the textbook answer and
+     it was the wrong one here: this panel is already a third of a workbench
+     that the reader sized on purpose, so capping the column inside it left a
+     third of the panel empty and read as a bug rather than as margin. The
+     reader chose the width by dragging the seam; the prose honours it. Line
+     length is governed by `--rs-auto` above instead.
 
-     33em is 75 characters: Literata averages .440em per character of English
-     prose, measured in this stack. */
-  --col-read: min(calc(33 * var(--rs, var(--rs-auto, 16px))), 100%);
+     That argument is about a pane somebody sized. It does not transfer to full
+     screen, where the width is the monitor and nobody chose it - filling a
+     34-inch screen puts 280 characters on a line - so the editor overrides
+     this with a real measure below. */
+  --col-read: 100%;
 }
 
 /* The column itself. Head, manuscript, editor and the revise bar all carry
@@ -1583,6 +1589,14 @@ button.wf-state:hover { background: var(--line-soft); }
   margin: 0; border: 0; padding: 22px clamp(20px, 5vw, 64px) 0;
   background: var(--char); color: var(--on-char);
   display: flex; flex-direction: column; gap: 14px;
+  /* 75 characters, centred. The panel fills its column because the reader
+     dragged that seam themselves; nobody drags a monitor, so here the measure
+     is a real one. 33em is 75 characters at Literata's measured .440em average
+     advance - written as a multiple of the manuscript's own size rather than
+     in `ch`, because the head is set in the interface face and `56ch` there is
+     a different number of pixels, which is how the head and the prose came to
+     sit on different edges in the first place. */
+  --col-read: min(calc(33 * var(--rs, var(--rs-auto, 16px))), 100%);
   /* The container declaration is up with `.reads`, and it is not optional: a
      dialog is in the top layer but still a DOM child of the column that opened
      it, so without one every `cqi` in here would resolve against a 327px
