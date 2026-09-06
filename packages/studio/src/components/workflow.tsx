@@ -708,21 +708,46 @@ export function useSpeech() {
 function SpeechRate() {
   const { supported, rate, setRate } = useSpeech();
   if (!supported) return null;
+
+  const at = SPEECH_RATES.indexOf(rate as (typeof SPEECH_RATES)[number]);
+  const step = (direction: 1 | -1) => {
+    const next = SPEECH_RATES[Math.min(SPEECH_RATES.length - 1, Math.max(0, at + direction))];
+    if (next !== undefined && next !== rate) setRate(next);
+  };
+
   return (
     <span className="speak-rate">
-      <select
-        value={rate}
-        aria-label="Reading speed"
-        title="Reading speed"
-        onChange={(e) => setRate(Number(e.target.value))}
+      <button
+        type="button"
+        onClick={() => step(-1)}
+        disabled={at <= 0}
+        aria-label="Read slower"
+        title="Read slower"
       >
-        {SPEECH_RATES.map((r) => (
-          <option key={r} value={r}>{r}x</option>
-        ))}
-      </select>
-      {/* The visible face. The select above it is transparent and on top, so
-          the platform's own list opens where a person clicked. */}
-      <span aria-hidden="true">{rate}x</span>
+        <Icon name="minus" size={13} />
+      </button>
+      {/* The number is the reset. Getting back to normal speed was three
+          clicks down or four up depending on where you had got to, which is
+          the reason a speed control gets left wherever it was last dragged. */}
+      <button
+        type="button"
+        className="rate-now"
+        onClick={() => setRate(1)}
+        disabled={rate === 1}
+        aria-label={`Reading at ${rate} times speed. Back to normal.`}
+        title={rate === 1 ? "Normal speed" : "Back to normal speed"}
+      >
+        {rate}&times;
+      </button>
+      <button
+        type="button"
+        onClick={() => step(1)}
+        disabled={at >= SPEECH_RATES.length - 1}
+        aria-label="Read faster"
+        title="Read faster"
+      >
+        <Icon name="plus" size={13} />
+      </button>
     </span>
   );
 }

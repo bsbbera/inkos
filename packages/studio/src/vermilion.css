@@ -404,32 +404,36 @@ svg { display: block; }
    to the rate it would light one half of a single control and not the other.
    Both halves take the quiet fill instead. */
 .speak-group > .btn:hover { background: var(--bg); transform: none; box-shadow: none; }
-.speak-rate:hover { background: var(--putty-2); }
-.on-char .speak-rate:hover { background: var(--char-2); }
 
-/* The rate half. The real <select> sits transparent on top of a visible label,
-   so the platform's own list opens under the pointer while the face keeps the
-   app's type — styling a <select>'s own text across platforms does not work. */
-.speak-rate { position: relative; display: inline-flex; align-items: center; }
+/* The rate, as minus / number / plus.
+   It was a transparent <select> lying on top of a visible label: one click
+   opened a platform dropdown of seven numbers to move one step, the face
+   never looked like a control, and on a dark toolbar the native list arrived
+   in the system's own colours. Three small buttons say what they do, move one
+   step per press, and the number in the middle is the way back to 1x. */
+.speak-rate { display: inline-flex; align-items: center; }
 .speak-rate::before {
-  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px;
-  border-left: 1px solid var(--line);
+  content: ""; align-self: stretch; width: 1px; margin: 4px 0;
+  background: var(--line);
 }
-.on-char .speak-rate::before { border-left-color: var(--line-char); }
-.speak-rate > select {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  opacity: 0; cursor: pointer; appearance: none; border: 0; padding: 0;
+.on-char .speak-rate::before { background: var(--line-char); }
+.speak-rate > button {
+  appearance: none; border: 0; background: transparent; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px 5px; color: var(--ink-2);
+  transition: color var(--fast) var(--ease), background-color var(--fast) var(--ease);
 }
-.speak-rate > span {
-  padding: 6px 10px; font-size: 11px; font-weight: 500;
-  font-variant-numeric: tabular-nums; color: var(--ink-2); pointer-events: none;
+.speak-rate > button:hover:not(:disabled) { color: var(--ink); background: var(--putty-2); }
+.speak-rate > button:disabled { opacity: .35; cursor: default; }
+.speak-rate > .rate-now {
+  padding: 6px 2px; min-width: 3.1em; font-size: 11px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.on-char .speak-rate > span { color: var(--on-char-2); }
-.speak-rate:hover > span { color: var(--ink); }
-.on-char .speak-rate:hover > span { color: var(--on-char); }
-/* The select is invisible, so its focus ring has to be drawn by the group. */
-.speak-rate > select:focus-visible { opacity: 0; }
-.speak-rate:focus-within { outline: 2px solid var(--vermilion); outline-offset: -2px; }
+/* Not at 1x is a state worth seeing without reading the number. */
+.speak-rate > .rate-now:not(:disabled) { color: var(--vermilion-ink); }
+.on-char .speak-rate > button { color: var(--on-char-2); }
+.on-char .speak-rate > button:hover:not(:disabled) { color: var(--on-char); background: var(--char-2); }
+.speak-rate > button:focus-visible { outline: 2px solid var(--vermilion); outline-offset: -2px; }
 .dark .btn-line, .on-char .btn-line { --fg: var(--on-char); border-color: var(--line-char); }
 .dark .btn-quiet, .on-char .btn-quiet { --fg: var(--on-char-2); }
 .dark .btn-quiet:hover, .on-char .btn-quiet:hover { --bg: var(--char-2); --fg: var(--on-char); }
@@ -935,7 +939,19 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    size are the reader adjustables; nothing animates near the column. */
 .read {
   font-family: var(--font-read);
-  font-size: var(--rs, 16.5px); line-height: var(--rl, 1.72); max-width: var(--rm, 64ch);
+  /* Fitted to the column, not to the window.
+     `--rs` was a flat pixel size and `--rm` a flat 62ch, both chosen for the
+     three-column layout at a comfortable width. Drag a seam narrow, or turn
+     the text size up, and the measure stopped fitting: a 62ch line at 23px is
+     1400px wide and the column is 400. `min(…, 100%)` caps the measure at the
+     column, and the container query below steps the size back down when there
+     is genuinely no room, so the text always belongs to the space it is in
+     rather than to the space it was designed in. */
+  font-size: var(--rs, 16.5px); line-height: var(--rl, 1.72);
+  max-width: min(var(--rm, 64ch), 100%);
+  /* A URL or a path has nowhere to break, and one of them used to decide the
+     width of the whole reading column. */
+  overflow-wrap: anywhere;
   text-wrap: pretty; font-optical-sizing: auto;
   /* The measure is deliberately not transitioned. It is dragged on a slider,
      and reflowing a long column on every frame of a drag is the one place in
@@ -943,6 +959,18 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   transition: font-size var(--med) var(--ease), line-height var(--med) var(--ease);
 }
 .read p + p { margin-top: .8em; text-indent: 1.3em; }
+
+/* The reading column is its own container, so the manuscript can answer the
+   width of the pane rather than the width of the window - the same pane is
+   a third of a three-column workbench and the whole of a full-screen read. */
+.reads { container-type: inline-size; container-name: reading; }
+@container reading (max-width: 560px) {
+  .read { font-size: max(13px, calc(var(--rs, 16.5px) * .88)); line-height: 1.62; }
+}
+@container reading (max-width: 400px) {
+  .read { font-size: max(12.5px, calc(var(--rs, 16.5px) * .78)); }
+  .read p + p { text-indent: 1em; }
+}
 .read p.lead { text-indent: 0; }
 /* The drop cap was set in the interface face and the brand colour, which put
    the tool's signature on the first letter of the writer's own paragraph.
@@ -1116,18 +1144,21 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    of `.pg` is already defined further down with the issue pages; only the
    grid, the ruled ghost of text, and the audit column's own states are
    new. */
-.pgs { display: grid; gap: 9px; grid-template-columns: repeat(auto-fill, minmax(74px, 1fr)); }
+/* Smaller sheets. At 74px a fourteen-chapter short filled the column and
+   pushed the work list off the top; the sheet is a place marker, not a
+   preview, so it only has to be big enough to carry a folio and a flag. */
+.pgs { display: grid; gap: 7px; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); }
 .pgs .sheet { border-radius: 3px; }
 /* Prose, at the size prose reads as texture rather than words. */
 .pgs .sheet .rule {
-  position: absolute; inset: 9px 8px auto 8px; height: 34px;
+  position: absolute; inset: 7px 6px auto 6px; height: 24px;
   background: repeating-linear-gradient(
     to bottom, var(--ink-3) 0 1px, transparent 1px 5px);
   opacity: .17;
 }
-.pgs .folio { font-size: 17px; right: 5px; bottom: 2px; }
-.pgs .pill { position: absolute; top: 5px; right: 5px; font-size: 9.5px; padding: 0 4px; line-height: 15px; }
-.pgs .cap { margin-top: 5px; gap: 5px; font-size: 10.5px; min-width: 0; }
+.pgs .folio { font-size: 13px; right: 4px; bottom: 1px; }
+.pgs .pill { position: absolute; top: 3px; right: 3px; font-size: 9px; padding: 0 3px; line-height: 13px; }
+.pgs .cap { margin-top: 4px; gap: 4px; font-size: 9.5px; min-width: 0; }
 .pgs .cap .trunc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* The page you have open. A ring alone was too quiet to find in a grid of
@@ -1156,8 +1187,18 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 
 /* A row of counted facts: number over label, tabular, so the same block reads
    the same whether it is counting a whole production or one page of it. */
-.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; }
-.stats > span { display: flex; flex-direction: column; line-height: 1.15; }
+/* Numbers that lay themselves out.
+   A wrapping flex row put five figures on one line and left half the column
+   empty beside them, or broke to a ragged second line the moment the seam
+   moved. As a grid of auto-fitted tracks the same numbers make one row, two
+   or three depending on the room, and each keeps its own cell. */
+.stats {
+  display: grid; gap: 9px 14px;
+  grid-template-columns: repeat(auto-fit, minmax(66px, 1fr));
+}
+.stats > span {
+  display: flex; flex-direction: column; line-height: 1.15; min-width: 0;
+}
 .stats b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .stats b.is-bad { color: var(--bad); }
 .stats b.is-ok { color: var(--ok); }

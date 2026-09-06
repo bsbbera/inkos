@@ -834,7 +834,9 @@ function ScopeColumn({
                     >
                       <TypeMark kind={p.kind} />
                       <span className="grow">
-                        <span className="name" style={{ fontSize: 14 }}>{p.id}</span>
+                        <span className="name" style={{ fontSize: 14 }} title={p.id}>
+                          {titleOf(p.id)}
+                        </span>
                         {/* The silhouette said the type already. Repeating the
                             word beside it is the labelling the styleguide
                             rules out. */}
@@ -1488,6 +1490,9 @@ function PageColumn({
 
   /* Whichever text is actually in front of you. */
   const pageText = mode === "edit" ? draft : text;
+  // The editor is the same prose at the same size; switching modes should not
+  // resize it under you.
+  const { size } = useReadingSize();
 
   return (
     <div className="dark crop colpanel" data-tabscope>
@@ -1541,7 +1546,7 @@ function PageColumn({
 
       {mode === "read" ? (
         <>
-          <div className="grows" style={{ padding: "0 22px", position: "relative" }}>
+          <div className="grows reads" style={{ padding: "0 22px", position: "relative" }}>
             {loading ? (
               <p className="muted" style={{ fontSize: 14 }}>Opening the page…</p>
             ) : text ? (
@@ -1625,7 +1630,7 @@ function PageColumn({
         </>
       ) : (
         <>
-          <div className="grows" style={{ padding: "0 22px", position: "relative" }}>
+          <div className="grows reads" style={{ padding: "0 22px", position: "relative" }}>
             <div style={{
               border: "1.5px solid var(--vermilion)",
               borderRadius: "var(--r-card)",
@@ -1636,7 +1641,7 @@ function PageColumn({
             }}>
               <textarea
                 className="read-field"
-                style={{ color: "var(--on-char)", "--rs": "15.5px", "--rm": "100%", flex: 1 } as React.CSSProperties}
+                style={{ color: "var(--on-char)", "--rs": `${size}px`, "--rm": "100%", flex: 1 } as React.CSSProperties}
                 aria-label="Edit the page"
                 value={draft}
                 onChange={(e) => onDraft(e.target.value)}
@@ -1803,6 +1808,37 @@ function FullScreenEditor({
  * is brighter than the rest so the queue and the page agree about where you
  * are, and clicking any mark moves the queue to it.
  */
+/**
+ * A folder name, read as a title.
+ *
+ * Every creation is stored under a slug because a slug is a safe filename, and
+ * the screen printed the slug: `the-lamp-room`, `the-kolam-drawn-at-dawn`.
+ * That is the disk's business, not the reader's. File names are left alone
+ * where they identify a file - only the name of a piece of work is dressed up,
+ * and the slug stays in the tooltip so the folder is still findable.
+ *
+ * Small words stay small unless they open the title, which is the difference
+ * between a title and a shouted one.
+ */
+const SMALL_WORDS = new Set([
+  "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "nor", "of",
+  "on", "or", "the", "to", "up", "via", "with",
+]);
+
+export function titleOf(slug: string): string {
+  const words = slug.replace(/[_-]+/g, " ").trim().split(/[ ]+/).filter(Boolean);
+  if (words.length === 0) return slug;
+  return words
+    .map((word, index) => {
+      const lower = word.toLowerCase();
+      // A word already carrying capitals is somebody's spelling, not a slug's.
+      if (word !== lower && word !== word.toUpperCase()) return word;
+      if (index > 0 && SMALL_WORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
 function MarkedText({
   text, findings, current, onPick,
 }: {
