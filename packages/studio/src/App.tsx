@@ -41,6 +41,7 @@ import { postApi, useApi } from "./hooks/use-api";
 import { Shell, type ShellVariant } from "./components/shell/Shell";
 import { crumbsFor } from "./components/shell/crumbs";
 import { useShellData, deriveActiveRun } from "./hooks/use-shell-data";
+import { useJobs, jobLabel, jobDetail } from "./hooks/use-jobs";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -103,6 +104,15 @@ export function App() {
   const [ready, setReady] = useState(false);
 
   const { books, publications, waiting, tails, modelLabel, paletteExtra } = useShellData();
+  /*
+   * The queue, held here so it outlives every screen.
+   *
+   * A job started on one page used to be watched by that page and nobody
+   * else, so walking away from it was indistinguishable from it finishing.
+   * This sits above the router: the stage on the rail is the same object the
+   * run screen lists and the screen that started it reads.
+   */
+  const jobs = useJobs(sse.messages);
 
   // 全局语言同步：app-language 是模块级单例，供用不了 hook 的代码（lib 纯函数、
   // store slice）读取。这里在渲染期同步赋值，让子组件在同一次渲染里调用 tr() 时
@@ -164,6 +174,22 @@ export function App() {
   const startupGate = deriveStartupGate({ ready, projectError });
 
   const activeRun = useMemo(() => deriveActiveRun(sse.messages), [sse.messages]);
+
+  /*
+   * What the rail says the machine is doing.
+   *
+   * A queued stage wins over an event-derived run, because it is the account
+   * that survives: `deriveActiveRun` reads a ring buffer that starts empty on
+   * every load and knows nothing of the job queue at all, so a restyle - which
+   * only ever announces itself as a job - drew no card whatsoever.
+   */
+  const railRun = useMemo(() => {
+    const job = jobs.live[0];
+    if (job) {
+      return { what: jobLabel(job), where: jobDetail(job), more: jobs.live.length - 1 };
+    }
+    return activeRun ? { what: activeRun.what, where: activeRun.where } : null;
+  }, [jobs.live, activeRun]);
 
   const crumbs = useMemo(
     () =>
@@ -227,7 +253,7 @@ export function App() {
       crumbs={crumbs}
       variant={shellVariantFor(route)}
       tails={tails}
-      run={activeRun ? { what: activeRun.what, where: activeRun.where } : null}
+      run={railRun}
       model={modelLabel}
       waiting={waiting}
       paletteExtra={paletteExtra}
@@ -250,7 +276,7 @@ export function App() {
       {route.page === "books" && <ProductionsPage kind="books" nav={nav} />}
       {route.page === "magazines" && <ProductionsPage kind="magazines" nav={nav} />}
       {route.page === "new" && <StartPage nav={nav} />}
-      {route.page === "run" && <RunPage sse={sse} run={activeRun} />}
+      {route.page === "run" && <RunPage sse={sse} run={activeRun} jobs={jobs} />}
       {route.page === "styleguide" && <StyleGuide />}
 
       {isBookCreateChatRoute(route) && (
@@ -280,7 +306,7 @@ export function App() {
       {route.page === "daemon" && <DaemonControl t={t} sse={sse} />}
       {route.page === "logs" && <LogViewer t={t} />}
       {route.page === "genres" && <GenreManager nav={nav} theme={theme} t={t} />}
-      {route.page === "style" && <StyleManager />}
+      {route.page === "style" && <StyleManager jobs={jobs} />}
       {route.page === "translation" && <TranslationManager nav={nav} theme={theme} t={t} />}
       {route.page === "import" && <ImportManager nav={nav} theme={theme} t={t} initialTab={route.tab} />}
       {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} />}

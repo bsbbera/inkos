@@ -144,6 +144,19 @@ export function fileState(
     return { dot: "dot dot-bad", note: `${mine.length} open · blocks approval` };
   }
   if (mine.length > 0) return { dot: "dot dot-warn", note: `${mine.length} open` };
+  /*
+   * A verdict is about the text that was read, not about the file name.
+   *
+   * "Clean" survived every rewrite that happened after the check: restyle it,
+   * revise it, retype it by hand, and the dot stayed green because `checked`
+   * was still set. The date of the last rewrite is the thing that says
+   * otherwise, and it is already on record - it was simply never compared.
+   * Deliberately not a fifth colour: this is the un-read state, which is what
+   * a file nobody has read *in its current form* actually is.
+   */
+  if (item.audit.rewritten && item.audit.checked && item.audit.rewritten > item.audit.checked) {
+    return { dot: "dot dot-never", note: "changed since last read" };
+  }
   if (item.audit.checked) return { dot: "dot dot-clean", note: "clean" };
   return { dot: "dot dot-never", note: "never read" };
 }
@@ -259,8 +272,14 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
 
   /* Two windows on one book must not disagree about what is still open. */
   useNewSSEMessages(sse.messages, useCallback((m: SSEMessage) => {
-    if (m.event === "findings:changed" || m.event === "audit:state") void refetchFindings();
-  }, [refetchFindings]));
+    /* `audit:state` means a file's record moved: a rewrite landed, a sign-off
+       was given or taken back. The findings were refetched and the file list
+       was not, so a restyle that rewrote fourteen chapters left every one of
+       them still reading as it did before until the screen was reloaded. */
+    if (m.event === "findings:changed" || m.event === "audit:state") {
+      void Promise.all([refetchFindings(), refetchDetail(), refetchProjects()]);
+    }
+  }, [refetchFindings, refetchDetail, refetchProjects]));
 
   /* ---- the page being worked ---- */
 

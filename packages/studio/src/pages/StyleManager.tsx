@@ -14,10 +14,11 @@
  * "sentence std dev" told nobody anything - and to be honest that importing
  * replaces whatever voice was there before.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import { Empty } from "../components/ui/states";
 import { Icon } from "../components/ui/icon";
+import { isLive, type Job, type JobsView } from "../hooks/use-jobs";
 
 interface StyleProfile {
   readonly sourceName: string;
@@ -29,14 +30,6 @@ interface StyleProfile {
   readonly rhetoricalFeatures: ReadonlyArray<string>;
   /** Which analyser actually ran. The old page could not say. */
   readonly language?: "zh" | "en";
-}
-
-interface RestyleJob {
-  readonly id: string;
-  readonly status: "queued" | "running" | "done" | "failed" | "cancelled";
-  /** The queue calls it `message`; it is the latest line of progress. */
-  readonly message?: string;
-  readonly error?: string;
 }
 
 interface StyleTarget {
@@ -74,7 +67,24 @@ function statUnit(language: "zh" | "en" | undefined): string {
   return language === "en" ? "words" : "characters";
 }
 
-export function StyleManager() {
+/**
+ * What the screen says about a rewrite that may not have started here.
+ *
+ * Derived from the job rather than remembered, because the job outlives this
+ * component: walk to the audit screen mid-rewrite and back, and the sentence
+ * has to still be true.
+ */
+export function restyleLine(job: Job | null): string {
+  if (!job) return "";
+  if (isLive(job)) return job.message?.trim() || "Working…";
+  if (job.status === "done") {
+    return "Done. The draft is rewritten — the audit screen's Restore puts any file back.";
+  }
+  if (job.status === "cancelled") return "Stopped. Files already rewritten stay rewritten.";
+  return `Error: ${job.error ?? "the rewrite failed"}`;
+}
+
+export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
   const [text, setText] = useState("");
   const [sourceName, setSourceName] = useState("");
   const [profile, setProfile] = useState<StyleProfile | null>(null);
@@ -83,8 +93,7 @@ export function StyleManager() {
   const [target, setTarget] = useState("");
   const [importStatus, setImportStatus] = useState("");
   const [importing, setImporting] = useState(false);
-  const [restyleJob, setRestyleJob] = useState<string | null>(null);
-  const [restyleStatus, setRestyleStatus] = useState("");
+  const [restyleError, setRestyleError] = useState("");
   const { data: targetData, refetch: refetchTargets } =
     useApi<{ targets: ReadonlyArray<StyleTarget> }>("/style/targets");
   const statusNotice = buildStyleStatusNotice(analyzeStatus, importStatus);
@@ -148,50 +157,50 @@ export function StyleManager() {
     if (!target) return;
     const [type, ...rest] = target.split(":");
     const id = rest.join(":");
-    setRestyleStatus("Starting…");
+    setRestyleError("");
     try {
-      const started = await postApi<{ job: string; files: number }>(
+      await postApi<{ job: string; files: number }>(
         `/productions/${type}/${encodeURIComponent(id)}/restyle`,
         {},
       );
-      setRestyleJob(started.job);
-      setRestyleStatus(`Rewriting ${started.files} file${started.files === 1 ? "" : "s"}…`);
+      await jobs.refresh();
     } catch (e) {
-      setRestyleJob(null);
-      setRestyleStatus(`Error: ${e instanceof Error ? e.message : String(e)}`);
+      setRestyleError(`Error: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
   const handleStopRestyle = async () => {
-    if (!restyleJob) return;
-    await postApi(`/jobs/${restyleJob}/cancel`, {}).catch(() => null);
-    setRestyleStatus("Stopping after the file in hand…");
+    if (!restyle) return;
+    await jobs.cancel(restyle.id);
   };
 
+  /*
+   * The rewrite in flight for the chosen work, whoever started it.
+   *
+   * This screen used to hold the job id in its own state and poll `/jobs`
+   * every second and a half. Both died with the component: walking to the
+   * audit screen and back left a rewrite running on the server with nothing on
+   * any screen saying so. Looked up by what is being rewritten rather than by
+   * an id this session happened to receive, so coming back to the page finds
+   * it again.
+   */
+  const restyle = useMemo(() => {
+    if (!target) return null;
+    const [type, ...rest] = target.split(":");
+    const id = rest.join(":");
+    const mine = jobs.jobs.filter(
+      (job) => job.stage === "restyle" && job.ref.type === type && job.ref.id === id,
+    );
+    return mine[mine.length - 1] ?? null;
+  }, [jobs.jobs, target]);
+
+  const running = Boolean(restyle && isLive(restyle));
+  const restyleStatus = restyleError || restyleLine(restyle);
+
+  /* A finished rewrite may have given the work its first voice. */
   useEffect(() => {
-    if (!restyleJob) return;
-    let live = true;
-    const tick = async () => {
-      const data = await fetchJson<{ jobs: ReadonlyArray<RestyleJob> }>("/jobs").catch(() => null);
-      if (!live || !data) return;
-      const job = data.jobs.find((j) => j.id === restyleJob);
-      if (!job) return;
-      if (job.status === "running" || job.status === "queued") {
-        setRestyleStatus(job.message ?? "Working…");
-        return;
-      }
-      setRestyleJob(null);
-      setRestyleStatus(
-        job.status === "done" ? "Done. The draft is rewritten — the audit screen's Restore puts any file back."
-          : job.status === "cancelled" ? "Stopped. Files already rewritten stay rewritten."
-          : `Error: ${job.error ?? "the rewrite failed"}`,
-      );
-      void refetchTargets();
-    };
-    void tick();
-    const timer = setInterval(() => void tick(), 1500);
-    return () => { live = false; clearInterval(timer); };
-  }, [restyleJob, refetchTargets]);
+    if (restyle && !isLive(restyle)) void refetchTargets();
+  }, [restyle, refetchTargets]);
 
   return (
     <div className="stack-lg">
@@ -413,12 +422,12 @@ export function StyleManager() {
                         type="button"
                         className="btn"
                         onClick={handleRestyle}
-                        disabled={Boolean(restyleJob)}
+                        disabled={running}
                       >
                         <Icon name="redo" className="ico" />
-                        {restyleJob ? "Rewriting…" : "Rewrite the draft in this voice"}
+                        {running ? "Rewriting…" : "Rewrite the draft in this voice"}
                       </button>
-                      {restyleJob && (
+                      {running && (
                         <button type="button" className="btn btn-bad" onClick={handleStopRestyle}>
                           <Icon name="stop" className="ico" />
                           Stop

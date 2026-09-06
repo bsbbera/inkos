@@ -833,6 +833,14 @@ export {
   RestyleRefused,
 } from "./pipeline/restyle.js";
 export {
+  recomposeShortFiction,
+  composedDirOf,
+  chapterBody,
+  foldChapters,
+  renderedLanguage,
+  type RecomposeResult,
+} from "./pipeline/recompose.js";
+export {
   enqueue as enqueueJob,
   cancel as cancelJob,
   listJobs,

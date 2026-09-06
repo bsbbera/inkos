@@ -178,7 +178,7 @@ import {
 } from "@actalk/quire-core";
 import { listAuditTargets, registerAuditRoutes } from "./audit.js";
 import { registerProductionContextRoutes } from "./production-context.js";
-import { isApproved, readAuditState } from "./audit-state.js";
+import { isApproved, readAuditState, updateFileAudit } from "./audit-state.js";
 import { blockersFor, readFindings } from "./findings-store.js";
 import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
@@ -7417,7 +7417,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       ref: { type, id },
       stage: "restyle",
       work: async ({ signal, onProgress }) => {
-        const { restyleProse, RestyleRefused } = await import("@actalk/quire-core");
+        const { restyleProse, RestyleRefused, recomposeShortFiction, composedDirOf } = await import("@actalk/quire-core");
         const done: string[] = [];
         const skipped: Array<{ path: string; why: string }> = [];
 
@@ -7459,7 +7459,20 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             await writeFile(backupOf(file), before, "utf-8");
             await writeFile(file, after, "utf-8");
             done.push(path);
+            /*
+             * The same record a hand edit leaves.
+             *
+             * A restyle rewrote the prose and told the audit screen nothing,
+             * so a chapter checked yesterday and restyled today still read as
+             * "clean" - a verdict about text that no longer existed. The date
+             * is what lets the screen say the file has changed since it was
+             * last read; `checked` is deliberately left alone, because losing
+             * the fact that it was once read is a worse answer than a stale
+             * one being marked stale.
+             */
+            await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
             broadcast("audit:text", { path, markdown: after });
+            broadcast("audit:state", { path });
             onProgress(`${position}: ${name} rewritten`);
           } catch (error) {
             const why = error instanceof Error ? error.message : String(error);
@@ -7473,8 +7486,39 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           }
         }
 
-        broadcast("restyle:done", { type, id, rewritten: done.length, skipped });
-        return { rewritten: done, skipped };
+        /*
+         * The long copies of the same prose.
+         *
+         * A short is on disk four times - the chapters, `full.md`, a copy
+         * named after the story, and the resume file - and this loop rewrote
+         * only the first. Left there, the audit screen listed the restyled
+         * chapters and the un-restyled `full.md` side by side as the same
+         * story. Composed once at the end rather than per file, because
+         * rendering the whole document fourteen times to change it fourteen
+         * times is work nobody reads.
+         */
+        const recomposed: string[] = [];
+        for (const dir of new Set(done.map(composedDirOf).filter((d): d is string => Boolean(d)))) {
+          const state = await readAuditState(root);
+          const result = await recomposeShortFiction({
+            root,
+            baseDir: dir,
+            isApproved: (path) => isApproved(state, path),
+            backupOf,
+          }).catch(() => null);
+          for (const path of result?.written ?? []) {
+            recomposed.push(path);
+            await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
+            broadcast("audit:state", { path });
+          }
+          for (const miss of result?.skipped ?? []) skipped.push({ path: miss.path, why: miss.why });
+          if (result && result.written.length > 0) {
+            onProgress(`the whole story rebuilt from the rewritten chapters`);
+          }
+        }
+
+        broadcast("restyle:done", { type, id, rewritten: done.length, recomposed: recomposed.length, skipped });
+        return { rewritten: done, recomposed, skipped };
       },
     });
 

@@ -76,6 +76,29 @@ describe("fileState", () => {
     expect(fileState(item(), list)).toEqual({ dot: "dot dot-warn", note: "1 open" });
   });
 
+  it("stops saying clean once the file was rewritten after it was read", () => {
+    const stale = item({
+      audit: {
+        checked: "2026-08-30T00:00:00.000Z",
+        rewritten: "2026-09-02T00:00:00.000Z",
+      },
+    });
+    expect(fileState(stale, [])).toEqual({
+      dot: "dot dot-never",
+      note: "changed since last read",
+    });
+  });
+
+  it("stays clean when the last read came after the last rewrite", () => {
+    const read = item({
+      audit: {
+        checked: "2026-09-02T00:00:00.000Z",
+        rewritten: "2026-08-30T00:00:00.000Z",
+      },
+    });
+    expect(fileState(read, []).dot).toBe("dot dot-clean");
+  });
+
   it("a blocking finding outranks the rest of the dots", () => {
     const list = [
       finding({ id: "1", path }),

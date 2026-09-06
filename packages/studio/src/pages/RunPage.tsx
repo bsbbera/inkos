@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { SSEMessage } from "../hooks/use-sse";
 import type { ActiveRun } from "../hooks/use-shell-data";
+import { jobDetail, jobLabel, type JobsView } from "../hooks/use-jobs";
 import { Icon } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
 
@@ -81,20 +82,42 @@ export function deriveStages(messages: readonly SSEMessage[], since: number): St
 export function RunPage({
   sse,
   run,
+  jobs,
 }: {
   readonly sse: { readonly messages: readonly SSEMessage[] };
   readonly run: ActiveRun | null;
+  readonly jobs: JobsView;
 }) {
+  /*
+   * What this screen is about, from whichever source knows.
+   *
+   * `run` is derived from the event stream, which starts empty on every load
+   * and carries nothing at all for a stage that announces itself only through
+   * the job queue - a restyle being the plain case. So this screen said
+   * "Nothing is running" while fourteen chapters were being rewritten. The
+   * queue is asked as well, and either answer draws the page.
+   */
+  const lead = jobs.live[0];
+  const head = useMemo<ActiveRun | null>(() => {
+    if (run) return run;
+    if (!lead) return null;
+    return {
+      what: jobLabel(lead),
+      where: jobDetail(lead),
+      startedAt: Date.parse(lead.startedAt ?? lead.queuedAt) || Date.now(),
+    };
+  }, [run, lead]);
+
   // Only while a clock is actually running: a page that re-renders every
   // second forever is a laptop fan.
   const [, tick] = useState(0);
   useEffect(() => {
-    if (!run) return;
+    if (!head) return;
     const id = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [run]);
+  }, [head]);
 
-  const since = run?.startedAt ?? 0;
+  const since = head?.startedAt ?? 0;
   const transcript = useMemo(
     () => sse.messages.filter((m) => m.event !== "ping" && m.timestamp >= since).slice(-60),
     [sse.messages, since],
@@ -104,7 +127,7 @@ export function RunPage({
   const done = stages.filter((s) => s.state === "done").length;
   const pct = stages.length ? Math.round((done / stages.length) * 100) : 0;
 
-  if (!run) {
+  if (!head) {
     return (
       <div className="empty">
         <Icon name="clock" size={22} />
@@ -131,11 +154,11 @@ export function RunPage({
               {stages.length ? `Stage ${Math.min(done + 1, stages.length)} of ${stages.length}` : "Working"}
             </div>
             <h3 style={{ fontSize: 17.5, marginTop: 7 }}>
-              {run.what}
-              {run.where ? ` · ${run.where}` : ""}
+              {head.what}
+              {head.where ? ` · ${head.where}` : ""}
             </h3>
           </div>
-          <span className="pill">{clock(Date.now() - run.startedAt)}</span>
+          <span className="pill">{clock(Date.now() - head.startedAt)}</span>
         </div>
 
         <div className="thread" style={{ position: "relative" }}>
@@ -175,6 +198,45 @@ export function RunPage({
       </div>
 
       <div className="stack">
+        {/*
+          * Everything in flight, not only the thing in front.
+          *
+          * The queue runs one stage at a time and holds the rest, and until
+          * now the only screen that could see a queued job was whichever one
+          * had started it - so walking away from a restyle was the same as
+          * losing it. Stopping is here rather than only on the page that
+          * started it, for the same reason.
+          */}
+        {jobs.live.length > 0 ? (
+          <div className="panel">
+            <h3 className="h-panel">In hand</h3>
+            <p className="hint" style={{ marginTop: 3 }}>
+              {jobs.live.length === 1
+                ? "One stage, running now."
+                : `${jobs.live.length} stages. They run one at a time.`}
+            </p>
+            <div className="rows" style={{ marginTop: 12 }}>
+              {jobs.live.map((job) => (
+                <div className="row" style={{ padding: "9px 4px", gap: 9 }} key={job.id}>
+                  <span className={job.status === "running" ? "st now" : "st"} style={{ gap: 9 }}>
+                    <i />
+                    {jobLabel(job)}
+                  </span>
+                  <span className="grow" />
+                  <span className="meta" style={{ maxWidth: 220 }}>{jobDetail(job)}</span>
+                  <button
+                    type="button"
+                    className="btn btn-quiet btn-sm"
+                    onClick={() => void jobs.cancel(job.id)}
+                  >
+                    Stop
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         <div className="panel">
           <div className="spread" style={{ alignItems: "flex-start" }}>
             <div>

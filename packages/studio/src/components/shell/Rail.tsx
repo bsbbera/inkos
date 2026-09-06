@@ -19,6 +19,14 @@ export interface RailRun {
   readonly where: string;
   /** 0-1. Undefined when the stage cannot say, which is most of them. */
   readonly progress?: number;
+  /**
+   * How many more are waiting behind this one.
+   *
+   * The queue is serial, so a card showing the running stage alone was honest
+   * about the present and silent about the next twenty minutes. A number is
+   * enough here; the run screen is one click away and lists them.
+   */
+  readonly more?: number;
 }
 
 /** The ring's circumference at r=19, so a fraction can be written as an offset. */
@@ -110,6 +118,9 @@ export function Rail({
             <span className="what">{run.what}</span>
             <span className="where">{run.where}</span>
           </span>
+          {run.more && run.more > 0 ? (
+            <em className="tail" style={{ fontStyle: "normal" }}>+{run.more}</em>
+          ) : null}
         </button>
       ) : null}
 

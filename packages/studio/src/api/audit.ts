@@ -26,6 +26,8 @@ import {
   reviseStoryFile,
   safeChildPath,
   storyAuditReport,
+  composedDirOf,
+  recomposeShortFiction,
   type Finding,
   type StoryAudit,
 } from "@actalk/quire-core";
@@ -177,6 +179,33 @@ async function exists(absolute: string): Promise<boolean> {
 
 export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
   const { root, broadcast } = deps;
+
+  /*
+   * The other copies of the prose that just changed.
+   *
+   * A short keeps its chapters, `full.md`, a copy named after the story and a
+   * resume file, all holding the same text. Every pass that rewrites a chapter
+   * - an audit's revise, a note turned into a rewrite, a person typing in the
+   * editor - used to change one of the four and leave the audit screen listing
+   * the other three as the same story, saying something else. A file that is
+   * not a chapter of a short recomposes nothing and costs one string split.
+   */
+  async function recomposeAround(path: string): Promise<void> {
+    const dir = composedDirOf(path);
+    if (!dir) return;
+    const state = await readAuditState(root);
+    const result = await recomposeShortFiction({
+      root,
+      baseDir: dir,
+      isApproved: (candidate) => isApproved(state, candidate),
+      backupOf: backupPathOf,
+    }).catch(() => null);
+    for (const written of result?.written ?? []) {
+      await updateFileAudit(root, written, { rewritten: new Date().toISOString() });
+      broadcast("audit:text", { path: written });
+      broadcast("audit:state", { path: written });
+    }
+  }
 
   app.get("/api/v1/audit/targets", async (c) => {
     return c.json({ targets: await listAuditTargets(root) });
@@ -419,6 +448,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
             // A de-AI pass you asked for and that found nothing still ran.
             deslops: (before.deslops ?? 0) + added.deslops,
           });
+          if (audit.rounds > 0) await recomposeAround(path);
           broadcast("audit:state", { path });
         } catch (error) {
           if (control.signal.aborted) throw error;
@@ -537,6 +567,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     await writeFile(backupPathOf(file), before, "utf-8");
     await writeFile(file, text, "utf-8");
     await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
+    await recomposeAround(path);
     broadcast("audit:text", { path, markdown: text });
     broadcast("audit:state", { path });
     return c.json({ path, changed: true });
@@ -589,6 +620,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
         notes: (before.notes ?? 0) + 1,
         revisions: (before.revisions ?? 0) + (out.changed ? 1 : 0),
       });
+      if (out.changed) await recomposeAround(path);
       broadcast("audit:run", { path, state: "done" });
       broadcast("audit:state", { path });
       return c.json(out);
@@ -639,6 +671,10 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     // The file is the pre-rewrite text again, so the mark that says otherwise
     // has to go with it.
     await updateFileAudit(root, path, { rewritten: null });
+    // Putting a chapter back has to put the long copies back with it, or the
+    // restore is only three-quarters done and the story disagrees with itself
+    // in the other direction.
+    await recomposeAround(path);
     broadcast("audit:text", { path, markdown: content });
     broadcast("audit:state", { path });
     return c.json({ restored: true, content });
