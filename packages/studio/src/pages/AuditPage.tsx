@@ -1469,6 +1469,9 @@ function PageColumn({
 }) {
   /* Above the early return: a hook cannot sit behind a condition. */
   const [full, setFull] = useState(false);
+  /* Up here for the same reason. The editor is the same prose at the same size
+     as the reader, so switching modes must not resize it under you. */
+  const { size } = useReadingSize();
 
   /* Full screen is a way of editing this page, not a mode of its own. Leaving
      edit, or moving to a different page, closes it - otherwise the overlay
@@ -1490,9 +1493,6 @@ function PageColumn({
 
   /* Whichever text is actually in front of you. */
   const pageText = mode === "edit" ? draft : text;
-  // The editor is the same prose at the same size; switching modes should not
-  // resize it under you.
-  const { size } = useReadingSize();
 
   return (
     <div className="dark crop colpanel" data-tabscope>
