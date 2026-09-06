@@ -524,8 +524,93 @@ function setStoredRate(rate: number): void {
   for (const fn of rateListeners) fn();
 }
 
+/**
+ * How big the manuscript is set, and where that choice lives.
+ *
+ * The reading column was fixed at 15.5px, which is a good size for someone
+ * with good light and good eyes and wrong for everybody else. It is stored
+ * beside the reading speed and for the same reason: one setting for the whole
+ * app, remembered, because a size chosen on one page that the next page
+ * ignores is not a setting.
+ *
+ * The steps are a scale rather than a slider. Nobody wants 16.3px; they want
+ * bigger.
+ */
+export const READING_SIZES = [13.5, 15.5, 17.5, 20, 23] as const;
+
+const SIZE_KEY = "quire.reading.size";
+const sizeListeners = new Set<() => void>();
+
+function readStoredSize(): number {
+  if (typeof localStorage === "undefined") return 15.5;
+  const raw = Number(localStorage.getItem(SIZE_KEY));
+  return READING_SIZES.includes(raw as (typeof READING_SIZES)[number]) ? raw : 15.5;
+}
+
+let currentSize = readStoredSize();
+
+function subscribeSize(fn: () => void): () => void {
+  sizeListeners.add(fn);
+  return () => { sizeListeners.delete(fn); };
+}
+
+export function useReadingSize() {
+  const size = useSyncExternalStore(subscribeSize, () => currentSize, () => 15.5);
+  const step = useCallback((direction: 1 | -1) => {
+    const at = READING_SIZES.indexOf(size as (typeof READING_SIZES)[number]);
+    const next = READING_SIZES[Math.min(READING_SIZES.length - 1, Math.max(0, at + direction))];
+    if (next === undefined || next === size) return;
+    currentSize = next;
+    try { localStorage.setItem(SIZE_KEY, String(next)); } catch { /* this session only */ }
+    for (const fn of sizeListeners) fn();
+  }, [size]);
+  return {
+    size,
+    bigger: () => step(1),
+    smaller: () => step(-1),
+    atLargest: size === READING_SIZES[READING_SIZES.length - 1],
+    atSmallest: size === READING_SIZES[0],
+  };
+}
+
+/**
+ * Smaller and bigger, as one unit the size of a single button.
+ *
+ * Two glyphs in one bordered pill rather than two buttons with labels: this
+ * row already carries a copy button, a voice, a count and a mode toggle, and
+ * the control is used twice and then left alone.
+ */
+export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
+  const { size, bigger, smaller, atLargest, atSmallest } = useReadingSize();
+  return (
+    <span className={`speak-group${dark ? " on-char" : ""}`}>
+      <button
+        type="button"
+        className="btn btn-sm btn-quiet"
+        onClick={smaller}
+        disabled={atSmallest}
+        aria-label="Smaller text"
+        title={`Smaller text (now ${size}px)`}
+      >
+        <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>A</span>
+      </button>
+      <button
+        type="button"
+        className="btn btn-sm btn-quiet"
+        onClick={bigger}
+        disabled={atLargest}
+        aria-label="Bigger text"
+        title={`Bigger text (now ${size}px)`}
+      >
+        <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1 }}>A</span>
+      </button>
+    </span>
+  );
+}
+
 export function useSpeech() {
   const [speaking, setSpeaking] = useState(false);
+  const [paused, setPaused] = useState(false);
   const ownRef = useRef<SpeechSynthesisUtterance | null>(null);
   /* What is being read, kept so a speed change can restart it. The Web Speech
      API fixes rate at the moment an utterance starts and offers no way to
@@ -542,6 +627,7 @@ export function useSpeech() {
     ownRef.current = null;
     textRef.current = "";
     setSpeaking(false);
+    setPaused(false);
   }, [supported]);
 
   const speak = useCallback((text: string) => {
@@ -560,7 +646,31 @@ export function useSpeech() {
     textRef.current = text;
     window.speechSynthesis.speak(utterance);
     setSpeaking(true);
+    setPaused(false);
   }, [supported]);
+
+  /**
+   * Hold it where it is, and pick it up there.
+   *
+   * Stop was the only way to interrupt, and stop forgets the place: someone
+   * who wanted to reread a line had to start the passage again from the top.
+   * `pause` keeps the utterance, so `resume` carries on mid-sentence.
+   *
+   * A paused voice that a speed change restarts would silently jump back to
+   * the beginning, so `setRate` below only restarts a voice that is actually
+   * speaking; changing speed while paused takes effect when it resumes.
+   */
+  const pause = useCallback(() => {
+    if (!supported || !speaking || paused) return;
+    window.speechSynthesis.pause();
+    setPaused(true);
+  }, [supported, speaking, paused]);
+
+  const resume = useCallback(() => {
+    if (!supported || !paused) return;
+    window.speechSynthesis.resume();
+    setPaused(false);
+  }, [supported, paused]);
 
   /**
    * Change the speed, and apply it to what is being said right now.
@@ -571,14 +681,16 @@ export function useSpeech() {
    */
   const setRate = useCallback((next: number) => {
     setStoredRate(next);
-    if (speaking && textRef.current) speak(textRef.current);
-  }, [speaking, speak]);
+    // Not while paused: restarting there would throw away the place the pause
+    // was taken to keep.
+    if (speaking && !paused && textRef.current) speak(textRef.current);
+  }, [speaking, paused, speak]);
 
   /* Leaving the screen must stop the voice. Without this it keeps reading a
      paragraph that is no longer on screen, with no control left to stop it. */
   useEffect(() => stop, [stop]);
 
-  return { supported, speaking, speak, stop, rate, setRate };
+  return { supported, speaking, paused, speak, stop, pause, resume, rate, setRate };
 }
 
 /**
@@ -634,22 +746,58 @@ export function ReadAloud({
   /** Off for a row that shows many of these; one speed picker is enough. */
   readonly rateControl?: boolean;
 }) {
-  const { supported, speaking, speak, stop } = useSpeech();
+  const { supported, speaking, paused, speak, stop, pause, resume } = useSpeech();
   if (!supported || !text.trim()) return null;
-  const title = speaking ? "Stop reading" : label;
+
+  /*
+   * Idle is one button. Reading is three.
+   *
+   * The control used to be speak-or-stop, so the only way to interrupt was the
+   * one that forgets where you were: someone who wanted to hear a line again
+   * lost the whole passage. Pause holds the place; stop is still there beside
+   * it for when you actually mean stop. The extra two only exist while
+   * something is being read, so a row of idle buttons is exactly as wide as it
+   * was.
+   */
+  const startTitle = label;
+  const holdTitle = paused ? "Carry on reading" : "Hold it there";
+
   return (
     <span className={`speak-group${dark ? " on-char" : ""}`}>
-      <button
-        type="button"
-        className="btn btn-sm btn-quiet"
-        onClick={() => (speaking ? stop() : speak(text))}
-        aria-pressed={speaking}
-        aria-label={title}
-        title={title}
-      >
-        <Icon name={speaking ? "mute" : "speak"} size={15} />
-        {iconOnly ? null : speaking ? "Stop" : label}
-      </button>
+      {speaking ? (
+        <>
+          <button
+            type="button"
+            className="btn btn-sm btn-quiet"
+            onClick={() => (paused ? resume() : pause())}
+            aria-label={holdTitle}
+            title={holdTitle}
+          >
+            <Icon name={paused ? "play" : "pause"} size={15} />
+            {iconOnly ? null : paused ? "Resume" : "Pause"}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-quiet"
+            onClick={() => stop()}
+            aria-label="Stop reading"
+            title="Stop reading"
+          >
+            <Icon name="stop" size={15} />
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="btn btn-sm btn-quiet"
+          onClick={() => speak(text)}
+          aria-label={startTitle}
+          title={startTitle}
+        >
+          <Icon name="speak" size={15} />
+          {iconOnly ? null : label}
+        </button>
+      )}
       {rateControl ? <SpeechRate /> : null}
     </span>
   );

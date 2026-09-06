@@ -7,7 +7,7 @@
  * and nothing below knows what screen it is on.
  */
 import { useEffect, useSyncExternalStore } from "react";
-import { Icon } from "./icon";
+import { Icon, type IconName } from "./icon";
 
 /** One pressed button per group. The seg is a choice, not a filter. */
 export function Seg<T extends string>({
@@ -15,22 +15,38 @@ export function Seg<T extends string>({
   value,
   onChange,
   className,
+  compact = false,
 }: {
-  readonly options: readonly { readonly value: T; readonly label: string }[];
+  readonly options: readonly {
+    readonly value: T;
+    readonly label: string;
+    /** Shown instead of the word when the toggle is compact. */
+    readonly icon?: IconName;
+  }[];
   readonly value: T;
   readonly onChange: (next: T) => void;
   readonly className?: string;
+  /**
+   * Glyph instead of word, with the word as the tooltip.
+   *
+   * For a header that is already carrying a title, a count and two other
+   * controls. List/Tiles and Read/Edit are both pairs whose glyphs are
+   * unambiguous, and the row reads as a row rather than a sentence of buttons.
+   */
+  readonly compact?: boolean;
 }) {
   return (
-    <div className={className ? `seg ${className}` : "seg"}>
+    <div className={`seg${compact ? " seg-compact" : ""}${className ? ` ${className}` : ""}`}>
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
           aria-pressed={o.value === value}
+          aria-label={compact && o.icon ? o.label : undefined}
+          title={compact && o.icon ? o.label : undefined}
           onClick={() => onChange(o.value)}
         >
-          {o.label}
+          {compact && o.icon ? <Icon name={o.icon} size={15} /> : o.label}
         </button>
       ))}
     </div>

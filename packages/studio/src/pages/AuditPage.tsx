@@ -25,7 +25,7 @@ import { Icon } from "../components/ui/icon";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
 import {
-  Grip, ReadAloud, useColumns, type Workflow,
+  Grip, ReadAloud, ReadingSize, useColumns, useReadingSize, type Workflow,
 } from "../components/workflow";
 
 /* ------------------------------------------------------------------- types */
@@ -579,18 +579,11 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
 
   return (
     <div className="workbench">
-      {/* The name of the thing, and the two passes that act on all of it. The
-          rest of the workflow is the middle column, beside the queue it is
-          about, rather than a strip across the top of all three. */}
-      {detail ? (
-        <div className="spread" style={{ alignItems: "flex-end", gap: 16 }}>
-          <div style={{ minWidth: 0 }}>
-            <h2 className="h-page" style={{ fontSize: 21 }}>{detail.title}</h2>
-            <p className="dim" style={{ fontSize: 12, marginTop: 2 }}>{detail.subtitle}</p>
-          </div>
-        </div>
-      ) : null}
-
+      {/* No title strip. It said the name of the work and how many files it
+          has, which is the row you clicked in the queue to get here and the
+          count printed at the top of the queue - three copies of one fact
+          across the top of the screen, costing every column the height. The
+          work you are in is the one lit up on the left. */}
       <div
         className="cols cols-audit"
         style={template ? ({ "--cols": template } as React.CSSProperties) : undefined}
@@ -807,17 +800,19 @@ function ScopeColumn({
 
   return (
     <div className="panel panel-flush colpanel">
-      <div className="panel-head" style={{ padding: "13px 16px" }}>
-        <span className="grow" style={{ minWidth: 0 }}>
-          <h3 className="h-panel">The pages</h3>
-          <span className="dim" style={{ fontSize: 11 }}>
-            {items.length} file{items.length === 1 ? "" : "s"} · one at a time
-          </span>
-        </span>
+      {/* "The pages", and a count of them, above a list of pages with a count
+          on every work in it. The only thing in this row that says anything
+          is the toggle, so the row is the toggle. */}
+      <div className="panel-head panel-head-thin">
+        <span className="grow" style={{ minWidth: 0 }} />
         <Seg
+          compact
           value={view}
           onChange={chooseView}
-          options={[{ value: "list", label: "List" }, { value: "tiles", label: "Tiles" }]}
+          options={[
+            { value: "list", label: "List", icon: "list" },
+            { value: "tiles", label: "Tiles", icon: "grid" },
+          ]}
         />
       </div>
 
@@ -1527,13 +1522,18 @@ function PageColumn({
               <Icon name="copy" size={15} />
             </button>
             <ReadAloud dark iconOnly text={pageText} label="Read the whole page" />
+            <ReadingSize dark />
             <span className="pill">
               {findings.filter((f) => f.state === "open").length} open
             </span>
             <Seg
+              compact
               value={mode}
               onChange={onMode}
-              options={[{ value: "read", label: "Read" }, { value: "edit", label: "Edit" }]}
+              options={[
+                { value: "read", label: "Read", icon: "eye" },
+                { value: "edit", label: "Edit", icon: "pencil" },
+              ]}
             />
           </div>
         </div>
@@ -1811,6 +1811,8 @@ function MarkedText({
   readonly current: Finding | null;
   readonly onPick: (id: string) => void;
 }) {
+  // Set once for the whole app, so the size survives moving between pages.
+  const { size } = useReadingSize();
   const parts: React.ReactNode[] = [];
   const located = findings
     .filter((f) => f.start >= 0 && f.end > f.start && f.end <= text.length)
@@ -1842,7 +1844,7 @@ function MarkedText({
   return (
     <div
       className="read"
-      style={{ color: "var(--on-char)", "--rs": "15.5px", "--rm": "62ch" } as React.CSSProperties}
+      style={{ color: "var(--on-char)", "--rs": `${size}px`, "--rm": "62ch" } as React.CSSProperties}
     >
       <p style={{ whiteSpace: "pre-wrap" }}>{parts}</p>
     </div>
