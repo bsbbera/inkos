@@ -50,6 +50,9 @@ interface FileAudit {
   readonly revisions?: number;
   readonly deslops?: number;
   readonly notes?: number;
+  /* Restyle passes over this file, and whose voice the last one used. */
+  readonly restyles?: number;
+  readonly voice?: string;
 }
 
 /** "read 4x, rewritten twice" - said only where there is something to say. */
@@ -59,7 +62,22 @@ function historyOf(a: FileAudit): string {
   if (a.revisions) parts.push(`rewritten ${a.revisions}×`);
   if (a.deslops) parts.push(`de-AI ${a.deslops}×`);
   if (a.notes) parts.push(`${a.notes} note${a.notes === 1 ? "" : "s"}`);
+  // Named, not counted, because whose voice it is answers the question and a
+  // number does not: "styled 2×" says nothing a reader wanted to know.
+  if (a.restyles) parts.push(a.voice ? `in ${a.voice}'s voice` : `styled ${a.restyles}×`);
   return parts.join(" · ");
+}
+
+/**
+ * Whether a voice has actually reached this file.
+ *
+ * The Style screen could say a work had a guide and nothing could say a page
+ * had been through it - and a restyle leaves signed-off files alone, so those
+ * are different facts about the same book.
+ */
+export function voiceOf(a: FileAudit): string | null {
+  if (!a.restyles) return null;
+  return a.voice ? `in ${a.voice}'s voice` : "restyled";
 }
 
 interface Item {
@@ -1012,6 +1030,11 @@ function StateColumn({
       blocking: open.filter((f) => f.severity === "blocking").length,
       words: items.reduce((n, i) => n + i.words, 0),
       reads: items.reduce((n, i) => n + (i.audit.reads ?? 0), 0),
+      /* Files carrying a voice, not restyle passes. "Nine restyles" over
+         fourteen chapters and nine chapters restyled are the same number and
+         a different answer to "is this book in that voice yet". */
+      styled: items.filter((i) => i.audit.restyles).length,
+      voice: items.find((i) => i.audit.voice)?.audit.voice ?? null,
       revisions: items.reduce((n, i) => n + (i.audit.revisions ?? 0), 0),
       deslops: items.reduce((n, i) => n + (i.audit.deslops ?? 0), 0),
       notes: items.reduce((n, i) => n + (i.audit.notes ?? 0), 0),
@@ -1106,6 +1129,14 @@ function StateColumn({
             <span><b>{global.revisions}</b><em>rewrites</em></span>
             <span><b>{global.deslops}</b><em>de-AI</em></span>
             <span><b>{global.notes}</b><em>notes</em></span>
+            {global.styled > 0 ? (
+              <span>
+                <b className={global.styled === global.pages ? "is-ok" : ""}>
+                  {global.styled}/{global.pages}
+                </b>
+                <em>{global.voice ? `in ${global.voice}'s voice` : "styled"}</em>
+              </span>
+            ) : null}
           </div>
           </div>
           {workflow ? (
@@ -1354,12 +1385,19 @@ function StateColumn({
               <span><b>{here.audit.revisions ?? 0}</b><em>rewrites</em></span>
               <span><b>{here.audit.deslops ?? 0}</b><em>de-AI</em></span>
               <span><b>{here.audit.notes ?? 0}</b><em>notes</em></span>
+              <span><b>{here.audit.restyles ?? 0}</b><em>styled</em></span>
               <span><b className={counts.open ? "is-bad" : "is-ok"}>{counts.open}</b><em>open</em></span>
             </div>
             <div className="rowflex" style={{ gap: 10, marginTop: 10, fontSize: 11 }}>
               <span className="dim">last read {when(here.audit.checked)}</span>
               <span className="dim">·</span>
               <span className="dim">last rewrite {when(here.audit.rewritten)}</span>
+              {voiceOf(here.audit) ? (
+                <>
+                  <span className="dim">·</span>
+                  <span className="pill">{voiceOf(here.audit)}</span>
+                </>
+              ) : null}
               <span className={here.audit.approved ? "pill pill-ok" : "pill"}>
                 {here.audit.approved ? "signed off" : "not signed off"}
               </span>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, fileState, placeOf, queueOf } from "./AuditPage";
+import { estimate, fileState, placeOf, queueOf, voiceOf } from "./AuditPage";
 
 type Finding = Parameters<typeof queueOf>[0][number];
 type Item = Parameters<typeof fileState>[0];
@@ -126,5 +126,22 @@ describe("estimate", () => {
     expect(estimate(0)).toBe("nothing selected");
     expect(estimate(400)).toBe("about 1 min");
     expect(estimate(12_240)).toBe("about 4 min");
+  });
+});
+
+describe("voiceOf", () => {
+  it("says nothing for a file no voice has reached", () => {
+    expect(voiceOf({})).toBeNull();
+    // A work having a style guide is not the same fact: a restyle leaves
+    // signed-off files alone, so some pages of a styled book carry no voice.
+    expect(voiceOf({ rewritten: "2026-09-06T00:00:00.000Z" })).toBeNull();
+  });
+
+  it("names the voice when the import was labelled", () => {
+    expect(voiceOf({ restyles: 1, voice: "Ursula Le Guin" })).toBe("in Ursula Le Guin's voice");
+  });
+
+  it("still says a voice reached it when the sample had no name", () => {
+    expect(voiceOf({ restyles: 2 })).toBe("restyled");
   });
 });

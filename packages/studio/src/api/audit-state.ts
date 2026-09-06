@@ -37,6 +37,21 @@ export interface FileAudit {
   readonly deslops?: number;
   /** Editor notes that were turned into a rewrite of this file. */
   readonly notes?: number;
+  /*
+   * Whose voice this file is in, and how many times it has been put into one.
+   *
+   * Every other pass leaves a count here and the restyle left nothing, so a
+   * file that had been rewritten into another author's voice was on record as
+   * having been "rewritten" - the same word a person typing in the editor
+   * earns - and the screen could not say whether a voice had reached this file
+   * at all, let alone whose. `hasStyle` only ever answered that for the work
+   * as a whole, and a restyle skips signed-off files, so the work having a
+   * guide never meant every file had been through it.
+   */
+  /** Restyle passes that rewrote this file. */
+  readonly restyles?: number;
+  /** The name of the voice the last one used, as the sample was labelled. */
+  readonly voice?: string;
   /** Signed off. While this is set, the file is not edited by accident. */
   readonly approved?: { readonly at: string; readonly by: string };
 }

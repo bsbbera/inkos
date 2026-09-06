@@ -7400,6 +7400,17 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const body = await c.req.json<{ force?: boolean }>().catch(() => ({ force: false }));
     const guidePath = join(styleDirFor(type, id), "style_guide.md");
     const styleGuide = await readFile(guidePath, "utf-8").catch(() => null);
+    /*
+     * Whose voice this is, by the name the sample was given on import.
+     *
+     * Recorded per file rather than only per work, because a restyle leaves
+     * signed-off files alone: "this work has a voice" was never the same
+     * statement as "this page is in it", and the screen could only ever make
+     * the first one.
+     */
+    const voice = await readFile(join(styleDirFor(type, id), "style_profile.json"), "utf-8")
+      .then((raw) => (JSON.parse(raw) as { sourceName?: string }).sourceName)
+      .catch(() => undefined);
     if (!styleGuide) {
       return c.json({ error: "Import a voice into this work before rewriting it into one." }, 400);
     }
@@ -7470,7 +7481,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
              * the fact that it was once read is a worse answer than a stale
              * one being marked stale.
              */
-            await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
+            const had = (await readAuditState(root)).files[path] ?? {};
+            await updateFileAudit(root, path, {
+              rewritten: new Date().toISOString(),
+              restyles: (had.restyles ?? 0) + 1,
+              ...(voice ? { voice } : {}),
+            });
             broadcast("audit:text", { path, markdown: after });
             broadcast("audit:state", { path });
             onProgress(`${position}: ${name} rewritten`);
@@ -7508,7 +7524,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           }).catch(() => null);
           for (const path of result?.written ?? []) {
             recomposed.push(path);
-            await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
+            await updateFileAudit(root, path, {
+              rewritten: new Date().toISOString(),
+              ...(voice ? { voice } : {}),
+            });
             broadcast("audit:state", { path });
           }
           for (const miss of result?.skipped ?? []) skipped.push({ path: miss.path, why: miss.why });
