@@ -1664,10 +1664,13 @@ function PageColumn({
             }}>
               <textarea
                 className="read-field"
+                /* No `--rm: 100%` here any more. Filling the column looked
+                   like using the space and read as 34 characters a line in a
+                   dragged-in column and 122 in a wide one; the stylesheet's
+                   measure holds it near 75 either way. */
                 style={{
                   color: "var(--on-char)",
                   ...(chosen ? { "--rs": `${chosen}px` } : {}),
-                  "--rm": "100%",
                   flex: 1,
                 } as React.CSSProperties}
                 aria-label="Edit the page"
@@ -1752,6 +1755,10 @@ function FullScreenEditor({
   readonly onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  /* The same preference the column reads, so turning the text up in one place
+     turns it up in the other. Full screen used to be the one surface where the
+     A buttons were not offered at all and the size could not be changed. */
+  const { chosen } = useReadingSize();
 
   /* showModal() is a method, not an attribute, so open/closed has to be driven
      imperatively or the element renders as an inert block in the flow. */
@@ -1779,6 +1786,7 @@ function FullScreenEditor({
         </div>
         <div className="rowflex" style={{ gap: 9, flex: "none" }}>
           <ReadAloud dark iconOnly text={draft} label="Read the whole page" />
+          <ReadingSize dark />
           <button
             type="button"
             className="btn btn-quiet btn-sm"
@@ -1802,7 +1810,15 @@ function FullScreenEditor({
       }}>
         <textarea
           className="read-field"
-          style={{ color: "var(--on-char)", "--rs": "16.5px", "--rm": "78ch", flex: 1 } as React.CSSProperties}
+          /* `--rs: 16.5px` and `--rm: 78ch` were hardcoded here, which is why
+             this editor rendered an identical 760px column of 16.5px type at
+             1024px and at 3440px. The dialog is its own container now and
+             sizes itself; only a chosen size overrides it. */
+          style={{
+            color: "var(--on-char)",
+            ...(chosen ? { "--rs": `${chosen}px` } : {}),
+            flex: 1,
+          } as React.CSSProperties}
           aria-label="Edit the page"
           value={draft}
           onChange={(e) => onDraft(e.target.value)}
@@ -1908,10 +1924,13 @@ function MarkedText({
   return (
     <div
       className="read"
+      /* The measure is the stylesheet's, not this element's. A `--rm: 66ch`
+         used to be pinned here, which overrode it - and `66ch` in Literata is
+         an 89-character line, so the manuscript ran that wide at every size no
+         matter what the stylesheet said. */
       style={{
         color: "var(--on-char)",
         ...(chosen ? { "--rs": `${chosen}px` } : {}),
-        "--rm": "66ch",
       } as React.CSSProperties}
     >
       <p style={{ whiteSpace: "pre-wrap" }}>{parts}</p>

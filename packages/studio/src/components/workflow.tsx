@@ -550,14 +550,15 @@ function readStoredSize(): number | null {
 /**
  * Null until somebody chooses.
  *
- * The size used to default to 15.5px, which is a number picked for a
- * comfortable pane and wrong in a narrow one: at 363px it left 45 characters
- * on a line, and a measure that short is read as a column of fragments. While
- * nobody has expressed a preference the stylesheet sizes the type from the
- * width of the pane instead, holding the line near 65 characters wherever the
- * seam is dragged. The moment somebody presses A it becomes their number and
- * stays their number - a person who asked for bigger text meant it, and a
- * measure that overrules them is not a preference.
+ * The size used to default to a flat 15.5px, which is a number picked for a
+ * comfortable pane and wrong in every other one: at 363px it left 45
+ * characters on a line, and full screen on a 34-inch monitor got the same
+ * small type it got on a laptop. While nobody has expressed a preference the
+ * stylesheet sizes the type from the width of the surface instead - `--rs-auto`
+ * in vermilion.css, set once for the reading column and once for the
+ * full-screen editor. The moment somebody presses A it becomes their number
+ * and stays their number, on both surfaces: a person who asked for bigger text
+ * meant it, and a measure that overrules them is not a preference.
  */
 let currentSize: number | null = readStoredSize();
 const DEFAULT_SIZE = 15.5;
@@ -567,24 +568,44 @@ function subscribeSize(fn: () => void): () => void {
   return () => { sizeListeners.delete(fn); };
 }
 
+/**
+ * The size on the screen right now, when nobody has chosen one.
+ *
+ * The first press of A has to start from what the reader is actually looking
+ * at, and that is a number the stylesheet computed from the width of the
+ * surface - 15px in a dragged-in column, 22px in the full-screen editor. A
+ * fixed starting rung made "bigger" mean *smaller* in full screen, which is
+ * the kind of control nobody presses twice.
+ */
+function renderedSize(): number {
+  if (typeof document === "undefined") return DEFAULT_SIZE;
+  const el = document.querySelector(".fullscreen-edit[open] .read-field, .read, .read-field");
+  const px = el ? parseFloat(getComputedStyle(el).fontSize) : NaN;
+  return Number.isFinite(px) ? px : DEFAULT_SIZE;
+}
+
 export function useReadingSize() {
   const chosen = useSyncExternalStore(subscribeSize, () => currentSize, () => null);
-  const size = chosen ?? DEFAULT_SIZE;
   const step = useCallback((direction: 1 | -1) => {
-    const at = READING_SIZES.indexOf(size as (typeof READING_SIZES)[number]);
-    const from = at >= 0 ? at : READING_SIZES.indexOf(DEFAULT_SIZE);
-    const next = READING_SIZES[Math.min(READING_SIZES.length - 1, Math.max(0, from + direction))];
+    /* Nearest rung in the direction asked for, rather than an index step: the
+       size in force may be a computed one that is on no rung at all. */
+    const from = chosen ?? renderedSize();
+    const next = direction === 1
+      ? READING_SIZES.find((px) => px > from + 0.01)
+      : [...READING_SIZES].reverse().find((px) => px < from - 0.01);
     if (next === undefined) return;
     currentSize = next;
     try { localStorage.setItem(SIZE_KEY, String(next)); } catch { /* this session only */ }
     for (const fn of sizeListeners) fn();
-  }, [size]);
+  }, [chosen]);
   return {
-    size,
-    /** Null while the pane is choosing for itself. */
+    size: chosen ?? DEFAULT_SIZE,
+    /** Null while the surface is choosing for itself. */
     chosen,
     bigger: () => step(1),
     smaller: () => step(-1),
+    /* Only a chosen size can be at an end. While the surface is choosing, both
+       directions are open, because the computed size sits between rungs. */
     atLargest: chosen === READING_SIZES[READING_SIZES.length - 1],
     atSmallest: chosen === READING_SIZES[0],
   };
