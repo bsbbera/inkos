@@ -1528,7 +1528,12 @@ function PageColumn({
                 pane got narrow. A file name is one token. */}
             <h3 className="trunc" style={{ fontSize: 17, marginTop: 5 }} title={name}>{name}</h3>
           </div>
-          <div className="rowflex" style={{ gap: 9, flex: "none" }}>
+          {/* No `flex` here. It carried `none`, which is an inline style and
+              so beat the container query that drops this row under the name
+              when the pane is too narrow to hold both - so instead of
+              wrapping, the row ran off the right edge of the panel. The
+              stylesheet owns when it wraps. */}
+          <div className="rowflex" style={{ gap: 9 }}>
             {/* The whole page, out of the app or read to you. They belong to
                 the page, not to one mode of looking at it, so they sit with
                 the page's own controls and act on whichever text is in front

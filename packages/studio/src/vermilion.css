@@ -939,63 +939,85 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    size are the reader adjustables; nothing animates near the column. */
 .read {
   font-family: var(--font-read);
-  /* Fitted to the column, not to the window.
-     `--rs` was a flat pixel size and `--rm` a flat 62ch, both chosen for the
-     three-column layout at a comfortable width. Drag a seam narrow, or turn
-     the text size up, and the measure stopped fitting: a 62ch line at 23px is
-     1400px wide and the column is 400. `min(…, 100%)` caps the measure at the
-     column, and the container query below steps the size back down when there
-     is genuinely no room, so the text always belongs to the space it is in
-     rather than to the space it was designed in. */
   /* Three variables, in order of who gets the last word.
+
      `--rs` is the number somebody chose by pressing A, and it wins outright -
      a person who asked for bigger text meant it. `--rs-auto` is what the
-     surface computes from its own width, set on `.reads` and again on the
-     full-screen editor, which are the two containers a manuscript is read in.
-     The literal is only a floor under a stylesheet that failed to load.
+     surface works out from its own width. The literal is a floor under a
+     stylesheet that failed to load, nothing more.
 
      `--rm` is the measure, and it is written in `ch` for a reason worth
      stating: `ch` is the width of a zero, not of an average letter. Measured
-     in Literata, a zero is .591em and an average character of English prose is
-     .440em - so `ch` overstates the line by a factor of 1.34, and the `66ch`
-     that used to sit here was in fact an 89-character line. 49ch is 66
-     characters. */
+     in Literata, a zero is .591em where an average character of English prose
+     is .440em - so a measure in `ch` runs 34% wider than the number claims,
+     and the `66ch` that used to sit here was an 89-character line. 56ch is 75
+     characters, the generous end of the comfortable range, which is the right
+     end for a panel this wide. */
   font-size: var(--rs, var(--rs-auto, 16px));
   line-height: var(--rl, 1.72);
-  max-width: min(var(--rm, 49ch), 100%);
+  max-width: min(var(--rm, 56ch), 100%);
+  /* Centred, because the alternative is not "wider" - it is the same column of
+     text with every spare pixel piled against one edge. A 550px measure in a
+     1050px pane left 450px of dead charcoal on the right and read as a bug.
+     Centring also puts read mode and edit mode on the same axis: `.read-field`
+     has always centred itself through its padding, so text used to jump
+     sideways when you switched between them. */
+  margin-inline: auto;
   /* A URL or a path has nowhere to break, and one of them used to decide the
      width of the whole reading column. */
   overflow-wrap: anywhere;
   text-wrap: pretty; font-optical-sizing: auto;
-  /* Nothing here is transitioned. The size is now a function of the pane, so
-     it changes on every frame of a seam drag - and easing a font-size that is
+  /* Nothing here is transitioned. The size is a function of the pane, so it
+     changes on every frame of a seam drag - and easing a font-size that is
      already moving continuously is two animations fighting over the same
-     number, with a reflow of the whole column behind each frame. The size
-     steps land instantly instead, which is what a person pressing A expects
-     anyway. */
+     number, with a reflow of the whole column behind each frame. */
 }
 .read p + p { margin-top: .8em; text-indent: 1.3em; }
 
-/* The reading pane is its own container - head, toolbar and manuscript alike,
-   because a narrow pane squeezes all three. The same pane is a third of a
-   three-column workbench and the whole of a full-screen read, and neither the
-   window width nor a media query can tell those apart. */
-.reads {
+/* ── THE READING SURFACE ──────────────────────────────────────────────────
+   Head, manuscript and toolbar all size themselves from the width of the pane
+   they are in, and the pane is a third of a workbench in one place and the
+   whole screen in another. Neither the window width nor a media query can tell
+   those two apart, so both surfaces declare themselves containers and every
+   measurement below is a fraction of the container rather than a number typed
+   in for one monitor.
+
+   The four variables here are the whole system. Both surfaces get the same
+   ones, which is why full screen no longer needs a scale of its own. */
+.reads, .fullscreen-edit[open] {
   container-type: inline-size; container-name: reading;
-  /* A third of the window, so a pure percentage of it is the wrong instrument:
-     2.3cqi of a 540px column is 12.4px, and 1440px and 1280px laptops - the
-     two commonest desks this runs on - were both pinned to an 11.5px floor.
-     A pane that narrow cannot earn a smaller face; it has already earned the
-     smallest one worth reading. So the size starts at 15px and rises gently
-     with the column: 15px to about 400px wide, 18px at 800, 19px past 930. */
-  --rs-auto: clamp(15px, calc(12px + 0.75cqi), 19px);
+  /* The face. Not a plain percentage of the pane: a third of a window is a
+     small number, and 2.3cqi of a 540px column is 12.4px - which pinned 1440px
+     and 1280px laptops, the two commonest desks this runs on, to the floor. A
+     pane that narrow has already earned the smallest face worth reading. So it
+     starts at 15px and rises with the column: 15px to 400px wide, 18px at 800,
+     22px past 1330 and in full screen. */
+  --rs-auto: clamp(15px, calc(12px + 0.75cqi), 22px);
+  /* The gutter. One value, spent by the head and the body alike, so the file
+     name can never sit on a different vertical edge from the prose under it -
+     which it did, because the head and the body each carried their own number
+     and a second `.readhead` rule later in this file quietly won the argument. */
+  --pad-read: clamp(11px, 2.4cqi, 26px);
+  /* The rhythm above and below the head, on the same fraction. */
+  --pad-read-top: clamp(10px, 2cqi, 22px);
 }
-.readhead { padding: 16px 22px 12px; }
-.readbody { padding: 0 22px; }
+.readhead {
+  display: flex; align-items: flex-start; gap: 16px;
+  padding: var(--pad-read-top) var(--pad-read) 0;
+}
+/* The head holds one row, and that row is the width of the head. Without this
+   the row is a flex item at its content width, `space-between` has no slack to
+   hand out, and the toolbar parks itself against the title in the middle of
+   the panel instead of on the right edge where it was put. */
+.readhead > .spread { flex: 1; min-width: 0; }
+.readhead > .spread > .rowflex { flex: 0 0 auto; }
+/* `both-edges`, not `stable`: the manuscript is centred in this box, and a
+   gutter reserved on one side only shifts it by half the scrollbar - which is
+   exactly the kind of 10px error that reads as "the margins are wrong" without
+   ever looking like a scrollbar. */
+.readbody { padding: 0 var(--pad-read); scrollbar-gutter: stable both-edges; }
 
 @container reading (max-width: 620px) {
-  .readhead { padding: 13px 15px 10px; }
-  .readbody { padding: 0 15px; }
   .read { line-height: 1.64; }
   .readhead h3 { font-size: 15px; }
   /* The head is a row of controls beside a name. When the row cannot hold
@@ -1006,8 +1028,6 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   .readhead > .spread > .rowflex { flex: 1 0 100%; justify-content: flex-end; }
 }
 @container reading (max-width: 430px) {
-  .readhead { padding: 10px 11px 8px; }
-  .readbody { padding: 0 11px; }
   .read p + p { text-indent: 1em; }
   /* At this width the label above the file name is the first thing to go:
      it repeats the folder, and the name is the thing being looked at. */
@@ -1047,7 +1067,6 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   outline: 1.5px solid var(--vermilion);
 }
 
-.readhead { display: flex; align-items: flex-start; gap: 16px; padding: 22px 26px 0; }
 .readbar {
   display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
   padding: 11px 26px; border-top: 1px solid var(--line-char); border-bottom: 1px solid var(--line-char);
@@ -1066,8 +1085,8 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      this is the same manuscript with a caret in it. It was a flat 16.5px at
      every width, which put 34 characters on a line in a dragged-in column and
      122 in a full-width one. A writing measure is allowed to run a little
-     longer than a reading one - 56ch is 75 characters, the top of the
-     comfortable range rather than the middle of it. */
+     longer than a reading one, and both are 56ch - 75 characters - so the
+     caret does not move when you switch between them. */
   font-size: var(--rs, var(--rs-auto, 16px)); line-height: var(--rl, 1.72);
   padding: 0 max(0px, calc((100% - var(--rm, 56ch)) / 2));
   scrollbar-gutter: stable; text-wrap: pretty;
@@ -1527,17 +1546,14 @@ button.wf-state:hover { background: var(--line-soft); }
   margin: 0; border: 0; padding: 22px clamp(20px, 5vw, 64px) 0;
   background: var(--char); color: var(--on-char);
   display: flex; flex-direction: column; gap: 14px;
-  /* A dialog is in the top layer but still a DOM child of the column that
-     opened it, so without a container of its own every `cqi` inside here
-     resolves against a 327px column while the editor is 3440px wide.
-
-     It gets its own scale as well as its own container. Somebody who asked for
-     the whole screen is not reading in a corner of the workbench, so the face
-     starts at 16px and is allowed up to 22px - where the old hardcoded 16.5px
-     on a 34-inch monitor left a 760px ribbon of small type in the middle of a
-     3440px black field, and did that identically at 1024px. */
-  container-type: inline-size; container-name: reading;
-  --rs-auto: clamp(16px, calc(10px + 0.55cqi), 22px);
+  /* The container declaration is up with `.reads`, and it is not optional: a
+     dialog is in the top layer but still a DOM child of the column that opened
+     it, so without one every `cqi` in here would resolve against a 327px
+     column while the editor is 3440px wide. Sharing that declaration means it
+     shares the scale too, which is the point - there is one manuscript face in
+     this app and it is a fraction of whatever is holding it. The 16.5px that
+     used to be hardcoded here drew the same 760px ribbon of small type at
+     1024px as it did on a 34-inch monitor. */
 }
 .fullscreen-edit::backdrop { background: rgb(0 0 0 / 55%); backdrop-filter: blur(3px); }
 /* The verdict bar is sticky to a scrolling card elsewhere; here it is the
