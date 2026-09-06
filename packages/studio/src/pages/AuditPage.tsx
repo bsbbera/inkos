@@ -1358,30 +1358,52 @@ function StateColumn({
                 * here, one press from the passes that undo it, rather than on
                 * another screen.
                 */}
+              {/*
+                * Shown without a voice, not hidden.
+                *
+                * These were rendered only when the work already carried one,
+                * which meant somebody who had saved a voice and not yet handed
+                * it over went looking for a button that was not there and had
+                * no way to learn why. A control that vanishes teaches nothing;
+                * a disabled one that says what is missing does.
+                */}
+              <button
+                type="button"
+                className="btn btn-line btn-sm"
+                disabled={busy !== null || running || restyling || !here || !voice}
+                title={!voice
+                  ? "This work has not been given a voice yet. Save one on the Style screen, then hand it to this work."
+                  : here
+                    ? `Rewrites ${pageName || "this page"} in ${voice}'s voice. Events, names and dialogue stay; only the prose changes. The text as it stands is kept beside it as .pre-audit.`
+                    : "Pick a page first."}
+                onClick={() => onRestyle(false)}
+              >
+                {restyling
+                  ? "Rewriting…"
+                  : voice
+                    ? `Restyle this page in ${voice}'s voice`
+                    : "Restyle this page — no voice yet"}
+              </button>
               {voice ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-line btn-sm"
-                    disabled={busy !== null || running || restyling || !here}
-                    title={here
-                      ? `Rewrites ${pageName || "this page"} in ${voice}'s voice. Events, names and dialogue stay; only the prose changes. The text as it stands is kept beside it as .pre-audit.`
-                      : "Pick a page first."}
-                    onClick={() => onRestyle(false)}
-                  >
-                    {restyling ? "Rewriting…" : `Restyle this page in ${voice}'s voice`}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-line btn-sm"
-                    disabled={busy !== null || running || restyling}
-                    title={`Rewrites every page of this work in ${voice}'s voice. Signed-off pages are left alone.`}
-                    onClick={() => onRestyle(true)}
-                  >
-                    {restyling ? "Rewriting…" : "Restyle the whole story"}
-                  </button>
-                </>
-              ) : null}
+                <button
+                  type="button"
+                  className="btn btn-line btn-sm"
+                  disabled={busy !== null || running || restyling}
+                  title={`Rewrites every page of this work in ${voice}'s voice. Signed-off pages are left alone.`}
+                  onClick={() => onRestyle(true)}
+                >
+                  {restyling ? "Rewriting…" : "Restyle the whole story"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-quiet btn-sm"
+                  title="Opens the Style screen, where a voice is saved and handed to a piece of work."
+                  onClick={() => { window.location.hash = "#/style"; }}
+                >
+                  Give this work a voice
+                </button>
+              )}
             </div>
 
             {/* The override, and only where there is something to override. It
