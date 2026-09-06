@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { restyleProse, restyleTargets, voiceOnly, RestyleRefused } from "../pipeline/restyle.js";
+import { formatProse, restyleProse, restyleTargets, voiceOnly, RestyleRefused } from "../pipeline/restyle.js";
 import { buildWritingMethodologySection } from "../utils/writing-methodology.js";
 
 const ORIGINAL = ("The lamp went out. He stood in the dark and counted to ten, which was what "
@@ -140,5 +140,31 @@ describe("choosing which files are the work", () => {
 
   it("has nothing to offer a work with no units written", () => {
     expect(restyleTargets(["shorts/x/outline/v001.md"])).toEqual([]);
+  });
+});
+
+describe("formatProse", () => {
+  it("puts a blank line between paragraphs the model ran together", () => {
+    expect(formatProse("# Chapter 1\nHe climbed.\nIt was cold.")).toBe(
+      "# Chapter 1\n\nHe climbed.\n\nIt was cold.",
+    );
+  });
+
+  it("leaves a rewrite that came back correctly formatted alone", () => {
+    const good = "# Chapter 1\n\nHe climbed.\n\nIt was cold.";
+    expect(formatProse(good)).toBe(good);
+  });
+
+  it("does not split a paragraph that was wrapped across lines", () => {
+    // It has blank lines between its paragraphs, so the wrapped lines inside
+    // them are never touched.
+    const wrapped = "He climbed the stair,\nslowly.\n\nIt was cold.";
+    expect(formatProse(wrapped)).toBe(wrapped);
+  });
+
+  it("trims trailing spaces and the ends", () => {
+    expect(formatProse("  \nHe climbed.   \nIt was cold.\n\n  ")).toBe(
+      "He climbed.\n\nIt was cold.",
+    );
   });
 });

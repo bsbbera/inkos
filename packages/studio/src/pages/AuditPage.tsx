@@ -24,6 +24,7 @@ import { useNewSSEMessages } from "../hooks/use-sse";
 import { Icon } from "../components/ui/icon";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
+import { copyText } from "../lib/clipboard";
 import {
   Grip, ReadAloud, ReadingSize, useColumns, useReadingSize, type Workflow,
 } from "../components/workflow";
@@ -1708,10 +1709,9 @@ function PageColumn({
               aria-label="Copy the whole page"
               title="Copy the whole page"
               onClick={() => {
-                void navigator.clipboard
-                  .writeText(pageText)
-                  .then(() => toast("The page is on the clipboard."))
-                  .catch(() => toast("Could not reach the clipboard."));
+                void copyText(pageText).then((ok) => toast(
+                  ok ? "The page is on the clipboard." : "Could not reach the clipboard.",
+                ));
               }}
             >
               <Icon name="copy" size={15} />

@@ -28,6 +28,7 @@ import type {
   ThemedToken,
 } from "shiki";
 import { createHighlighter } from "shiki";
+import { copyText } from "../../lib/clipboard";
 
 // Shiki uses bitflags for font styles: 1=italic, 2=bold, 4=underline
 // oxlint-disable-next-line eslint(no-bitwise)
@@ -468,24 +469,16 @@ export const CodeBlockCopyButton = ({
   const { code } = useContext(CodeBlockContext);
 
   const copyToClipboard = useCallback(async () => {
-    if (typeof window === "undefined" || !navigator?.clipboard?.writeText) {
+    if (typeof window === "undefined" || isCopied) return;
+    // The async Clipboard API is unavailable in the desktop shell more often
+    // than not; `copyText` falls back to the selection-based path.
+    if (!(await copyText(code))) {
       onError?.(new Error("Clipboard API not available"));
       return;
     }
-
-    try {
-      if (!isCopied) {
-        await navigator.clipboard.writeText(code);
-        setIsCopied(true);
-        onCopy?.();
-        timeoutRef.current = window.setTimeout(
-          () => setIsCopied(false),
-          timeout
-        );
-      }
-    } catch (error) {
-      onError?.(error as Error);
-    }
+    setIsCopied(true);
+    onCopy?.();
+    timeoutRef.current = window.setTimeout(() => setIsCopied(false), timeout);
   }, [code, onCopy, onError, timeout, isCopied]);
 
   useEffect(

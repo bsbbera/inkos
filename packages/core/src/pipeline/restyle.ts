@@ -120,7 +120,7 @@ export async function restyleProse(input: {
       : `## 目标文风\n\n${voice}\n\n## 待改写的正文\n\n${original}`,
   );
 
-  const rewritten = unfence(reply).trim();
+  const rewritten = formatProse(unfence(reply));
   if (!rewritten) throw new RestyleRefused("The model returned nothing.");
 
   /*
@@ -144,6 +144,31 @@ export async function restyleProse(input: {
   return rewritten;
 }
 
+/**
+ * Put the paragraphs back on separate lines.
+ *
+ * The whole file is replaced by whatever the model returns, and models return
+ * prose with one newline between paragraphs rather than two. Markdown reads a
+ * single newline as a line break inside the same paragraph, so a restyled
+ * chapter rendered as one wall of text - the audit screen's reading panel
+ * showed the difference immediately, and the reviser never had the problem
+ * because it replaces one section inside a document whose shape survives.
+ *
+ * Only when there is no blank line anywhere. A rewrite that came back
+ * correctly formatted is left exactly as it is, and this cannot then split a
+ * paragraph that was deliberately wrapped across lines - that text has blank
+ * lines between its paragraphs and never reaches the branch.
+ */
+export function formatProse(text: string): string {
+  const trimmed = text.replace(/[ \t]+$/gm, "").trim();
+  if (/\n[ \t]*\n/.test(trimmed)) return trimmed;
+  return trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 /** Models like to wrap a whole document in a fence. Take it back off. */
 function unfence(reply: string): string {
   const fenced = reply.trim().match(/^```(?:markdown|md)?\s*\n([\s\S]*)\n```$/);
@@ -157,6 +182,7 @@ Keep, exactly:
 - Every fact: names, places, numbers, times, objects, relationships.
 - What every line of dialogue means, and who says it.
 - Every heading, scene break, and section marker, unchanged and in place.
+- Markdown paragraphing: one blank line between paragraphs, and a blank line under every heading.
 - Roughly the same length. This is a rewrite, not a summary and not an expansion.
 
 Change:
@@ -175,6 +201,7 @@ const ZH_SYSTEM = `你的任务是把正文改写成另一位作者的文风，�
 - 所有事实：人名、地名、数字、时间、物件、人物关系。
 - 每句对白的含义，以及说话人是谁。
 - 所有标题、场景分隔符、章节标记，位置和内容都不变。
+- Markdown 段落格式：段落之间空一行，标题下面也空一行。
 - 大致相同的篇幅。这是改写，不是缩写，也不是扩写。
 
 可以改变：

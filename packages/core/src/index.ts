@@ -827,6 +827,7 @@ export {
   type WriteStyleGuideResult,
 } from "./pipeline/style-guide.js";
 export {
+  formatProse,
   restyleProse,
   restyleTargets,
   voiceOnly,

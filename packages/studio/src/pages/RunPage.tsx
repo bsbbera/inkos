@@ -16,6 +16,7 @@ import type { ActiveRun } from "../hooks/use-shell-data";
 import { jobDetail, jobLabel, type JobsView } from "../hooks/use-jobs";
 import { Icon } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
+import { copyText } from "../lib/clipboard";
 
 const RING = 2 * Math.PI * 19;
 
@@ -186,10 +187,9 @@ export function RunPage({
             className="btn btn-quiet btn-sm"
             onClick={() => {
               const text = transcript.map((m) => `${m.event}\t${line(m)}`).join("\n");
-              void navigator.clipboard
-                .writeText(text)
-                .then(() => toast("Transcript copied."))
-                .catch(() => toast("Could not reach the clipboard."));
+              void copyText(text).then((ok) => toast(
+                ok ? "Transcript copied." : "Could not reach the clipboard.",
+              ));
             }}
           >
             Copy the transcript
