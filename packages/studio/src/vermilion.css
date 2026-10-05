@@ -719,7 +719,15 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .rail-label {
   font-size: var(--fs-cap); letter-spacing: .16em; text-transform: uppercase;
   color: var(--ink-3); font-weight: 600; padding: 18px 10px 6px;
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  background: none; border: 0; cursor: pointer; text-align: left; font-family: inherit;
 }
+.rail-label:hover { color: var(--ink-2); }
+.rail-label .fold { margin-left: auto; opacity: 0; transition: transform var(--fast) var(--ease), opacity var(--fast) var(--ease); }
+.rail-label:hover .fold, .rail-label:focus-visible .fold, .rail-label[aria-expanded="false"] .fold { opacity: 1; }
+.rail-label[aria-expanded="false"] .fold { transform: rotate(-90deg); }
+.rail-thin .rail-label { justify-content: center; padding: 10px 0 4px; }
+.rail-thin .rail-label .fold { opacity: 1; margin: 0; }
 
 /* The run is visible from every screen. Bottom of the rail, always, so
    walking back to the desk after an hour away starts with one glance. */
@@ -894,6 +902,26 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .tile h4 { font-size: var(--fs-lead); margin-top: auto; }
 .tile .who { font-size: var(--fs-cap); color: var(--ink-3); margin-top: 3px; }
 .tile .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* A work on the shelf: a lettered cover on charcoal, the ground reserved for
+   the work itself, then the name, the counts, and where it stands. */
+.tile-work { padding: 0 0 14px; min-height: 0; }
+.tile-work > :not(.cover) { margin-inline: 16px; }
+.tile-work h4 { margin-top: 12px; line-height: 1.25; }
+.tile .cover {
+  position: relative; display: flex; flex-direction: column; justify-content: space-between;
+  aspect-ratio: 16 / 9; padding: 12px 14px; background: var(--char); color: var(--on-char);
+  border-bottom: 1px solid var(--line);
+}
+.tile .cover-kind {
+  font-size: var(--fs-cap); letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
+  color: color-mix(in oklab, var(--on-char) 62%, transparent);
+}
+.tile .cover-letter {
+  align-self: flex-end; font-family: var(--font-read); font-size: 3.4rem; line-height: .8;
+  font-weight: 600; color: var(--vermilion); transition: transform var(--med) var(--ease);
+}
+.tile-work:hover .cover-letter { transform: translateY(-3px); }
+.tile-foot { display: flex; gap: 6px; margin-top: 10px; }
 
 /* New is a tile, not a floating button: it belongs in the shelf it adds to. */
 .tile-new {
@@ -933,11 +961,18 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .chip-static { cursor: default; }
 
 /* ---- the design desk (08 §6, 07 §1b, 08 §9, 04 §6) -------------------- */
-.desk { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); align-items: start; }
+/* The four cards stand as one row: same height, explanation in the small size,
+   and whatever each card asks you to do sits on its bottom edge, so the
+   buttons line up across the row instead of floating at four heights. */
+.desk { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: stretch; }
 .desk-card {
-  display: grid; gap: 10px; min-width: 0; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px;
   border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper);
 }
+.desk-card > :is(p, .hint) { font-size: var(--fs-small); line-height: 1.5; margin: 0; }
+.desk-card > :is(p, .hint) .mono { font-size: .95em; overflow-wrap: anywhere; }
+/* The card's act is its last child holding a button, whatever wraps it. */
+.desk-card > :last-child:has(> .btn), .desk-card > :last-child.btn { margin-top: auto; }
 .desk-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .clamp2, .clamp3 { display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; margin: 0; font-size: var(--fs-small); }
 .clamp2 { -webkit-line-clamp: 2; }
@@ -986,6 +1021,8 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    above the row stays put instead of jumping with it. */
 .row > * { transition: transform var(--med) var(--ease); }
 .row:hover > * { transform: translateX(8px); }
+/* A row that holds a field: sliding it would move the text under the caret. */
+.row.still:hover > * { transform: none; }
 /* A trailing action is anchored to the right edge, so sliding it with the rest
    of the row reads as the row breaking rather than responding. It fades in
    where it stands. */
@@ -1087,6 +1124,32 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      number, with a reflow of the whole column behind each frame. */
 }
 .read p + p { margin-top: .8em; text-indent: 1.3em; }
+/* The manuscript is markdown, drawn rather than printed (lib/manuscript-md.ts).
+   A line break inside a block is the writer's (verse, a list), so it stays. */
+.read > * { white-space: pre-wrap; }
+.read > * + * { margin-top: .8em; }
+.read h2 {
+  font-family: var(--font-read); font-size: 1.45em; line-height: 1.2; font-weight: 600;
+  text-wrap: balance; margin-bottom: .2em;
+}
+.read > * + h2 { margin-top: 1.6em; }
+.read blockquote {
+  font-style: italic; padding-inline: 1.2em;
+  color: color-mix(in oklab, currentColor 82%, transparent);
+}
+.read hr {
+  border: 0; height: 1px; margin-block: 1.6em; margin-inline: 30%;
+  background: color-mix(in oklab, currentColor 22%, transparent);
+}
+/* Art direction left in the page by the pipeline: for the designer, not the
+   reader, so it is set as a note in the interface face, quietly. */
+.read p.brief {
+  font-family: var(--font-ui); font-size: var(--fs-small); line-height: 1.55;
+  text-indent: 0; padding: .7em .9em; border-radius: var(--r-ctl);
+  background: color-mix(in oklab, currentColor 6%, transparent);
+  color: color-mix(in oklab, currentColor 72%, transparent);
+}
+.read p.brief strong, .read p.brief em { font-style: normal; font-weight: 600; }
 
 /* ── THE READING SURFACE ──────────────────────────────────────────────────
    Head, manuscript and toolbar all size themselves from the width of the pane
@@ -1461,7 +1524,7 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .statusrow-stages .trunc {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.stats b { font-size: var(--fs-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.stats b { font-size: var(--fs-lead); font-weight: 600; font-variant-numeric: tabular-nums; }
 .stats b.is-bad { color: var(--bad); }
 .stats b.is-ok { color: var(--ok); }
 .stats em {
@@ -2212,13 +2275,19 @@ button.wf-state:hover { background: var(--line-soft); }
 @media (max-width: 900px) {
   .screen { grid-template-columns: 60px 1fr; }
   .rail { padding: 12px 8px; align-items: center; }
+  /* The words go; the icons stay. This list once lost its own declaration
+     and merged into the rule below it, so nothing hid and every label was
+     squeezed into 60px. */
   .rail .wordmark b,
   .rail .nav span:not(.tail),
   .rail .railnew span,
-  .rail .rail-label,
-  .rail .railrun .grow,
-  .rail .attrib { display: none; }
+  .rail .rail-label span,
+  .rail .railrun .grow { display: none; }
   .rail .nav, .rail .railnew { justify-content: center; padding: 9px 0; }
+  /* A group label is only its fold chevron here, so a folded group can still
+     be opened when the rail is icons alone. */
+  .rail .rail-label { justify-content: center; padding: 10px 0 4px; }
+  .rail .rail-label .fold { opacity: 1; margin: 0; }
   .rail .nav .tail {
     position: absolute; margin: 0; transform: translate(12px, -10px);
     font-size: var(--fs-cap);

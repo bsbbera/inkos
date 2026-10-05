@@ -47,7 +47,7 @@ export function Shell({
   readonly variant?: ShellVariant;
   readonly tails?: Readonly<Record<string, string | number | undefined>>;
   readonly run?: RailRun | null;
-  readonly model?: string | null;
+  readonly model?: { readonly text: string; readonly full: string } | null;
   readonly waiting?: number;
   readonly paletteExtra?: readonly PaletteEntry[];
   /** Controls that belong to this screen, sitting left of the standing pills. */

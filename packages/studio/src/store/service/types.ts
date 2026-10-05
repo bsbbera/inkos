@@ -10,8 +10,19 @@ export interface ServiceInfo {
   readonly service: string;
   readonly label: string;
   readonly group?: EndpointGroup;
+  /** Passed its connection test: the only kind whose models are offered. */
   readonly connected: boolean;
   readonly apiKeyOptional?: boolean;
+  readonly kind?: "api" | "cli" | "local";
+  /** The last test, or null when there was nothing to test (an API with no key). */
+  readonly check?: { readonly ok: boolean; readonly at: string; readonly models: number; readonly error?: string; readonly lastOk?: string } | null;
+}
+
+/** Connections that worked once and do not answer now, with the reason. Shown greyed, never dropped. */
+export function stoppedAnswering(services: ReadonlyArray<ServiceInfo>): ReadonlyArray<{ readonly label: string; readonly reason: string }> {
+  return services
+    .filter((s) => s.check && !s.check.ok && s.check.lastOk)
+    .map((s) => ({ label: s.label, reason: s.check!.error ?? "Did not answer." }));
 }
 
 export interface ModelInfo {

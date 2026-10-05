@@ -6,8 +6,6 @@ import { ChatPage } from "./pages/ChatPage";
 import { BookDetail } from "./pages/BookDetail";
 import { ChapterReader } from "./pages/ChapterReader";
 import { Analytics } from "./pages/Analytics";
-import { ServiceListPage } from "./pages/ServiceListPage";
-import { ServiceDetailPage } from "./pages/ServiceDetailPage";
 import { TruthFiles } from "./pages/TruthFiles";
 import { DaemonControl } from "./pages/DaemonControl";
 import { LogViewer } from "./pages/LogViewer";
@@ -147,9 +145,8 @@ export function App() {
     toChapter: (bookId: string, chapterNumber: number) =>
       setRoute({ page: "chapter", bookId, chapterNumber }),
     toAnalytics: (bookId: string) => setRoute({ page: "analytics", bookId }),
-    toServices: () => setRoute({ page: "services" }),
+    toServices: () => setRoute({ page: "setup", tab: "providers" }),
     toProjectSettings: () => setRoute({ page: "project-settings" }),
-    toServiceDetail: (id: string) => setRoute({ page: "service-detail", serviceId: id }),
     toTruth: (bookId: string) => setRoute({ page: "truth", bookId }),
     toDaemon: () => setRoute({ page: "daemon" }),
     toLogs: () => setRoute({ page: "logs" }),
@@ -298,9 +295,7 @@ export function App() {
         <ChapterReader bookId={route.bookId} chapterNumber={route.chapterNumber} nav={nav} t={t} />
       )}
       {route.page === "analytics" && <Analytics bookId={route.bookId} t={t} />}
-      {route.page === "services" && <ServiceListPage nav={nav} />}
       {route.page === "project-settings" && <SetupPage nav={nav} tab="project" theme={theme} t={t} />}
-      {route.page === "service-detail" && <ServiceDetailPage serviceId={route.serviceId} nav={nav} />}
       {route.page === "truth" && <TruthFiles bookId={route.bookId} t={t} />}
       {route.page === "daemon" && <DaemonControl t={t} sse={sse} />}
       {route.page === "logs" && <LogViewer t={t} />}

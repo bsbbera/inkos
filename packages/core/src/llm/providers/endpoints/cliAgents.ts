@@ -62,9 +62,8 @@ export const DEVIN_CLI: QuireEndpoint = {
   api: "openai-completions",
   baseUrl: `${SHIM}/devin/v1`,
   checkModel: "devin/claude-opus-5-medium",
-  // Same CLI, same interface, different model capabilities: the glm-5-2 family
-  // is text-only while kimi and the claude/gpt families take images. This is
-  // the seed's whole reason for existing.
+  // Which models take images differs per model (glm-5-2 is text-only, kimi
+  // is not); the shim reports it as `supports_images` on each live model.
   // Each CLI browses on its own account — that is most of why someone runs
   // one. A probed model inherits this, which matters here more than
   // anywhere else: devin lists 183 and seeds ten.

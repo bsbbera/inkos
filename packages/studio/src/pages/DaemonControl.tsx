@@ -52,8 +52,6 @@ export function DaemonControl({
   return (
     <div className="stack-lg">
       <section className="panel crop overflow-hidden">
-        <span className="disc fill w-57.5 h-57.5 -right-17.5 -top-24 opacity-10" />
-        <span className="disc stroke w-37.5 h-37.5 right-8.5 top-5.5 opacity-28" />
         <div className="rowflex items-center gap-5 flex-wrap relative">
           <span className="grow min-w-62.5">
             <h2 className="h-page m-0">

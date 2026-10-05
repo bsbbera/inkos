@@ -6,7 +6,8 @@ import { ModelRouting } from "./ModelRouting";
 import { AppUpdates } from "./AppUpdates";
 import { SearchFallback } from "./SearchFallback";
 import { WorkspaceFolder } from "./WorkspaceFolder";
-import { ServiceListPage } from "./ServiceListPage";
+import { Connections } from "./Connections";
+import { CoverConfigCard, PersonalSourcesCard, PictureEngineCard } from "./MachineCards";
 import {
   shimAsset,
   shimDelete,
@@ -42,8 +43,6 @@ function Section({
 }) {
   return (
     <section className="panel crop">
-      <span className="disc fill w-42.5 h-42.5 -right-17.5 -top-19 opacity-10" aria-hidden="true"
- />
       <header className="relative flex items-start gap-3.5">
         <span
           className="icon-ring"
@@ -58,88 +57,6 @@ function Section({
       </header>
       <div className="relative mt-6">{children}</div>
     </section>
-  );
-}
-
-function Providers() {
-  const [status, setStatus] = useState<ShimStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(async (fresh?: boolean) => {
-    setBusy(true);
-    try {
-      setStatus(await shimGet<ShimStatus>(`/status${fresh ? "?fresh=1" : ""}`));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  return (
-    <Section
-      icon={<PlugZap size={18} />}
-      title="Providers"
-      note="Detected from the CLIs installed on this machine. Models are chosen per project, in the workbench."
-    >
-      {error ? (
-        <Failed what="Could not scan for model CLIs." detail={error} />
-      ) : !status ? (
-        <Working kind="searching" label="Looking for model CLIs on this machine…" />
-      ) : status.agents.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No provider CLIs found. Install one (Claude Code, Codex, Gemini) and re-scan.
-        </p>
-      ) : (
-        <ul className="divide-y divide-border/50 border-y border-border/50">
-          {status.agents.map((a) => (
-            <li key={a.id} className="group flex items-center gap-3.5 py-3">
-              <span className="glyph overflow-hidden !p-0">
-                <img
-                  src={shimAsset(a.id)}
-                  alt=""
-                  className="h-4 w-4"
-                  onError={(e) => {
-                    e.currentTarget.style.visibility = "hidden";
-                  }}
-                />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">{a.id}</div>
-                <div className="truncate text-xs text-muted-foreground" title={a.version}>
-                  {a.version}
-                </div>
-              </div>
-              <span className="numeral shrink-0 text-2xl">{a.models}</span>
-              <span className="label shrink-0">models</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <div className="mt-5 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={() => void load(true)}
-          disabled={busy}
-          className="btn btn-line text-sm"
-        >
-          {busy ? <Spinner /> : <RefreshCw size={15} />}
-          Re-scan
-        </button>
-        {status ? (
-          <p className="text-xs text-muted-foreground">
-            shim :{status.port} · {status.total} models
-          </p>
-        ) : null}
-      </div>
-    </Section>
   );
 }
 
@@ -319,7 +236,7 @@ function Images() {
 
 const TABS = [
   { id: "machine", label: "Machine", note: "What this computer can do: CLIs, images, hardware." },
-  { id: "providers", label: "Models", note: "Which providers are reachable, and with what key." },
+  { id: "providers", label: "Connections", note: "Every way this machine reaches a model: an API key, an installed CLI, a local server." },
   { id: "agents", label: "Agents", note: "Which model answers for which agent. Set once." },
   { id: "project", label: "Project", note: "This project: appearance, language, notifications, skills and prompts." },
   { id: "mcp", label: "MCP", note: "Tool servers found on this machine, offered to every model." },
@@ -346,8 +263,6 @@ export function SetupPage({
 }: {
   readonly nav: ComponentProps<typeof ProjectSettings>["nav"] & ComponentProps<typeof McpPage>["nav"] & {
     readonly toDashboard: () => void;
-    readonly toServices: () => void;
-    readonly toServiceDetail: (id: string) => void;
   };
   readonly tab?: SetupTab;
   readonly theme: ComponentProps<typeof ProjectSettings>["theme"];
@@ -383,14 +298,16 @@ export function SetupPage({
       {active === "machine" ? (
         <>
           <WorkspaceFolder />
-          <Providers />
           <Images />
+          <PictureEngineCard />
+          <CoverConfigCard />
+          <PersonalSourcesCard />
           <AppUpdates />
         </>
       ) : null}
       {active === "providers" ? (
         <>
-          <ServiceListPage nav={nav} />
+          <Connections />
           <SearchFallback />
         </>
       ) : null}
@@ -413,6 +330,11 @@ export function SetupPage({
       ) : null}
       {active === "project" ? <ProjectSettings nav={nav} theme={theme} t={t} embedded /> : null}
       {active === "mcp" ? <McpPage nav={nav} theme={theme} t={t} embedded /> : null}
+      {/* The licence credit. It sat under the sidebar on every screen; it is
+          owed, not news, so it lives with the rest of how this is set up. */}
+      <p className="hint text-center">
+        Quire's workbench is forked from <b className="font-semibold">InkOS Studio</b>, AGPL-3.0.
+      </p>
     </div>
   );
 }

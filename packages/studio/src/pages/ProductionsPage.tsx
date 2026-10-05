@@ -25,15 +25,13 @@ interface Production {
   readonly id: string;
   readonly title: string;
   readonly detail: string;
-  readonly mark: string;
+  /** What it is, written on its cover: "book", "storybook", "magazine". */
+  readonly kind: string;
   readonly state: Exclude<Filter, "all">;
   readonly badge: { readonly label: string; readonly tone: string };
   readonly open: () => void;
 }
 
-/* The publication definition id decides the silhouette. An unknown type gets
-   the magazine halftone rather than no mark at all: a tile with no identity
-   is worse than one with an approximate one. */
 /** One creation as the folder walk reports it — `GET /workspace/summary`. */
 interface FolderCreation {
   readonly kind: string;
@@ -48,22 +46,6 @@ interface FolderCreation {
   readonly blocking: number;
 }
 
-const MARKS: Readonly<Record<string, string>> = {
-  magazine: "mark-mag",
-  // Keyed by production kind as well as publication type, because the folder
-  // walk reports the kind ids from PRODUCTIONS, not the magazine's own types.
-  book: "mark-book",
-  "interactive-film": "mark-film",
-  play: "mark-world",
-  translation: "mark-script",
-  publication: "mark-mag",
-  storybook: "mark-story",
-  storyboard: "mark-storyboard",
-  short: "mark-short",
-  script: "mark-script",
-  film: "mark-film",
-  world: "mark-world",
-};
 
 function bookState(b: BookSummary): Production["state"] {
   // The gate first: a book with a chapter waiting is waiting, whatever its
@@ -74,10 +56,13 @@ function bookState(b: BookSummary): Production["state"] {
   return "drafting";
 }
 
-function badgeFor(state: Production["state"], written: string): Production["badge"] {
+/* Status only. The kind ("storybook") used to sit in this same slot whenever
+   a work was drafting, so one place on the card meant two different things;
+   the kind is on the cover now and this pill always means where it stands. */
+function badgeFor(state: Production["state"]): Production["badge"] {
   if (state === "waiting") return { label: "needs a read", tone: "pill pill-warn" };
   if (state === "done") return { label: "approved", tone: "pill pill-ok" };
-  return { label: written, tone: "pill pill-fill" };
+  return { label: "drafting", tone: "pill" };
 }
 
 export function ProductionsPage({
@@ -120,9 +105,9 @@ export function ProductionsPage({
           id: b.id,
           title: b.title,
           detail: `${b.chaptersWritten} of ${b.targetChapters} chapters · ${b.totalWords.toLocaleString()} words`,
-          mark: "mark-book",
+          kind: "book",
           state,
-          badge: badgeFor(state, b.status || "drafting"),
+          badge: badgeFor(state),
           open: () => nav.toBook(b.id),
         };
       });
@@ -145,9 +130,9 @@ export function ProductionsPage({
               `${c.words.toLocaleString()} words`,
               c.blocking > 0 ? `${c.blocking} blocking` : `${c.read} of ${c.files} read`,
             ].join(" · "),
-            mark: MARKS[c.kind] ?? "mark-short",
+            kind: c.label.toLowerCase(),
             state,
-            badge: badgeFor(state, c.label.toLowerCase()),
+            badge: badgeFor(state),
             open: () => nav.toAudit(),
           };
         });
@@ -162,9 +147,9 @@ export function ProductionsPage({
         id: p.id,
         title: p.title,
         detail: `${p.written} of ${p.extent} pages · ${p.subject}`,
-        mark: MARKS[p.type] ?? "mark-mag",
+        kind: p.type,
         state,
-        badge: badgeFor(state, p.status || "drafting"),
+        badge: badgeFor(state),
         open: () => nav.toPublication(p.id),
       };
     });
@@ -210,16 +195,19 @@ export function ProductionsPage({
 
         <div className="tiles">
           {tiles.map(({ item: p, motion }) => (
-            <button key={p.id} type="button" className={`tile crop${motion ? ` ${motion}` : ""}`} onClick={p.open}>
-              <span className={`mark ${p.mark}`}>
-                <span className="d1" />
-                <span className="d2" />
-              </span>
-              <span className="top">
-                <span className={p.badge.tone}>{p.badge.label}</span>
+            <button key={p.id} type="button" className={`tile tile-work${motion ? ` ${motion}` : ""}`} onClick={p.open}>
+              {/* A lettered cover until a work has art of its own: the kind
+                  on top, the first letter of the title in the reading face, past a leading
+                  "The", or every shelf is a row of Ts. */}
+              <span className="cover" aria-hidden="true">
+                <span className="cover-kind">{p.kind}</span>
+                <span className="cover-letter">{p.title.trim().replace(/^(the|an?)\s+/i, "").charAt(0)}</span>
               </span>
               <h4 style={vtName(p.id)}>{p.title}</h4>
               <span className="who">{p.detail}</span>
+              <span className="tile-foot">
+                <span className={p.badge.tone}>{p.badge.label}</span>
+              </span>
             </button>
           ))}
 

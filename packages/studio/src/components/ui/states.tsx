@@ -42,8 +42,6 @@ export function Empty({
   }
   return (
     <div className="empty crop">
-      <span className="disc stroke w-47.5 h-47.5 -right-21 -top-23 opacity-32" aria-hidden="true"
- />
       <div className="relative">
         {icon ? <Icon name={icon} size={22} /> : null}
         <h3 style={{ marginTop: icon ? 12 : 0 }}>{title}</h3>

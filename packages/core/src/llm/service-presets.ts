@@ -231,7 +231,10 @@ export async function listModelsForService(
   // running, and every model in the seed is one this machine cannot serve.
   // Handing back the seed anyway is what put 52 Ollama models in the picker of
   // a machine with no Ollama installed, each of which fails on the first call.
-  if (provider && !(provider.group === "local" && byId.size === 0)) {
+  // Nor alongside a live answer: a running Ollama serves what was pulled into
+  // it, and topping that up from the seed offered 52 models on a machine that
+  // had one.
+  if (provider && provider.group !== "local") {
     for (const m of provider.models) {
       if (m.enabled === false) continue;
       if (byId.has(m.id)) continue;

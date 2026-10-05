@@ -53,8 +53,6 @@ export function crumbsFor(
     case "publication":
       return [magazines, { label: names.publication?.(route.issueId) ?? route.issueId }];
 
-    case "services": return [{ label: "Settings", route: { page: "setup" } }, { label: "Models" }];
-    case "service-detail": return [{ label: "Settings", route: { page: "setup", tab: "providers" } }, { label: route.serviceId }];
     case "project-settings": return [{ label: "Settings", route: { page: "setup" } }, { label: "Project" }];
     case "daemon": return [home, { label: "Daemon" }];
     case "logs": return [home, { label: "Logs" }];

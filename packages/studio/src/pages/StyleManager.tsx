@@ -279,7 +279,6 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
   return (
     <div className="stack-lg">
       <section className="crop pb-0">
-        <span className="disc stroke w-47.5 h-47.5 -left-22 -top-23 opacity-30" />
         <div className="head">
           <h2 className="h-page">Write it in somebody else&rsquo;s hand</h2>
           <p>

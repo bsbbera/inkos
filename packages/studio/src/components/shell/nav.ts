@@ -78,7 +78,7 @@ export const NAV: readonly NavGroup[] = [
         /* Machine, models, agents, project and MCP are one page with tabs:
            five rail entries for "how is this set up" was how a person lost
            the model picker. */
-        owns: ["services", "service-detail", "project-settings", "mcp"],
+        owns: ["project-settings", "mcp"],
       },
       { id: "daemon", icon: "cpu", label: "Daemon", route: { page: "daemon" } },
       { id: "logs", icon: "list", label: "Logs", route: { page: "logs" } },

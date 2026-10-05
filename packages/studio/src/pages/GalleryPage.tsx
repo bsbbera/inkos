@@ -17,6 +17,7 @@ import { Verdict } from "../components/Verdict";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast } from "../components/ui/vermilion";
 import { ask } from "../components/ConfirmDialog";
+import { titleOf } from "../lib/title-of";
 
 interface Asset {
   readonly path: string;
@@ -130,15 +131,14 @@ export function GalleryPage({ type, id, onPick, jobs }: {
     <div className="grid gap-4.5">
       <div className="spread items-end gap-3 flex-wrap">
         <div className="min-w-0">
-          <div className="label">Gallery</div>
-          <h2 className="trunc mt-1">
-            {here ? `${here.kindLabel} · ${here.id}` : `${workType} · ${workId}`}
-          </h2>
+          <div className="label">Gallery · {here?.kindLabel ?? workType}</div>
+          {/* The work's name, not its folder; the folder stays in the tooltip. */}
+          <h2 className="trunc mt-1" title={workId}>{titleOf(workId)}</h2>
         </div>
         <div className="rowflex gap-2.5 flex-wrap">
           {drawing ? <span className="pill">{drawing} redrawing</span> : null}
           <select
-            className="input"
+            className="input w-auto max-w-80"
             aria-label="Which work"
             value={`${workType}/${workId}`}
             onChange={(e) => {
@@ -146,9 +146,9 @@ export function GalleryPage({ type, id, onPick, jobs }: {
               if (kind) onPick(kind, rest.join("/"));
             }}
           >
-            {here ? null : <option value={`${workType}/${workId}`}>{workType} · {workId}</option>}
+            {here ? null : <option value={`${workType}/${workId}`}>{titleOf(workId)}</option>}
             {projects.map((p) => (
-              <option key={`${p.kind}/${p.id}`} value={`${p.kind}/${p.id}`}>{p.kindLabel} · {p.id}</option>
+              <option key={`${p.kind}/${p.id}`} value={`${p.kind}/${p.id}`}>{titleOf(p.id)} · {p.kindLabel}</option>
             ))}
           </select>
           <Seg

@@ -151,8 +151,6 @@ export function ChapterReader({
   return (
     <div className="wrap-read">
       <div className="dark crop" style={{ paddingBottom: editing ? 0 : 30 }}>
-        <span className="disc dots dots-light w-57.5 h-57.5 -left-24 -bottom-27.5" />
-        <span className="disc stroke w-33 h-33 -right-14.5 -top-15.5 opacity-45" />
 
         <div className="readhead">
           <div className="grow">

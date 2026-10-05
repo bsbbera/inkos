@@ -87,7 +87,6 @@ export function Analytics({
   return (
     <div className="stack-lg">
       <section className="crop pb-0">
-        <span className="disc stroke w-47.5 h-47.5 -left-22 -top-23 opacity-30" />
         <h2 className="h-page">Where the book actually is</h2>
       </section>
 

@@ -1,68 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, EyeOff, Loader2, Plus, Search, X } from "../components/ui/glyphs";
-import { GROUP_ORDER, getGroupDescription, getGroupLabel, getGroupShortLabel } from "../constants/service-groups";
+/*
+ * Machine settings that are not model connections: the picture engines and
+ * the reader's own sources. They lived on the old Services page, which
+ * Connections replaced; they belong to the machine, so they sit on its tab.
+ */
+import { useEffect, useState } from "react";
+import { Eye, EyeOff, Loader2 } from "../components/ui/glyphs";
 import { tr } from "../lib/app-language";
 import { fetchJson } from "../hooks/use-api";
-import { useServiceStore } from "../store/service";
-import type { EndpointGroup, ServiceInfo } from "../store/service";
-import { ServiceQuickLinks, getServiceQuickLinks } from "../components/ServiceQuickLinks";
-import { ServiceConfigSourceCard } from "../components/ServiceConfigSourceCard";
-
 import { Spinner } from "../components/ui/working";
 import { ErrorLine } from "../components/ui/states";
-interface Nav {
-  toDashboard: () => void;
-  toServiceDetail: (id: string) => void;
-}
-
-function SkeletonCard() {
-  return (
-    <div className="panel" aria-busy="true">
-      <div className="flex items-center justify-between mb-3">
-        <div className="skel h-4 w-24" />
-        <div className="skel w-2 h-2" />
-      </div>
-      <div className="skel h-3 w-16" />
-    </div>
-  );
-}
-
-function ServiceCard({ svc, onClick }: { svc: ServiceInfo; onClick: () => void }) {
-  const quickLinks = getServiceQuickLinks(svc.service);
-  return (
-    <div
-      className={[
-        "panel crop group flex min-h-23 flex-col gap-2 text-left",
-        "transition-[transform,box-shadow,border-color] duration-(--med)",
-        "hover:-translate-y-0.5 hover:shadow-md",
-        svc.connected
-          ? "border-border/60 hover:border-primary/45"
-          : "border-border/40 hover:border-border",
-      ].join(" ")}
-    >
-      {svc.connected && (
-        <span
-          className="disc fill transition-transform duration-(--med) group-hover:scale-125 w-21 h-21 -right-8 -top-9 opacity-13"
-          aria-hidden="true"
-        />
-      )}
-      <button onClick={onClick} className="relative flex flex-1 flex-col gap-2.5 text-left">
-        <div className="flex items-start justify-between gap-3">
-          <span className="truncate text-sm font-semibold">{svc.label}</span>
-          <span className="glyph !h-7 !w-7 shrink-0 !text-cap" aria-hidden="true">
-            {svc.label.slice(0, 1).toUpperCase()}
-          </span>
-        </div>
-        <span className={`pill ${svc.connected ? "pill-ok" : ""}`}>
-          {svc.connected ? tr("已连接", "Connected") : tr("未配置", "Not configured")}
-        </span>
-      </button>
-      {quickLinks.length > 0 && (
-        <ServiceQuickLinks serviceId={svc.service} variant="card" className="pt-1" />
-      )}
-    </div>
-  );
-}
 
 interface CoverProviderInfo {
   readonly service: string;
@@ -81,7 +27,7 @@ interface CoverConfigPayload {
   readonly providers: readonly CoverProviderInfo[];
 }
 
-function CoverConfigCard() {
+export function CoverConfigCard() {
   const [providers, setProviders] = useState<readonly CoverProviderInfo[]>([]);
   const [service, setService] = useState("kkaiapi");
   const [model, setModel] = useState("gpt-image-2");
@@ -310,7 +256,7 @@ const ENGINE_SURFACES = ["illustration", "typographic", "photo"] as const;
  * the save, so a wrong folder or tag reads as zero here rather than as an
  * issue that quietly ignored your notes.
  */
-function PersonalSourcesCard() {
+export function PersonalSourcesCard() {
   const [dir, setDir] = useState("");
   const [tag, setTag] = useState("");
   const [since, setSince] = useState("");
@@ -374,7 +320,7 @@ function PersonalSourcesCard() {
   );
 }
 
-function PictureEngineCard() {
+export function PictureEngineCard() {
   const [payload, setPayload] = useState<EnginesPayload | null>(null);
   const [token, setToken] = useState("");
   const [showToken, setShowToken] = useState(false);
@@ -505,240 +451,5 @@ function PictureEngineCard() {
         {message && <span className={`hint ${status === "error" ? "is-bad" : "is-good"}`}>{message}</span>}
       </div>
     </section>
-  );
-}
-
-export function ServiceListPage({ nav }: { nav: Nav }) {
-  const services = useServiceStore((s) => s.services);
-  const loading = useServiceStore((s) => s.servicesLoading);
-  const fetchServices = useServiceStore((s) => s.fetchServices);
-  const refreshServices = useServiceStore((s) => s.refreshServices);
-
-  useEffect(() => { void fetchServices(); }, [fetchServices]);
-
-  const [query, setQuery] = useState("");
-  const [selectedGroups, setSelectedGroups] = useState<Set<EndpointGroup>>(new Set());
-  const [onlyConnected, setOnlyConnected] = useState(false);
-
-  const bankServices = useMemo(
-    () => services.filter((s) => !s.service.startsWith("custom")),
-    [services],
-  );
-  const customServices = useMemo(
-    () => services.filter((s) => s.service.startsWith("custom")),
-    [services],
-  );
-
-  const groupCounts = useMemo(() => {
-    const counts = {} as Record<EndpointGroup, number>;
-    for (const group of GROUP_ORDER) {
-      counts[group] = bankServices.filter((s) => s.group === group).length;
-    }
-    return counts;
-  }, [bankServices]);
-
-  const connectedCount = useMemo(
-    () => services.filter((s) => s.connected).length,
-    [services],
-  );
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return bankServices.filter((svc) => {
-      if (onlyConnected && !svc.connected) return false;
-      if (selectedGroups.size > 0 && (!svc.group || !selectedGroups.has(svc.group))) return false;
-      if (q && !svc.label.toLowerCase().includes(q) && !svc.service.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [bankServices, onlyConnected, query, selectedGroups]);
-
-  const filteredCustom = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (selectedGroups.size > 0) return [];
-    return customServices.filter((svc) => {
-      if (onlyConnected && !svc.connected) return false;
-      if (q && !svc.label.toLowerCase().includes(q) && !svc.service.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [customServices, onlyConnected, query, selectedGroups]);
-
-  const byGroup = useMemo(() => {
-    const map = {} as Record<EndpointGroup, ServiceInfo[]>;
-    for (const group of GROUP_ORDER) map[group] = [];
-    for (const svc of filtered) {
-      if (svc.group) map[svc.group].push(svc);
-    }
-    return map;
-  }, [filtered]);
-
-  const toggleGroup = (group: EndpointGroup) => {
-    setSelectedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(group)) next.delete(group);
-      else next.add(group);
-      return next;
-    });
-  };
-
-  const canCreateCustom = selectedGroups.size === 0 && query.trim() === "" && !onlyConnected;
-  const showCustomSection = !loading && selectedGroups.size === 0 && (filteredCustom.length > 0 || canCreateCustom);
-
-  return (
-    <div className="mx-auto max-w-2xl space-y-6">
-      <header className="head">
-        <p className="label">{tr("模型", "Models")}</p>
-        <h1 className="h-page mt-3">{tr("服务商管理", "Providers")}</h1>
-      </header>
-
-      <ServiceConfigSourceCard onChange={() => { void refreshServices(); }} />
-
-      <CoverConfigCard />
-
-      <PictureEngineCard />
-      <PersonalSourcesCard />
-
-      <div className="relative">
-        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
-        <input
-          type="text"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={tr("搜索服务商", "Search providers")}
-          className="w-full py-2 pl-9 pr-9 text-sm"
-        />
-        {query && (
-          <button
-            onClick={() => setQuery("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
-            aria-label={tr("清空搜索", "Clear search")}
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setSelectedGroups(new Set())}
-          className={[
-            "pill cursor-pointer transition-colors duration-(--fast)",
-            selectedGroups.size === 0
-              ? "pill-fill"
-              : "hover:border-primary/40 hover:text-primary",
-          ].join(" ")}
-        >
-          {tr("全部", "All")} {bankServices.length}
-        </button>
-        {GROUP_ORDER.map((group) => {
-          const selected = selectedGroups.has(group);
-          return (
-            <button
-              key={group}
-              onClick={() => toggleGroup(group)}
-              className={[
-                "pill cursor-pointer transition-colors duration-(--fast)",
-                selected
-                  ? "pill-fill"
-                  : "hover:border-primary/40 hover:text-primary",
-              ].join(" ")}
-            >
-              {selected && <Check size={12} />}
-              {getGroupShortLabel(group)} {groupCounts[group]}
-            </button>
-          );
-        })}
-        {selectedGroups.size > 0 && (
-          <button
-            onClick={() => setSelectedGroups(new Set())}
-            className="btn btn-quiet btn-sm"
-          >
-            {tr("清除筛选", "Clear filters")}
-          </button>
-        )}
-      </div>
-
-      <label className="inline-flex cursor-pointer select-none items-center gap-2 text-xs text-muted-foreground">
-        <input
-          type="checkbox"
-          checked={onlyConnected}
-          onChange={(event) => setOnlyConnected(event.target.checked)}
-        />
-        <span>{tr("只看已连接", "Connected only")} ({connectedCount})</span>
-      </label>
-
-      <div className="h-px bg-border/30" />
-
-      {loading && (
-        <div className="grid grid-cols-2 gap-3">
-          {Array.from({ length: 6 }, (_, i) => <SkeletonCard key={i} />)}
-        </div>
-      )}
-
-      {!loading && GROUP_ORDER.map((group) => {
-        const list = byGroup[group];
-        if (!list || list.length === 0) return null;
-        return (
-          <section key={group} className="space-y-3">
-            <div className="space-y-1">
-              <h2 className="label">
-                {getGroupLabel(group)}
-              </h2>
-              {getGroupDescription(group) && (
-                <p className="text-xs text-muted-foreground/60">
-                  {getGroupDescription(group)}
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              {list.map((svc) => (
-                <ServiceCard
-                  key={svc.service}
-                  svc={svc}
-                  onClick={() => nav.toServiceDetail(svc.service)}
-                />
-              ))}
-            </div>
-          </section>
-        );
-      })}
-
-      {showCustomSection && (
-        <section className="space-y-3">
-          <h2 className="label">
-            {tr("自定义服务", "Custom services")}
-          </h2>
-          <div className="grid grid-cols-2 gap-3">
-            {filteredCustom.map((svc) => (
-              <ServiceCard
-                key={svc.service}
-                svc={svc}
-                onClick={() => nav.toServiceDetail(svc.service)}
-              />
-            ))}
-            {canCreateCustom && (
-              <button
-                onClick={() => nav.toServiceDetail("custom")}
-                className="well group flex min-h-23 flex-col items-center justify-center gap-2.5 border-dashed dim"
-              >
-                <span className="glyph !h-9 !w-9 group-hover:!border-primary group-hover:!bg-primary group-hover:!text-primary-foreground">
-                  <Plus size={16} />
-                </span>
-                <span className="text-xs">{tr("自定义服务", "Custom service")}</span>
-              </button>
-            )}
-          </div>
-        </section>
-      )}
-
-      {!loading && filtered.length === 0 && filteredCustom.length === 0 && !canCreateCustom && (
-        <div className="panel crop text-center">
-          <span className="disc dots text-primary w-24 h-24 -left-7.5 -bottom-9 opacity-40" aria-hidden="true"
- />
-          <p className="relative text-sm text-muted-foreground">
-            {tr("没有匹配的服务商", "No matching providers")}
-          </p>
-        </div>
-      )}
-    </div>
   );
 }

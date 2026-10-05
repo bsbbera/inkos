@@ -68,8 +68,6 @@ export function DoctorView({ t }: { readonly t: TFunction }) {
   return (
     <div className="wrap-read stack-lg">
       <section className="crop pb-0">
-        <span className="disc fill w-52.5 h-52.5 -right-26 -top-28 opacity-13" />
-        <span className="disc stroke w-26 h-26 -right-8.5 -top-7.5 opacity-40" />
         <div className="spread items-end">
           <div>
             <h2 className="h-page">Let us see what you have</h2>

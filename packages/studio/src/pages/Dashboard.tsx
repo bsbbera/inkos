@@ -61,6 +61,8 @@ import type { ActiveRun, PublicationSummary } from "../hooks/use-shell-data";
 import { Icon, type IconName } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
 import { Ring } from "../components/ui/working";
+import { Num } from "../components/ui/num";
+import { titleOf } from "../lib/title-of";
 import { shimGet, type ComfyStatus, type ShimStatus } from "../lib/shim";
 import { useEffect, useState } from "react";
 
@@ -192,8 +194,9 @@ export function deriveGates(
     gates.push({
       id: `pipeline:${w.ref.id}`,
       icon: "check",
-      name: `${w.ref.id} ${words.name}`,
-      meta: [w.ref.type, `${w.units.length} unit${w.units.length === 1 ? "" : "s"} pending`, w.stage]
+      name: `${titleOf(w.ref.id)} ${words.name}`,
+      // The stage repeats the gate ("gate:design") the name already says.
+      meta: [w.ref.type, `${w.units.length} unit${w.units.length === 1 ? "" : "s"} pending`]
         .join(" · "),
       verb: words.verb,
       action: words.act,
@@ -490,24 +493,24 @@ export function Dashboard({
   return (
     <div className="stack-lg">
       {/* ── The work so far, as a sentence ──────────────────────────────
-          Three numerals on one line, labels inline underneath. Not three
+          Three numerals on one line, labels inline underneath. A number is
+          bright when it counts something and ghosted at zero; no leading
+          zeros, which read as a clock. Not three
           stat cards: the relationship between the numbers is the
           information, and cards would break it into three facts. */}
       <section className="crop px-0 pt-1.5 pb-1">
-        <span className="disc stroke w-52.5 h-52.5 -left-27.5 -top-24 opacity-32" />
-        <span className="disc dots w-20.5 h-20.5 -left-13 -bottom-14.5 opacity-28" />
         <div className="spread items-end relative">
           <div className="rowflex gap-6.5 items-end">
             <div>
-              <div className="numeral text-d3">{String(approved).padStart(2, "0")}</div>
+              <div className={approved ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={approved} /></div>
               <div className="label mt-2.5">approved</div>
             </div>
             <div>
-              <div className="numeral ghost text-d3">{String(inFlight).padStart(2, "0")}</div>
+              <div className={inFlight ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={inFlight} /></div>
               <div className="label mt-2.5">in flight</div>
             </div>
             <div>
-              <div className="numeral ghost text-d3">{String(thisMonth).padStart(2, "0")}</div>
+              <div className={thisMonth ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={thisMonth} /></div>
               <div className="label mt-2.5">this month</div>
             </div>
           </div>
@@ -537,7 +540,6 @@ export function Dashboard({
           named in the product's own words, action one click away. */}
       <section>
         <div className="panel panel-flush crop">
-          <span className="disc fill w-57.5 h-57.5 -right-29.5 -top-32 opacity-13" />
           <div className="panel-head">
             <h3 className="h-panel grow">Waiting on you</h3>
             {gates.length ? (
@@ -566,10 +568,9 @@ export function Dashboard({
                       <span className="name">{g.name}</span>
                       <span className="meta">{g.meta}</span>
                     </span>
-                    <span className="pill pill-warn">{g.verb}</span>
-                    <span className="act">
-                      <span className="btn btn-line btn-sm">{g.action}</span>
-                    </span>
+                    {/* One label: the row is the button. A pill naming the state
+                        beside a button naming the act said the same thing twice. */}
+                    <span className={g.verb === "blocked" ? "pill pill-bad" : "pill pill-warn"} title={g.action}>{g.verb}</span>
                     <Icon name="chevR" size={16} className="dim" />
                   </button>
                 ))}
@@ -582,7 +583,6 @@ export function Dashboard({
       {/* ── The live run, and the machine under it ───────────────────── */}
       <section className="cols cols-a">
         <div className="dark crop py-5 px-5.5">
-          <span className="disc dots dots-light w-37.5 h-37.5 -right-13.5 -bottom-16" />
           <div className="spread items-start relative">
             <div>
               <div className="label">{run ? "Running now" : "Idle"}</div>
@@ -632,7 +632,6 @@ export function Dashboard({
           {workspace && workspace.totals.files > 0 ? (
             <div className="panel crop" role="link" tabIndex={0} onClick={nav.toBooks}
                  onKeyDown={(e) => { if (e.key === "Enter") nav.toBooks(); }}>
-              <span className="disc dots w-24 h-24 -right-10 -top-11 opacity-24" />
               <div className="spread">
                 <h3 className="h-panel">In this folder</h3>
                 <span className="dim text-cap">
@@ -681,7 +680,6 @@ export function Dashboard({
 
           <div className="panel crop" role="link" tabIndex={0} onClick={nav.toSetup}
                onKeyDown={(e) => { if (e.key === "Enter") nav.toSetup(); }}>
-            <span className="disc stroke-l w-30 h-30 -right-11.5 -bottom-13" />
             <h3 className="h-panel">The machine</h3>
             <div className="rowflex mt-2.5">
               <span className={machine.shim ? "pill pill-ok" : "pill pill-bad"}>

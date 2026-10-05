@@ -33,6 +33,9 @@ import {
   resolveServiceModel,
   loadSecrets,
   saveSecrets,
+  loadProviderCatalogue,
+  type CatalogueEntry,
+  type ConnectionKind,
   listModelsForService,
   isApiKeyOptionalForEndpoint,
   getAllEndpoints,
@@ -222,6 +225,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
 import { isServiceAvailable } from "./service-availability.js";
+import { isStale, readChecks, writeCheck, type ConnectionCheck } from "./connections.js";
 import { buildStudioBookConfig } from "./book-create.js";
 import {
   deleteStudioTaskSnapshot,
@@ -3893,20 +3897,35 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * second emptied the provider list whenever the shim was slow to start, so
    * the app came up claiming the user had no models at all.
    */
-  async function shimAgents(): Promise<Map<string, { enabled: boolean; fallback: string[] }> | null> {
+  type ShimAgents = Map<string, { enabled: boolean; fallback: string[]; authed: boolean | null }>;
+  // One request at a time and one answer per minute. The shim checks sign-in by
+  // running each CLI, which blocks it; four CLI tests asking at once each, with
+  // retries, queued enough of those to stop it answering anything at all.
+  let shimAgentsAsk: { at: number; answer: Promise<ShimAgents | null> } | null = null;
+  function shimAgents(): Promise<ShimAgents | null> {
+    if (shimAgentsAsk && Date.now() - shimAgentsAsk.at < 60_000) return shimAgentsAsk.answer;
+    const answer = askShimAgents();
+    shimAgentsAsk = { at: Date.now(), answer };
+    // A miss is not kept: the next caller asks again rather than inheriting it.
+    void answer.then((a) => { if (!a && shimAgentsAsk?.answer === answer) shimAgentsAsk = null; });
+    return answer;
+  }
+
+  async function askShimAgents(): Promise<ShimAgents | null> {
     const port = process.env.SHIM_PORT || "8787";
     try {
+      // Up to three sign-in checks of 12s each, on a cold cache.
       const r = await fetch(`http://127.0.0.1:${port}/agents`, {
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(40_000),
       });
       if (!r.ok) return null;
       const body = await r.json() as {
-        agents?: { id: string; enabled: boolean; fallback?: string[] }[];
+        agents?: { id: string; enabled: boolean; fallback?: string[]; authed?: boolean | null }[];
       };
       // Endpoint ids are the CLI id plus "Cli" — claude -> claudeCli.
       return new Map((body.agents ?? []).map((a) => [
         `${a.id}Cli`,
-        { enabled: a.enabled, fallback: a.fallback ?? [] },
+        { enabled: a.enabled, fallback: a.fallback ?? [], authed: a.authed ?? null },
       ]));
     } catch {
       return null;
@@ -3944,7 +3963,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   async function refreshRoutingSnapshot(): Promise<void> {
     try {
-      const services = await serviceAvailability();
+      const services = await serviceAvailability({ test: false });
       const secrets = await loadSecrets(root);
       const next: Record<string, { baseUrl: string; apiKey?: string }> = {};
       for (const service of services) {
@@ -3984,30 +4003,122 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * the first place. Two copies of this rule is how the service list and the
    * model list last disagreed.
    */
-  async function serviceAvailability() {
+  /*
+   * Connections: one rule for "connected" (connections.ts). Every kind is
+   * tested the same way - a real call that lists models - and only a pass puts
+   * a connection's models in the picker, the routing table or a run.
+   */
+  const LOOPBACK = /\/\/(localhost|127\.0\.0\.1|\[::1\])[:/]/i;
 
-    const secrets = await loadSecrets(root);
-    // One list, every way a model can be reached: an agent CLI on this machine,
-    // a vendor API, a model served locally by Ollama or LM Studio. They are all
-    // already the same `QuireEndpoint` and all resolve through the same client,
-    // so there is nothing to gain by offering only one kind of them.
-    //
-    // This used to filter to `group === "cli"`. The other forty providers stayed
-    // registered — a project that named one kept running — but nothing put them
-    // in front of anyone, so reaching a local Ollama meant retyping it as a
-    // "custom" service with a hand-written base URL, and its own endpoint card
-    // (models, capabilities, protocol) was skipped. That was a second way to do
-    // the one thing this route exists to do.
-    //
-    // A CLI is different in one respect only: an uninstalled one is not a
-    // choice at all, so the shim's roster still gates that group. Everything
-    // else is reachable over the network and is listed whether or not a key is
-    // set yet — `connected` below says which are usable, and the picker shows
-    // only those.
-    const allowed = await enabledCliIds();
-    const endpoints = getAllEndpoints()
-      .filter((ep) => ep.id !== "custom")
-      .filter((ep) => ep.group !== "cli" || allowed === null || allowed.has(ep.id));
+  /** api, cli or local. A custom service on this machine's loopback is local: it needs no key. */
+  async function kindOf(id: string, catalogue?: ReadonlyArray<CatalogueEntry>): Promise<ConnectionKind> {
+    const listed = (catalogue ?? await loadProviderCatalogue()).find((p) => p.id === id)?.kind;
+    if (listed) return listed;
+    if (isCustomServiceId(id)) {
+      const baseUrl = await resolveConfiguredServiceBaseUrl(root, id).catch(() => null);
+      return baseUrl && LOOPBACK.test(baseUrl) ? "local" : "api";
+    }
+    const group = getEndpoint(id)?.group;
+    return group === "cli" ? "cli" : group === "local" ? "local" : "api";
+  }
+
+  async function testConnection(
+    id: string,
+    kind: ConnectionKind,
+    given: { readonly apiKey?: string } = {},
+  ): Promise<ConnectionCheck> {
+    const at = new Date().toISOString();
+    const fail = (error: string): ConnectionCheck => ({ ok: false, at, models: 0, error });
+    try {
+      if (kind === "cli") {
+        // The app starts the shim and Studio together, and the first look at
+        // the connections can land before the shim answers. Reading that as
+        // "not installed" failed every CLI for a minute after each launch, so
+        // a silent shim is waited for, briefly, before anything is decided.
+        let agents = await shimAgents();
+        while (!agents && Date.now() < shimGraceUntil) {
+          await new Promise((r) => setTimeout(r, 2000));
+          agents = await shimAgents();
+        }
+        if (!agents) return fail("The CLI host (shim) is not answering.");
+        const agent = agents.get(id);
+        if (!agent) return fail("Not installed on this machine.");
+        if (!agent.enabled) return fail("Switched off.");
+        if (agent.authed === false) return fail("Installed but signed out. Sign in with the CLI, then test again.");
+        const baseUrl = getEndpoint(id)?.baseUrl;
+        let models = baseUrl ? await probeModelsFromUpstream(baseUrl, "", 60_000) : [];
+        // A signed-in CLI that lists nothing on a cold start has usually lost a
+        // race inside the shim's first listing; one more ask settles it.
+        if (!models.length && baseUrl) {
+          await new Promise((r) => setTimeout(r, 5_000));
+          models = await probeModelsFromUpstream(baseUrl, "", 60_000);
+        }
+        return models.length ? { ok: true, at, models: models.length } : fail("The CLI listed no models.");
+      }
+      const baseUrl = await resolveConfiguredServiceBaseUrl(root, id);
+      if (!baseUrl) return fail("No address for this connection.");
+      if (kind === "local") {
+        // Most local servers take no key; one that asks (LM Studio can) gets the saved one.
+        const key = given.apiKey?.trim() || (await loadSecrets(root)).services[id]?.apiKey || "";
+        const models = await probeModelsFromUpstream(baseUrl, key, 3_000);
+        return models.length ? { ok: true, at, models: models.length } : fail(`Not running at ${baseUrl.replace(/\/v1$/, "")}.`);
+      }
+      const apiKey = given.apiKey?.trim() || (await loadSecrets(root)).services[id]?.apiKey || "";
+      const optional = isApiKeyOptionalForEndpoint({
+        provider: resolveServiceProviderFamily(isCustomServiceId(id) ? "custom" : id) ?? "openai",
+        baseUrl,
+      });
+      if (!apiKey && !optional) return fail("No key yet.");
+      const llm = ((await loadRawConfig(root).catch(() => ({}))) as Record<string, unknown>).llm as Record<string, unknown> | undefined;
+      const probe = await probeServiceCapabilities({
+        root, service: id, apiKey, baseUrl,
+        proxyUrl: typeof llm?.proxyUrl === "string" ? llm.proxyUrl : undefined,
+        language: "en",
+      });
+      if (!probe.ok) return fail(probe.error ?? "The provider refused the call.");
+      return probe.models.length ? { ok: true, at, models: probe.models.length } : fail("The key works but the provider listed no models.");
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  /** Test, keep the result, and drop every cached answer that depended on the old one. */
+  async function recordTest(id: string, kind: ConnectionKind, given?: { readonly apiKey?: string }): Promise<ConnectionCheck> {
+    let check = await testConnection(id, kind, given);
+    if (!check.ok) {
+      const before = (await readChecks(root))[id];
+      const lastOk = before?.ok ? before.at : before?.lastOk;
+      if (lastOk) check = { ...check, lastOk };
+    }
+    await writeCheck(root, id, check);
+    modelListCache.delete(`${id}::cli`);
+    touchRoutingSnapshot();
+    return check;
+  }
+
+  // The shim starts beside Studio; for the first half minute a silent shim is
+  // probably still starting and is waited for. After that, silent means down.
+  // ponytail: no grace under test, where no shim ever answers.
+  const shimGraceUntil = Date.now() + (process.env.VITEST ? 0 : 30_000);
+
+  // Background re-tests in flight, so a page polling the list does not start the same test twice.
+  const retesting = new Set<string>();
+
+  /**
+   * `test: false` reads the stored results and starts nothing. The routing
+   * snapshot uses it: a test refreshes the snapshot, and a snapshot that
+   * tested would start the next round itself, forever.
+   */
+  async function serviceAvailability({ test = true }: { readonly test?: boolean } = {}) {
+    // The shim's agent list is only used here to leave out CLIs that are not
+    // installed. On a cold shim it takes as long as three sign-in checks, so the
+    // list does not wait for it: after 1.5s it goes on without, and the CLI
+    // tests (which do need it) wait on their own.
+    const [secrets, catalogue, agents, checks] = await Promise.all([
+      loadSecrets(root), loadProviderCatalogue(),
+      Promise.race([shimAgents(), new Promise<null>((r) => setTimeout(() => r(null), 1_500))]),
+      readChecks(root),
+    ]);
     let configuredServices: ReturnType<typeof normalizeServiceConfig> = [];
     try {
       const config = await loadRawConfig(root);
@@ -4015,68 +4126,100 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         (config.llm as Record<string, unknown> | undefined)?.services,
       );
     } catch { /* no config file */ }
-    const configuredBankServices = new Set(
-      configuredServices
-        .filter((service) => service.service !== "custom")
-        .map((service) => service.service),
-    );
 
-    // Fast: only check connection status from secrets, no external API calls.
-    const services = endpoints.map((ep) => {
-      const apiKeyOptional = isApiKeyOptionalForEndpoint({
-        provider: resolveServiceProviderFamily(ep.id) ?? "openai",
-        baseUrl: resolveServicePreset(ep.id)?.baseUrl ?? ep.baseUrl,
-      });
-      return {
-        service: ep.id,
-        label: ep.label,
-        group: ep.group,
-        apiKeyOptional,
-        connected: isServiceAvailable({
-          group: ep.group,
-          apiKeyOptional,
-          hasApiKey: Boolean(secrets.services[ep.id]?.apiKey),
-          isConfigured: configuredBankServices.has(ep.id),
-        }),
-      };
-    }).sort(compareServiceListItems);
-
-    // A local server's "connected" is a question only it can answer. Needing no
-    // key made Ollama and LM Studio permanently connected on a machine where
-    // neither was installed, and the picker offered their shipped catalogues.
-    // Asking costs one cached probe, and the cache is the same one the model
-    // list uses, so the two cannot disagree.
-    const localChecks = await Promise.all(
-      services
-        .filter((entry) => entry.group === "local" && entry.connected)
-        .map(async (entry) => [entry.service, ((await probeLiveModels(entry.service)) ?? []).length > 0] as const),
-    );
-    const localUp = new Map(localChecks);
-    for (let i = 0; i < services.length; i += 1) {
-      const entry = services[i]!;
-      if (localUp.has(entry.service)) services[i] = { ...entry, connected: localUp.get(entry.service)! };
+    // What is offered: the catalogue, any other provider this machine holds a
+    // key for (a key saved before the catalogue was short stays usable), and
+    // custom services. A CLI the shim does not report is not a choice at all.
+    const ids = new Map<string, string>();
+    for (const p of catalogue) ids.set(p.id, p.label);
+    for (const id of Object.keys(secrets.services)) {
+      // A custom key without its service in the config has no address: it is
+      // listed only through the config below, never from the key alone.
+      if (secrets.services[id]?.apiKey && getEndpoint(id) && !ids.has(id)) {
+        ids.set(id, getEndpoint(id)?.label ?? id);
+      }
+    }
+    for (const svc of configuredServices) {
+      if (svc.service === "custom") ids.set(`custom:${svc.name}`, svc.name ?? "Custom");
     }
 
-    // Add custom services from quire.json
-    for (const svc of configuredServices) {
-      if (svc.service === "custom") {
-        const secretKey = `custom:${svc.name}`;
-        const apiKeyOptional = isApiKeyOptionalForEndpoint({
-          provider: "openai",
-          baseUrl: svc.baseUrl,
-        });
-        services.push({
-          service: secretKey,
-          label: svc.name ?? "Custom",
-          group: undefined,
-          apiKeyOptional,
-          connected: Boolean(secrets.services[secretKey]?.apiKey) || apiKeyOptional,
-        });
+    const rows = (await Promise.all([...ids].map(async ([id, label]) => {
+      const kind = await kindOf(id, catalogue);
+      if (kind === "cli" && agents && !agents.has(id)) return [];
+      return [{ id, label, kind, hasKey: Boolean(secrets.services[id]?.apiKey) }];
+    }))).flat();
+
+    // Never tested and testable: test now, so a fresh machine's CLIs are in the
+    // picker on the first load. Tested but stale: answer with what is known and
+    // re-test behind it. An API with no key has nothing to test.
+    const testable = (r: (typeof rows)[number]) => r.kind !== "api" || r.hasKey || isCustomServiceId(r.id);
+    // CLIs one at a time: the shim lists every CLI's models in one pass, and
+    // four tests asking at once on a cold start left one of them empty-handed.
+    const untested = rows.filter((r) => test && testable(r) && !checks[r.id]);
+    const others = Promise.all(untested.filter((r) => r.kind !== "cli").map(async (r) => {
+      checks[r.id] = await recordTest(r.id, r.kind);
+    }));
+    for (const r of untested.filter((x) => x.kind === "cli")) checks[r.id] = await recordTest(r.id, r.kind);
+    await others;
+    for (const r of rows) {
+      if (test && testable(r) && isStale(checks[r.id]) && !retesting.has(r.id)) {
+        retesting.add(r.id);
+        void recordTest(r.id, r.kind).finally(() => retesting.delete(r.id));
       }
     }
 
-    return services;
+    return rows.map((r) => {
+      const check = testable(r) ? checks[r.id] : undefined;
+      return {
+        service: r.id,
+        label: r.label,
+        kind: r.kind,
+        group: isCustomServiceId(r.id) ? undefined : getEndpoint(r.id)?.group,
+        hasKey: r.hasKey,
+        apiKeyOptional: r.kind !== "api",
+        connected: check?.ok === true,
+        check: check ?? null,
+      };
+    });
   }
+
+  app.get("/api/v1/connections", async (c) => {
+    return c.json({ connections: await serviceAvailability() });
+  });
+
+  /**
+   * Test a connection. With a key in the body, the key is tried first and kept
+   * only if it passes: a wrong key shows its error and is not saved, so it
+   * never replaces one that worked.
+   */
+  app.post("/api/v1/connections/:id/test", async (c) => {
+    const id = c.req.param("id");
+    const body = await c.req.json<{ apiKey?: string }>().catch(() => ({} as { apiKey?: string }));
+    const apiKey = body.apiKey?.trim();
+    if (apiKey && !isHeaderSafeApiKey(apiKey)) {
+      return c.json({ ok: false, error: "That does not look like a key: it has spaces or characters a key cannot carry." }, 400);
+    }
+    const kind = await kindOf(id);
+    const check = await recordTest(id, kind, apiKey ? { apiKey } : undefined);
+    if (check.ok && apiKey) {
+      const secrets = await loadSecrets(root);
+      secrets.services[id] = { apiKey };
+      await saveSecrets(root, secrets);
+    }
+    return c.json({ ok: check.ok, check }, check.ok ? 200 : 400);
+  });
+
+  /** Forget a key and its result. The provider stays listed, unconnected. */
+  app.delete("/api/v1/connections/:id/key", async (c) => {
+    const id = c.req.param("id");
+    const secrets = await loadSecrets(root);
+    delete secrets.services[id];
+    await saveSecrets(root, secrets);
+    await writeCheck(root, id, null);
+    modelListCache.delete(`${id}::cli`);
+    touchRoutingSnapshot();
+    return c.json({ ok: true });
+  });
 
   app.get("/api/v1/services", async (c) => {
     return c.json({ services: await serviceAvailability() });
@@ -4486,27 +4629,15 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   }
 
   app.get("/api/v1/services/models", async (c) => {
-    const secrets = await loadSecrets(root);
     const config = await loadRawConfig(root).catch(() => ({} as Record<string, unknown>));
     const configuredServices = normalizeServiceConfig(
       (config.llm as Record<string, unknown> | undefined)?.services,
     );
     const configuredById = new Map(configuredServices.map((entry) => [serviceConfigKey(entry), entry]));
-    const endpoints = getAllEndpoints()
-      .filter((ep) => {
-        if (ep.id === "custom") return false;
-        const configured = configuredById.has(ep.id);
-        const optional = isApiKeyOptionalForEndpoint({
-          provider: resolveServiceProviderFamily(ep.id) ?? "openai",
-          baseUrl: resolveServicePreset(ep.id)?.baseUrl ?? ep.baseUrl,
-        });
-        return isServiceAvailable({
-          group: ep.group,
-          apiKeyOptional: optional,
-          hasApiKey: Boolean(secrets.services[ep.id]?.apiKey),
-          isConfigured: configured,
-        });
-      });
+    // Only connections that passed their test (connections.ts). The same list
+    // the Connections screen draws as connected, so the two cannot disagree.
+    const connected = new Set((await serviceAvailability()).filter((s) => s.connected).map((s) => s.service));
+    const endpoints = getAllEndpoints().filter((ep) => ep.id !== "custom" && connected.has(ep.id));
 
     const groups = await Promise.all(endpoints.map(async (ep) => {
       const staticModels = ep.models
@@ -4552,6 +4683,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         label: s.name ?? "Custom",
       }))
       .filter((s) => s.baseUrl && Boolean(secrets.services[s.id]?.apiKey));
+    const connectedIds = new Set((await serviceAvailability()).filter((s) => s.connected).map((s) => s.service));
+    customs.splice(0, customs.length, ...customs.filter((s) => connectedIds.has(s.id)));
 
     const groups = await Promise.all(customs.map(async (s) => ({
       service: s.id,

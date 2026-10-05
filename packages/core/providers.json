@@ -1,0 +1,16 @@
+{
+  "//": "The connections the app offers, by kind. An id names an endpoint in src/llm/providers (base URL, protocol, model cards live there). ~/.quire/providers.json adds entries or overrides labels; it cannot remove one.",
+  "providers": [
+    { "id": "anthropic", "kind": "api", "label": "Anthropic" },
+    { "id": "openai", "kind": "api", "label": "OpenAI" },
+    { "id": "google", "kind": "api", "label": "Google" },
+    { "id": "openrouter", "kind": "api", "label": "OpenRouter" },
+    { "id": "deepseek", "kind": "api", "label": "DeepSeek" },
+    { "id": "claudeCli", "kind": "cli", "label": "Claude Code" },
+    { "id": "codexCli", "kind": "cli", "label": "Codex" },
+    { "id": "devinCli", "kind": "cli", "label": "Devin" },
+    { "id": "antigravityCli", "kind": "cli", "label": "Antigravity" },
+    { "id": "ollama", "kind": "local", "label": "Ollama" },
+    { "id": "lmstudio", "kind": "local", "label": "LM Studio" }
+  ]
+}

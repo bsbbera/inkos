@@ -21,9 +21,13 @@ describe("model capability", () => {
     expect(modelSearchesWeb("devinCli", "devin/some-model-added-last-tuesday")).toBe(true);
   });
 
-  it("lets a model card override the provider default", () => {
-    expect(modelCapabilities("devinCli", "devin/glm-5-2").imageInput).toBe(false);
-    expect(modelCapabilities("devinCli", "devin/kimi-k3-high").imageInput).toBe(true);
+  it("lays a model card over the provider default", () => {
+    // CLI models carry no card (their list comes live from the shim), so this
+    // reads a compiled one: the provider says webSearch, the card says text.
+    const caps = modelCapabilities("google", "gemini-3-pro-image-preview");
+    expect(caps.webSearch).toBe(true);
+    expect(caps.text).toBe(false);
+    expect(modelCapabilities("google", "gemini-2.5-pro").text).toBeUndefined();
   });
 
   it("does not claim search for a provider that never declared it", () => {

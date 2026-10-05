@@ -161,7 +161,6 @@ export function TastePage() {
   return (
     <div className="stack-lg">
       <section className="crop pb-0">
-        <span className="disc stroke w-47.5 h-47.5 -left-22 -top-23 opacity-30" />
         <div className="head">
           <h2 className="h-page">What you keep choosing</h2>
           <p>

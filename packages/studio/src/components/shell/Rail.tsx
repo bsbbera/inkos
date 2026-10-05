@@ -69,6 +69,24 @@ export function Rail({
   readonly onOpenPalette?: () => void;
 }) {
   const active = activeNavId(route);
+  /* Three groups and seventeen rows outran a laptop, and the last row sat
+     half under the run pill. Tools starts folded; any group folds on its
+     label, and the one holding the current page is always open. Remembered
+     per viewer; a blocked storage just means the default. */
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => {
+    try {
+      const saved = localStorage.getItem("quire.rail.folded");
+      return new Set(saved ? (JSON.parse(saved) as string[]) : ["Tools"]);
+    } catch {
+      return new Set(["Tools"]);
+    }
+  });
+  const toggle = (label: string) => setFolded((was) => {
+    const next = new Set(was);
+    if (next.has(label)) next.delete(label); else next.add(label);
+    try { localStorage.setItem("quire.rail.folded", JSON.stringify([...next])); } catch { /* default next time */ }
+    return next;
+  });
 
   return (
     <div className="rail">
@@ -102,12 +120,20 @@ export function Rail({
       ) : null}
 
       <div className="rail-scroll">
-        {NAV.map((group) => (
+        {NAV.map((group) => {
+          const open = !folded.has(group.label) || group.items.some((i) => i.id === active);
+          return (
           <div key={group.label}>
-            <div className="rail-label">
+            <button
+              type="button"
+              className="rail-label"
+              aria-expanded={open}
+              onClick={() => toggle(group.label)}
+            >
               <span>{group.label}</span>
-            </div>
-            {group.items.map((item) => {
+              <Icon name="chevD" size={12} className="fold" />
+            </button>
+            {open ? group.items.map((item) => {
               const tail = tails?.[item.id];
               return (
                 <button
@@ -126,9 +152,10 @@ export function Rail({
                   )}
                 </button>
               );
-            })}
+            }) : null}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {run ? (
@@ -160,9 +187,6 @@ export function Rail({
         </button>
       ))}
 
-      <p className="attrib dim mt-2.5 text-micro leading-snug">
-        Workbench forked from <b className="font-semibold">InkOS Studio</b>, AGPL-3.0.
-      </p>
     </div>
   );
 }

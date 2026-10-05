@@ -31,20 +31,13 @@ describe("hash route", () => {
       expect(parseHash("#/book/new")).toEqual({ page: "book-create" });
     });
 
-    it("parses config as services (redirect)", () => {
-      expect(parseHash("#/config")).toEqual({ page: "services" });
-    });
-
-    it("parses services", () => {
-      expect(parseHash("#/services")).toEqual({ page: "services" });
+    it("sends the old config and services addresses to Connections", () => {
+      expect(parseHash("#/config")).toEqual({ page: "setup", tab: "providers" });
+      expect(parseHash("#/services")).toEqual({ page: "setup", tab: "providers" });
     });
 
     it("parses project settings", () => {
       expect(parseHash("#/settings")).toEqual({ page: "project-settings" });
-    });
-
-    it("parses service-detail", () => {
-      expect(parseHash("#/services/openai")).toEqual({ page: "service-detail", serviceId: "openai" });
     });
 
     it("parses import tab routes", () => {
@@ -55,8 +48,9 @@ describe("hash route", () => {
       expect(parseHash("#/translation")).toEqual({ page: "translation" });
     });
 
-    it("decodes encoded serviceId", () => {
-      expect(parseHash("#/services/%E8%87%AA%E5%AE%9A%E4%B9%89")).toEqual({ page: "service-detail", serviceId: "自定义" });
+    it("sends an old service page, encoded or not, to Connections", () => {
+      expect(parseHash("#/services/openai")).toEqual({ page: "setup", tab: "providers" });
+      expect(parseHash("#/services/%E8%87%AA%E5%AE%9A%E4%B9%89")).toEqual({ page: "setup", tab: "providers" });
     });
 
     it("falls back to dashboard for unknown hash", () => {
@@ -91,16 +85,14 @@ describe("hash route", () => {
       expect(routeToHash({ page: "book-create" })).toBe("#/book/new");
     });
 
-    it("services -> #/services", () => {
-      expect(routeToHash({ page: "services" })).toBe("#/services");
+    // The old Services page is Settings -> Connections; its addresses still land there.
+    it("#/services and #/services/{id} -> Connections", () => {
+      expect(parseHash("#/services")).toEqual({ page: "setup", tab: "providers" });
+      expect(parseHash("#/services/openai")).toEqual({ page: "setup", tab: "providers" });
     });
 
     it("project-settings -> #/settings", () => {
       expect(routeToHash({ page: "project-settings" })).toBe("#/settings");
-    });
-
-    it("service-detail -> #/services/{id}", () => {
-      expect(routeToHash({ page: "service-detail", serviceId: "openai" })).toBe("#/services/openai");
     });
 
     it("import tab -> #/import/{tab}", () => {
@@ -109,12 +101,6 @@ describe("hash route", () => {
 
     it("translation -> #/translation", () => {
       expect(routeToHash({ page: "translation" })).toBe("#/translation");
-    });
-
-    it("encodes Chinese serviceId", () => {
-      const hash = routeToHash({ page: "service-detail", serviceId: "自定义" });
-      expect(hash).toContain("#/services/");
-      expect(decodeURIComponent(hash)).toContain("自定义");
     });
 
     // Every page has an address now. They used to be on an allowlist, so the

@@ -137,7 +137,7 @@ export function prettyModelName(base: string, variant = ""): string {
 const KNOWN_CAPS: Record<string, string> = {
   gpt: "GPT", glm: "GLM", swe: "SWE", api: "API",
   xhigh: "XHigh", "1m": "1M", oss: "OSS", k2: "K2", k3: "K3",
-  v4: "V4", ai: "AI",
+  v4: "V4", ai: "AI", deepseek: "DeepSeek",
 };
 
 /**

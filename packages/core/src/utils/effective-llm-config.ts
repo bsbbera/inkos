@@ -271,7 +271,9 @@ async function applyCliProjectConfig(
 
   await applyProjectServiceConfig(config, llm, services, input.projectRoot, diagnostics, {
     requireApiKey: input.requireApiKey,
-    ignoreTopLevelModel: true,
+    // A project with services picks its model from them; one that only names a
+    // top-level model (a plain Ollama setup) has nothing else to fall back to.
+    ignoreTopLevelModel: services.length > 0,
     requestedService,
     requestedModel,
     requestedModelSource,

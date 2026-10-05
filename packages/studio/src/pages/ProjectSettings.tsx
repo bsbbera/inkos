@@ -77,8 +77,6 @@ function SettingsCard({
 }) {
   return (
     <section className="panel crop space-y-5">
-      <span className="disc fill w-37.5 h-37.5 -right-16 -top-17.5 opacity-10" aria-hidden="true"
- />
       <div className="relative flex items-start gap-3.5">
         <span
           className="icon-ring"

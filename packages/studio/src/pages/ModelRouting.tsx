@@ -14,7 +14,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, RefreshCw } from "../components/ui/glyphs";
 import { ModelCombo } from "./ModelCombo";
+import { modelName } from "../lib/model-name";
 import { fetchJson, putApi } from "../hooks/use-api";
+import { stoppedAnswering } from "../store/service/types";
 import { useServiceStore } from "../store/service";
 import {
   jobRows,
@@ -31,7 +33,7 @@ import { Failed } from "../components/ui/states";
 
 const TONE: Record<"default" | "pinned" | "dropped", string> = {
   default: "text-muted-foreground italic",
-  pinned: "font-mono",
+  pinned: "",
   dropped: "text-destructive",
 };
 
@@ -83,6 +85,7 @@ export function ModelRouting({
       })),
     [services, modelsByService],
   );
+  const down = useMemo(() => stoppedAnswering(services), [services]);
 
   /**
    * The global default is set here, not in the composer.
@@ -144,24 +147,20 @@ export function ModelRouting({
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">{labels.globalDefault}</div>
-            <p className="mt-1 font-mono text-sm">
+            <p className="mt-1 text-sm" title={table?.global.model ? `${table.global.service ?? ""} · ${table.global.model}` : undefined}>
               {table?.global.model
-                ? <>
-                    {table.global.service
-                      ? <span className="text-muted-foreground">{table.global.service} · </span>
-                      : null}
-                    {table.global.model}
-                  </>
+                ? modelName(table.global.service, table.global.model)
                 : <span className="text-muted-foreground italic">{labels.noModel}</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <ModelCombo
               groups={choices}
+              down={down}
               disabled={saving}
               emptyLabel={labels.noModel}
               display={table?.global.service && table.global.model
-                ? `${table.global.service} · ${table.global.model}`
+                ? modelName(table.global.service, table.global.model)
                 : ""}
               value={table?.global.service && table.global.model
                 ? pinValue({ service: table.global.service, model: table.global.model })
@@ -198,6 +197,7 @@ export function ModelRouting({
               <div className={`text-xs ${TONE[summary.tone]}`}>{summary.text}</div>
               <ModelCombo
                 groups={choices}
+                down={down}
                 disabled={saving}
                 emptyLabel={labels.usesDefault}
                 display={summary.tone === "pinned" ? summary.text : ""}
@@ -236,6 +236,7 @@ export function ModelRouting({
                   <div className={`text-xs ${TONE[summary.tone]}`}>{summary.text}</div>
                   <ModelCombo
                     groups={choices}
+                    down={down}
                     disabled={saving}
                     emptyLabel={labels.usesDefault}
                     display={summary.tone === "pinned" ? summary.text : ""}

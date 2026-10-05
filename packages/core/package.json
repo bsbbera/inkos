@@ -48,7 +48,8 @@
     "audit-packs",
     "genres",
     "skills",
-    "publications"
+    "publications",
+    "providers.json"
   ],
   "license": "AGPL-3.0-only",
   "repository": {

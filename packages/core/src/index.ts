@@ -498,7 +498,8 @@ export {
   type ModelInfo,
 } from "./llm/service-presets.js";
 export { resolveServiceModel, type ResolvedModel } from "./llm/service-resolver.js";
-export { loadSecrets, saveSecrets, getServiceApiKey, type SecretsFile } from "./llm/secrets.js";
+export { loadSecrets, saveSecrets, getServiceApiKey, secretsDir, type SecretsFile } from "./llm/secrets.js";
+export { loadProviderCatalogue, type CatalogueEntry, type ConnectionKind } from "./llm/provider-catalogue.js";
 export {
   COVER_PROVIDER_PRESETS,
   coverSecretKey,

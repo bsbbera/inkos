@@ -1,3 +1,4 @@
+import { modelName } from "../lib/model-name";
 /**
  * The routing table, as the settings page needs it.
  *
@@ -121,7 +122,7 @@ export function routeSummary(route: ResolvedRoute): {
   }
   if (route.source === "global") return { text: "uses the default", tone: "default" };
   return {
-    text: route.service ? `${route.service} · ${route.model}` : route.model,
+    text: modelName(route.service, route.model),
     tone: "pinned",
   };
 }

@@ -12,7 +12,7 @@
  */
 import { useCallback, useMemo } from "react";
 import { useApi } from "./use-api";
-import { useNewSSEMessages, type SSEMessage } from "./use-sse";
+import { modelName, serviceName } from "../lib/model-name";import { useNewSSEMessages, type SSEMessage } from "./use-sse";
 import { deriveGates, type Creation, type PipelineWaiting } from "../pages/Dashboard";
 import type { BookSummary } from "../shared/contracts";
 import type { PaletteEntry } from "../components/shell/Palette";
@@ -101,12 +101,13 @@ export function useShellData(sse?: { readonly messages: ReadonlyArray<SSEMessage
     [waiting, books.length, publications.length, daemon?.running],
   );
 
-  /* "claude · sonnet-4.6": the agent and the model, because with CLI providers
-     the pair is the answer and either half alone is ambiguous. */
+  /* "Gemini 3.8 Flash High · Antigravity": the model and who serves it, because
+     with CLI providers the pair is the answer and either half alone is
+     ambiguous. Named as a person says it; the raw id is the tooltip. */
   const modelLabel = useMemo(() => {
     if (!model?.service) return null;
-    const short = model.service.replace(/Cli$/, "");
-    return model.defaultModel ? `${short} · ${model.defaultModel}` : short;
+    const full = model.defaultModel ? `${model.service} · ${model.defaultModel}` : model.service;
+    return { text: model.defaultModel ? modelName(model.service, model.defaultModel) : serviceName(model.service), full };
   }, [model?.service, model?.defaultModel]);
 
   /* Live destinations for the palette. The old sidebar carried expandable

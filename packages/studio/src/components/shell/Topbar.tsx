@@ -28,7 +28,7 @@ export function Topbar({
   readonly crumbs: readonly Crumb[];
   readonly setRoute: (r: HashRoute) => void;
   /** e.g. "claude · sonnet-4.6". Absent while the shim has not answered. */
-  readonly model?: string | null;
+  readonly model?: { readonly text: string; readonly full: string } | null;
   readonly waiting?: number;
   readonly onOpenPalette?: () => void;
   readonly railOpen?: boolean;
@@ -76,7 +76,7 @@ export function Topbar({
 
       {children}
 
-      {model ? <span className="pill mono">{model}</span> : null}
+      {model ? <span className="pill" title={model.full}>{model.text}</span> : null}
 
       {/* Drawn even at zero, quietly. A pill that vanishes when the queue
           empties takes the only proof that the queue was ever looked at. */}

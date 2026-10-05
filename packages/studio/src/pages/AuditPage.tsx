@@ -28,6 +28,9 @@ import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
 import { copyText } from "../lib/clipboard";
+import { manuscriptBlocks, type Run } from "../lib/manuscript-md";
+import { titleOf } from "../lib/title-of";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { PicturesStrip } from "../components/PicturesStrip";
 import { SettingCard } from "../components/SettingCard";
 import { Verdict } from "../components/Verdict";
@@ -1343,7 +1346,7 @@ function StateColumn({
                   <span className={`st ${STAGE_CLASS[st.state] ?? ""}`}>
                     <i />
                   </span>
-                  <span className="w-13 font-medium">{st.stage}</span>
+                  <span className="w-20 flex-none whitespace-nowrap font-medium">{st.stage}</span>
                   <span className="grow dim trunc text-cap" title={st.detail}>
                     {st.detail}
                   </span>
@@ -1443,84 +1446,62 @@ function StateColumn({
                   {busy === "approve" ? "Saving…" : perIssue ? "Sign off the writing" : "Sign off this page"}
                 </button>
               )}
-              <button
-                type="button"
-                className="btn btn-line btn-sm"
-                disabled={busy !== null || running || !here}
-                title={here
-                  ? `Reads ${pageName ?? "this page"} and rewrites what it finds, up to two rounds. The text as it stands is kept beside it as .pre-audit.`
-                  : "Pick a page first."}
-                onClick={() => onRevise(false)}
-              >
-                {busy === "revise" ? "Rewriting…" : "Audit & revise this page"}
-              </button>
-              <button
-                type="button"
-                className="btn btn-line btn-sm"
-                disabled={busy !== null || running || !here}
-                title={here
-                  ? `Rewrites ${pageName ?? "this page"} to sound less machine-made. The text as it stands is kept beside it as .pre-audit.`
-                  : "Pick a page first."}
-                onClick={() => onRevise(true)}
-              >
-                {busy === "deslop" ? "Rewriting…" : "De-AI this page"}
-              </button>
-              {/*
-                * Restyle, beside the two rewrites it is not.
-                *
-                * Revise fixes faults and is free to change what happens on the
-                * page; de-AI takes the machine out. Neither reads the style
-                * guide at all, so either can quietly walk a restyled chapter
-                * back out of its voice - which is the reason this belongs
-                * here, one press from the passes that undo it, rather than on
-                * another screen.
-                */}
-              {/*
-                * Shown without a voice, not hidden.
-                *
-                * These were rendered only when the work already carried one,
-                * which meant somebody who had saved a voice and not yet handed
-                * it over went looking for a button that was not there and had
-                * no way to learn why. A control that vanishes teaches nothing;
-                * a disabled one that says what is missing does.
-                */}
-              <button
-                type="button"
-                className="btn btn-line btn-sm"
-                disabled={busy !== null || running || restyling || !here || !voice}
-                title={!voice
-                  ? "This work has not been given a voice yet. Save one on the Style screen, then hand it to this work."
-                  : here
-                    ? `Rewrites ${pageName || "this page"} in ${voice}'s voice. Events, names and dialogue stay; only the prose changes. The text as it stands is kept beside it as .pre-audit.`
-                    : "Pick a page first."}
-                onClick={() => onRestyle(false)}
-              >
-                {restyling
-                  ? "Rewriting…"
-                  : voice
-                    ? `Restyle this page in ${voice}'s voice`
-                    : "Restyle this page — no voice yet"}
-              </button>
-              {voice ? (
-                <button
-                  type="button"
+              {/* One main act, the rest a press away. Five rewrites side by side
+                  wrapped into a block taller than the gates above them; they are
+                  alternatives to each other, so they read better as a list. */}
+              <DropdownMenu>
+                <DropdownMenuTrigger
                   className="btn btn-line btn-sm"
                   disabled={busy !== null || running || restyling}
-                  title={`Rewrites every page of this work in ${voice}'s voice. Signed-off pages are left alone.`}
-                  onClick={() => onRestyle(true)}
                 >
-                  {restyling ? "Rewriting…" : "Restyle the whole story"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-quiet btn-sm"
-                  title="Opens the Style screen, where a voice is saved and handed to a piece of work."
-                  onClick={() => { window.location.hash = "#/style"; }}
-                >
-                  Give this work a voice
-                </button>
-              )}
+                  {busy === "revise" || busy === "deslop" || restyling ? "Rewriting…" : "Rewrite"}
+                  <Icon name="chevD" size={13} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-72">
+                  <DropdownMenuItem
+                    disabled={!here}
+                    title={`Reads ${pageName ?? "this page"} and rewrites what it finds, up to two rounds. The text as it stands is kept beside it as .pre-audit.`}
+                    onSelect={() => onRevise(false)}
+                  >
+                    Audit &amp; revise this page
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!here}
+                    title={`Rewrites ${pageName ?? "this page"} to sound less machine-made. The text as it stands is kept beside it as .pre-audit.`}
+                    onSelect={() => onRevise(true)}
+                  >
+                    De-AI this page
+                  </DropdownMenuItem>
+                  {/* Restyle sits beside the two rewrites it is not: revise and
+                      de-AI never read the style guide, so either can walk a
+                      restyled chapter back out of its voice. Shown without a
+                      voice, disabled, so the person learns what is missing. */}
+                  <DropdownMenuItem
+                    disabled={!here || !voice}
+                    title={!voice
+                      ? "This work has not been given a voice yet. Save one on the Style screen, then hand it to this work."
+                      : `Rewrites ${pageName || "this page"} in ${voice}'s voice. Events, names and dialogue stay; only the prose changes. The text as it stands is kept beside it as .pre-audit.`}
+                    onSelect={() => onRestyle(false)}
+                  >
+                    {voice ? `Restyle this page in ${voice}'s voice` : "Restyle this page — no voice yet"}
+                  </DropdownMenuItem>
+                  {voice ? (
+                    <DropdownMenuItem
+                      title={`Rewrites every page of this work in ${voice}'s voice. Signed-off pages are left alone.`}
+                      onSelect={() => onRestyle(true)}
+                    >
+                      Restyle the whole story
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      title="Opens the Style screen, where a voice is saved and handed to a piece of work."
+                      onSelect={() => { window.location.hash = "#/style"; }}
+                    >
+                      Give this work a voice
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
 
             {/* The override, and only where there is something to override. It
@@ -1638,7 +1619,7 @@ function StateColumn({
         <span className="grow">
           <span className="rowflex gap-2.5 items-baseline">
             <span className="numeral text-h3">
-              {String(counts.open).padStart(2, "0")}
+              <Num value={counts.open} />
             </span>
             <span className="text-body font-semibold">
               finding{counts.open === 1 ? "" : "s"}
@@ -1885,8 +1866,6 @@ function PageColumn({
 
   return (
     <div className="dark crop colpanel reads" data-tabscope>
-      <span className="disc dots dots-light w-52.5 h-52.5 -right-22.5 -bottom-26" aria-hidden="true"
- />
 
       <div className="readhead relative flex-none">
         <div className="spread readcol items-start gap-3">
@@ -2225,36 +2204,7 @@ function FullScreenEditor({
  * is brighter than the rest so the queue and the page agree about where you
  * are, and clicking any mark moves the queue to it.
  */
-/**
- * A folder name, read as a title.
- *
- * Every creation is stored under a slug because a slug is a safe filename, and
- * the screen printed the slug: `the-lamp-room`, `the-kolam-drawn-at-dawn`.
- * That is the disk's business, not the reader's. File names are left alone
- * where they identify a file - only the name of a piece of work is dressed up,
- * and the slug stays in the tooltip so the folder is still findable.
- *
- * Small words stay small unless they open the title, which is the difference
- * between a title and a shouted one.
- */
-const SMALL_WORDS = new Set([
-  "a", "an", "and", "as", "at", "but", "by", "for", "from", "in", "nor", "of",
-  "on", "or", "the", "to", "up", "via", "with",
-]);
-
-export function titleOf(slug: string): string {
-  const words = slug.replace(/[_-]+/g, " ").trim().split(/[ ]+/).filter(Boolean);
-  if (words.length === 0) return slug;
-  return words
-    .map((word, index) => {
-      const lower = word.toLowerCase();
-      // A word already carrying capitals is somebody's spelling, not a slug's.
-      if (word !== lower && word !== word.toUpperCase()) return word;
-      if (index > 0 && SMALL_WORDS.has(lower)) return lower;
-      return lower.charAt(0).toUpperCase() + lower.slice(1);
-    })
-    .join(" ");
-}
+export { titleOf };
 
 /** Below this a simulated reader is drifting (core `READER_COLD`). */
 const COLD = 0.35;
@@ -2281,18 +2231,30 @@ function MarkedText({
 
   /* Paragraph by paragraph, numbered the way findings count them, so the
      reader map can tint the ones where attention fell. A mark stays inside
-     its paragraph. */
-  const blocks: Array<readonly [number, number]> = [];
-  let from = 0;
-  for (const m of text.matchAll(/\n\s*\n/g)) {
-    blocks.push([from, m.index]);
-    from = m.index + m[0].length;
-  }
-  blocks.push([from, text.length]);
+     its paragraph. Markdown is drawn, not printed: each block knows its kind
+     and which characters are syntax (lib/manuscript-md.ts), and the offsets
+     findings carry still point into the raw file. */
+  const blocks = manuscriptBlocks(text);
+
+  /** The visible text of [s, e), styled the way the markdown says. */
+  const piece = (runs: ReadonlyArray<Run>, s: number, e: number): React.ReactNode[] =>
+    runs.flatMap((r) => {
+      const a = Math.max(r.from, s);
+      const b = Math.min(r.to, e);
+      if (a >= b || r.hidden) return [];
+      let node: React.ReactNode = text.slice(a, b);
+      if (r.italic) node = <em key={`i${a}`}>{node}</em>;
+      if (r.bold) node = <strong key={`b${a}`}>{node}</strong>;
+      return [typeof node === "string" ? <Fragment key={`t${a}`}>{node}</Fragment> : node];
+    });
 
   let next = 0;
-  blocks.forEach(([a, b], para) => {
-    if (para > 0) parts.push(text.slice(blocks[para - 1]![1], a));
+  blocks.forEach(({ kind, ruleBefore, from: a, to: b, runs }, para) => {
+    if (kind === "rule") {
+      parts.push(<hr key={`p${para}`} />);
+      return;
+    }
+    if (ruleBefore) parts.push(<hr key={`r${para}`} />);
     const inner: React.ReactNode[] = [];
     let at = a;
     while (next < located.length && located[next]!.start < b) {
@@ -2300,7 +2262,7 @@ function MarkedText({
       next += 1;
       if (f.start < at) continue; // overlaps the one before it; do not double-mark
       const end = Math.min(f.end, b);
-      if (f.start > at) inner.push(text.slice(at, f.start));
+      if (f.start > at) inner.push(...piece(runs, at, f.start));
       inner.push(
         <mark
           key={f.id}
@@ -2313,18 +2275,22 @@ function MarkedText({
           onClick={() => onPick(f.id)}
           title={f.state === "open" ? f.title : `${f.title} — settled`}
         >
-          {text.slice(f.start, end)}
+          {piece(runs, f.start, end)}
         </mark>,
       );
       at = end;
     }
-    if (at < b) inner.push(text.slice(at, b));
+    if (at < b) inner.push(...piece(runs, at, b));
     const h = heat?.get(para);
-    parts.push(h && (h.attention < COLD || h.stop) ? (
-      <span key={`p${para}`} className={h.stop ? "cold cold-stop" : "cold"} title={h.reason}>{inner}</span>
-    ) : (
-      <Fragment key={`p${para}`}>{inner}</Fragment>
-    ));
+    const cold = h && (h.attention < COLD || h.stop) ? (h.stop ? "cold cold-stop" : "cold") : undefined;
+    const k = `p${para}`;
+    const why = cold ? h!.reason : undefined;
+    parts.push(
+      kind === "h" ? <h2 key={k} className={cold} title={why}>{inner}</h2>
+        : kind === "quote" ? <blockquote key={k} className={cold} title={why}>{inner}</blockquote>
+          : kind === "brief" ? <p key={k} className={cold ? `brief ${cold}` : "brief"} title={why}>{inner}</p>
+            : <p key={k} className={cold} title={why}>{inner}</p>,
+    );
   });
 
   return (
@@ -2336,7 +2302,7 @@ function MarkedText({
          matter what the stylesheet said. */
       style={{ ...(chosen ? { "--rs": `${chosen}px` } : {}) } as React.CSSProperties}
     >
-      <p className="whitespace-pre-wrap">{parts}</p>
+      {parts}
     </div>
   );
 }

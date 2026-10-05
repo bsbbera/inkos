@@ -189,9 +189,11 @@ const endpointMocks = [
   { id: "custom", label: "自定义端点", models: [] },
 ];
 const getAllEndpointsMock = vi.fn(() => endpointMocks);
-const probeModelsFromUpstreamMock = vi.fn(async () => [
-  { id: "custom-model", name: "custom-model", contextWindow: 0 },
-]);
+// Nothing listens on loopback in these tests: a local server or CLI probed
+// there is not running, the way it would be on a machine without one.
+const probeModelsFromUpstreamMock = vi.fn(async (url?: string) => (
+  /\/\/(localhost|127\.0\.0\.1)[:/]/.test(url ?? "") ? [] : [{ id: "custom-model", name: "custom-model", contextWindow: 0 }]
+));
 
 const logger = {
   child: () => logger,
@@ -513,6 +515,8 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     normalizeCoverBaseUrl: actual.normalizeCoverBaseUrl,
     resolveCoverProviderPreset: actual.resolveCoverProviderPreset,
     isApiKeyOptionalForEndpoint: actual.isApiKeyOptionalForEndpoint,
+    secretsDir: actual.secretsDir,
+    loadProviderCatalogue: actual.loadProviderCatalogue,
     loadSecrets: loadSecretsMock,
     saveSecrets: saveSecretsMock,
     getServiceApiKey: getServiceApiKeyMock,
@@ -592,6 +596,15 @@ async function writeCompleteBookFixture(root: string, bookId: string, title = "N
     updatedAt: "2026-04-12T00:00:00.000Z",
   }, null, 2), "utf-8");
   await writeFile(join(bookDir, "story", "story_bible.md"), "# Story Bible\n\nReady.\n", "utf-8");
+}
+
+/** Record a passed connection test, the only thing that makes a provider connected now. */
+async function passed(root: string, ...ids: string[]): Promise<void> {
+  const at = new Date().toISOString();
+  await mkdir(join(root, ".quire"), { recursive: true });
+  await writeFile(join(root, ".quire", "connections.json"), JSON.stringify({
+    checks: Object.fromEntries(ids.map((id) => [id, { ok: true, at, models: 1 }])),
+  }), "utf-8");
 }
 
 describe("createStudioServer daemon lifecycle", () => {
@@ -1256,6 +1269,8 @@ describe("createStudioServer daemon lifecycle", () => {
       },
     });
 
+    await passed(root, "moonshot");
+
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
 
@@ -1277,8 +1292,8 @@ describe("createStudioServer daemon lifecycle", () => {
     expect(new Set(bank.map((s) => s.group))).toContain("local");
 
     // Listed is not usable: `connected` is what the picker filters on, and it
-    // still answers per provider. Moonshot has a key in this fixture; openai
-    // has none.
+    // means a test passed. Moonshot's did in this fixture; openai has no key,
+    // so there was nothing to test.
     expect(bank.find((s) => s.service === "moonshot")?.connected).toBe(true);
     expect(bank.find((s) => s.service === "openai")?.connected).toBe(false);
 
@@ -1300,6 +1315,7 @@ describe("createStudioServer daemon lifecycle", () => {
         moonshot: { apiKey: "sk-moonshot" },
       },
     });
+    await passed(root, "moonshot");
 
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
@@ -1307,16 +1323,13 @@ describe("createStudioServer daemon lifecycle", () => {
     const response = await app.request("http://localhost/api/v1/services/models");
     expect(response.status).toBe(200);
     const body = await response.json() as { groups: Array<{ service: string; models: Array<{ id: string }> }> };
-    // The two local servers are offered alongside the keyed vendor: they need
-    // no key and no configuring, so "is it running" is the only question, and
-    // that is answered by the empty model list below rather than by hiding
-    // them. Nothing is listening on either port here.
-    expect(body.groups.map((g) => g.service).sort()).toEqual(["lmstudio", "moonshot", "ollama"]);
+    // Only what passed a test reaches the picker. The two local servers are
+    // tested on this first load and fail - nothing listens on either port
+    // here - so they are not offered, rather than offered with no models.
+    expect(body.groups.map((g) => g.service).sort()).toEqual(["moonshot"]);
     expect(body.groups.find((g) => g.service === "moonshot")?.models).toEqual([
       { id: "moonshot-model", name: "moonshot-model", maxOutput: 4096, contextWindow: 32768 },
     ]);
-    expect(body.groups.find((g) => g.service === "ollama")?.models).toEqual([]);
-    expect(body.groups.find((g) => g.service === "lmstudio")?.models).toEqual([]);
   });
 
   it("merges persisted discovered/user models ahead of the static fallback catalog", async () => {
@@ -1328,6 +1341,7 @@ describe("createStudioServer daemon lifecycle", () => {
       },
     }, null, 2), "utf-8");
     loadSecretsMock.mockResolvedValue({ services: { moonshot: { apiKey: "sk-moonshot" } } });
+    await passed(root, "moonshot");
 
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);
@@ -1344,6 +1358,7 @@ describe("createStudioServer daemon lifecycle", () => {
         google: { apiKey: "sk-google" },
       },
     });
+    await passed(root, "google");
     getAllEndpointsMock.mockReturnValueOnce([
       {
         id: "google",
@@ -1380,6 +1395,7 @@ describe("createStudioServer daemon lifecycle", () => {
         "custom:内网GPT": { apiKey: "sk-corp" },
       },
     });
+    await passed(root, "custom:内网GPT");
 
     const { createStudioServer } = await import("./server.js");
     const app = createStudioServer(cloneProjectConfig() as never, root);

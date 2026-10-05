@@ -16,6 +16,7 @@ export function ModelCombo({
   emptyLabel,
   disabled,
   onPick,
+  down = [],
 }: {
   readonly groups: ReadonlyArray<SearchGroup>;
   /** The `service::model` value currently chosen, or "" for none. */
@@ -25,6 +26,8 @@ export function ModelCombo({
   readonly emptyLabel: string;
   readonly disabled?: boolean;
   readonly onPick: (value: string) => void;
+  /** Connections that worked and have stopped: listed greyed with why, not offered. */
+  readonly down?: ReadonlyArray<{ readonly label: string; readonly reason: string }>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -121,6 +124,12 @@ export function ModelCombo({
                 Nothing connected matches “{query}”.
               </p>
             ) : null}
+            {down.map((d) => (
+              <div key={d.label} className="px-3 pt-2 pb-1 dim" aria-disabled="true">
+                <div className="text-cap font-semibold uppercase tracking-wide">{d.label} · not answering</div>
+                <div className="text-xs">{d.reason}</div>
+              </div>
+            ))}
           </div>
         </div>
       ) : null}

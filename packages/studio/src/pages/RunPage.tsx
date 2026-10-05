@@ -229,9 +229,6 @@ export function RunPage({
   return (
     <div className="cols cols-a items-start">
       <div className="dark crop px-6 pt-5.5 pb-6">
-        <span
-          className="disc stroke w-37.5 h-37.5 -right-15.5 -top-17 opacity-40"
-        />
 
         <div className="spread mb-5 relative">
           <div>

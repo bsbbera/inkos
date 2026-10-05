@@ -57,7 +57,7 @@ describe("what a row says", () => {
 
   it("names the service and model when one is", () => {
     expect(routeSummary(table.routes.writer!)).toEqual({
-      text: "deepseek · deepseek-chat", tone: "pinned",
+      text: "DeepSeek Chat · DeepSeek", tone: "pinned",
     });
   });
 

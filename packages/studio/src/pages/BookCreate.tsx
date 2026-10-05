@@ -815,8 +815,6 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
         <section className="panel crop space-y-5">
-          <span className="disc fill w-45 h-45 -right-19.5 -top-21 opacity-10" aria-hidden="true"
- />
           <div className="relative space-y-1.5">
             <div className="label">{copy.formHeading}</div>
             <p className="note text-xs leading-6">{copy.formHint}</p>

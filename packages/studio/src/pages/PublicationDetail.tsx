@@ -766,8 +766,6 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               {/* ---- the passage ---- */}
               {current ? (
                 <div className="dark crop">
-                  <span className="disc dots dots-light w-52.5 h-52.5 -right-22.5 -bottom-26" aria-hidden="true"
- />
 
                   <div className="px-6 pt-4.5 pb-0 relative">
                     <div className="spread items-start">

@@ -13,9 +13,7 @@ export type HashRoute =
   | { page: "book"; bookId: string }
   | { page: "book-settings"; bookId: string }
   | { page: "book-create" }
-  | { page: "services" }
   | { page: "project-settings" }
-  | { page: "service-detail"; serviceId: string }
   | { page: "chapter"; bookId: string; chapterNumber: number }
   | { page: "analytics"; bookId: string }
   | { page: "truth"; bookId: string }
@@ -44,7 +42,9 @@ function parseHash(hash: string): HashRoute {
 
   if (!path || path === "/") return { page: "dashboard" };
   if (path === "chat") return { page: "chat" };
-  if (path === "config" || path === "services") return { page: "services" };
+  // The old Services page and its detail pages are Settings → Connections now;
+  // links and bookmarks to them still land there.
+  if (path === "config" || path === "services" || path.startsWith("services/")) return { page: "setup", tab: "providers" };
   if (path === "settings") return { page: "project-settings" };
   if (path === "mcp") return { page: "mcp" };
   if (path === "setup") return { page: "setup" };
@@ -80,9 +80,6 @@ function parseHash(hash: string): HashRoute {
   const importMatch = path.match(/^import\/(chapters|canon|fanfic|spinoff|imitation)$/);
   if (importMatch) return { page: "import", tab: importMatch[1] as "chapters" | "canon" | "fanfic" | "spinoff" | "imitation" };
   if (path === "book/new") return { page: "book-create" };
-
-  const serviceMatch = path.match(/^services\/([^/]+)$/);
-  if (serviceMatch) return { page: "service-detail", serviceId: decodeURIComponent(serviceMatch[1]) };
 
   const bookSettingsMatch = path.match(/^book\/([^/]+)\/settings$/);
   if (bookSettingsMatch) return { page: "book-settings", bookId: decodeURIComponent(bookSettingsMatch[1]) };
@@ -151,14 +148,12 @@ function routeToHash(route: HashRoute): string {
     case "book": return `#/book/${encodeURIComponent(route.bookId)}`;
     case "book-settings": return `#/book/${encodeURIComponent(route.bookId)}/settings`;
     case "book-create": return "#/book/new";
-    case "services": return "#/services";
     case "project-settings": return "#/settings";
     case "mcp": return "#/mcp";
     case "setup": return route.tab ? `#/setup/${route.tab}` : "#/setup";
     case "publication": return `#/publication/${encodeURIComponent(route.issueId)}`;
     case "translation": return "#/translation";
     case "import": return route.tab ? `#/import/${route.tab}` : "#/import";
-    case "service-detail": return `#/services/${encodeURIComponent(route.serviceId)}`;
     case "play": return `#/play/${encodeURIComponent(route.projectId)}`;
     case "film": return `#/film/${encodeURIComponent(route.projectId)}`;
     case "flow": return `#/flow/${encodeURIComponent(route.projectId)}`;
@@ -207,8 +202,7 @@ export function useHashRoute() {
   }, []);
 
   const nav = {
-    toServices: () => setRoute({ page: "services" }),
-    toServiceDetail: (id: string) => setRoute({ page: "service-detail", serviceId: id }),
+    toServices: () => setRoute({ page: "setup", tab: "providers" }),
   };
 
   return { route, setRoute, nav };

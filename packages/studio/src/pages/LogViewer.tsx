@@ -64,7 +64,6 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
   return (
     <div className="stack-lg">
       <section className="crop pb-0">
-        <span className="disc stroke w-40 h-40 -left-18.5 -top-20 opacity-28" />
         <h2 className="h-page">The machine talking to itself</h2>
         <p className="muted text-body mt-2 max-w-measure">
           Everything the shim, the daemon and the writer said while working. {t("logs.showingRecent")}

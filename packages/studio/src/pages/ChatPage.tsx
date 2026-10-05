@@ -2,7 +2,7 @@ import { useCallback, useRef, useEffect, useMemo, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import type { SSEMessage } from "../hooks/use-sse";
-import { modelLabel, scopeToProvider, toFamilies } from "./model-picker-state";
+import { modelLabel, prettyModelName, scopeToProvider, toFamilies } from "./model-picker-state";
 import { modelVendor } from "./model-vendor";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import type { ChatAttachmentPayload } from "../store/chat/types";
@@ -526,8 +526,9 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     if (!selectedModel) return isZh ? "选择模型" : "Select model";
     const group = groupedModels.find((item) => item.service === selectedService);
     const model = group?.models.find((item) => item.id === selectedModel);
-    const modelLabel = model?.name ?? selectedModel;
-    return group ? `${group.label} · ${modelLabel}` : modelLabel;
+    // A probed model with no display name still reads as a name, not an id.
+    const modelLabel = model?.name && model.name !== selectedModel ? model.name : prettyModelName(selectedModel);
+    return group ? `${modelLabel} · ${group.label.replace(/\s*\(CLI\)$/, "")}` : modelLabel;
   }, [groupedModels, selectedModel, selectedService, isZh]);
 
   // Planning, writing and auditing can each run on a different model. The bar
@@ -976,7 +977,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           ) : null}
           <h1>{isZh ? "对话" : "Chat"}</h1>
         </div>
-        <span className="pill mono">{runningBar.text}</span>
+        <span className="pill">{runningBar.text}</span>
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => setArtifactsOpen((open) => !open)}>
           <Layers size={15} aria-hidden="true" />
           {isZh ? "产出" : "Artifacts"}
@@ -993,10 +994,6 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       </div>
 
       <div className="dark crop">
-        <span
-          className="disc dots dots-light w-65 h-65 -right-30 -top-32.5"
-          aria-hidden="true"
-        />
       {/* Message scroll area */}
       <div
         ref={scrollRef}
@@ -1013,10 +1010,6 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         {needsPlayModeChoice ? (
           <div className="flex h-full items-center justify-center px-4 select-none">
             <div className="panel crop w-full max-w-lg">
-              <span className="disc fill w-52.5 h-52.5 -right-19.5 -top-21 opacity-13" aria-hidden="true"
- />
-              <span className="disc dots text-primary w-23 h-23 -left-7 -bottom-8.5 opacity-45" aria-hidden="true"
- />
 
               <div className="relative">
                 <p className="label flex items-center gap-2">
@@ -1059,10 +1052,6 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         ) : messages.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center px-4 select-none">
             <div className="panel crop w-full max-w-md text-center">
-              <span className="disc stroke w-55 h-55 -top-37.5 -ml-28 opacity-35 left-1/2" aria-hidden="true"
- />
-              <span className="disc fill w-30 h-30 -right-11.5 -bottom-13 opacity-12" aria-hidden="true"
- />
               <div className="relative">
                 <span
                   className="mx-auto icon-ring icon-ring-lg"
