@@ -35,12 +35,12 @@ describe("CLI localization", () => {
     expect(formatBookCreateCreating("zh", "山河", "xuanhuan", "tomato"))
       .toBe('创建书籍 "山河"（xuanhuan / tomato）...');
     expect(formatBookCreateCreated("zh", "shan-he")).toBe("已创建书籍：shan-he");
-    expect(formatBookCreateNextStep("zh", "shan-he")).toBe("下一步：inkos write next shan-he");
+    expect(formatBookCreateNextStep("zh", "shan-he")).toBe("下一步：quire write next shan-he");
 
     expect(formatBookCreateCreating("en", "Harbor", "other", "other"))
       .toBe('Creating book "Harbor" (other / other)...');
     expect(formatBookCreateCreated("en", "harbor")).toBe("Book created: harbor");
-    expect(formatBookCreateNextStep("en", "harbor")).toBe("Next: inkos write next harbor");
+    expect(formatBookCreateNextStep("en", "harbor")).toBe("Next: quire write next harbor");
   });
 
   it("formats write-next progress and result summaries in both languages", () => {
@@ -111,7 +111,7 @@ describe("CLI localization", () => {
       "  总长度：45678字",
       "  下一章编号：13",
       "",
-      '运行 "inkos write next shan-he" 继续写作。',
+      '运行 "quire write next shan-he" 继续写作。',
     ]);
 
     expect(formatImportChaptersDiscovery("en", 10, "harbor"))
@@ -128,7 +128,7 @@ describe("CLI localization", () => {
       "  Total length: 18342 words",
       "  Next chapter number: 11",
       "",
-      'Run "inkos write next harbor" to continue writing.',
+      'Run "quire write next harbor" to continue writing.',
     ]);
   });
 
@@ -151,13 +151,13 @@ describe("CLI localization", () => {
 
 describe("resolveCliLanguage environment fallback", () => {
   it("prefers the explicit language over any environment variable", () => {
-    expect(resolveCliLanguage("en", { INKOS_LOCALE: "zh_CN" })).toBe("en");
-    expect(resolveCliLanguage("zh", { INKOS_LOCALE: "en", LANG: "en_US.UTF-8" })).toBe("zh");
+    expect(resolveCliLanguage("en", { QUIRE_LOCALE: "zh_CN" })).toBe("en");
+    expect(resolveCliLanguage("zh", { QUIRE_LOCALE: "en", LANG: "en_US.UTF-8" })).toBe("zh");
   });
 
-  it("reads INKOS_LOCALE before the system locale variables", () => {
-    expect(resolveCliLanguage(undefined, { INKOS_LOCALE: "en", LANG: "zh_CN.UTF-8" })).toBe("en");
-    expect(resolveCliLanguage(undefined, { INKOS_LOCALE: "zh-CN", LC_ALL: "en_US.UTF-8" })).toBe("zh");
+  it("reads QUIRE_LOCALE before the system locale variables", () => {
+    expect(resolveCliLanguage(undefined, { QUIRE_LOCALE: "en", LANG: "zh_CN.UTF-8" })).toBe("en");
+    expect(resolveCliLanguage(undefined, { QUIRE_LOCALE: "zh-CN", LC_ALL: "en_US.UTF-8" })).toBe("zh");
   });
 
   it("falls back to LC_ALL, then LC_MESSAGES, then LANG", () => {
@@ -196,10 +196,10 @@ describe("doctor hint localization", () => {
   it("keeps the original Chinese hints for zh", () => {
     expect(formatDoctorHintQuota("zh"))
       .toBe("检查 API Key 是否正确、模型是否可用，以及账号余额或配额是否足够。");
-    expect(formatDoctorHintBaseUrl("zh")).toContain("INKOS_LLM_BASE_URL");
+    expect(formatDoctorHintBaseUrl("zh")).toContain("QUIRE_LLM_BASE_URL");
     expect(formatDoctorHintStreamRequirement("zh")).toContain("stream");
-    expect(formatDoctorHintModelName("zh")).toContain("INKOS_LLM_MODEL");
-    expect(formatDoctorHintInvalidApiKey("zh")).toContain("INKOS_LLM_API_KEY");
+    expect(formatDoctorHintModelName("zh")).toContain("QUIRE_LLM_MODEL");
+    expect(formatDoctorHintInvalidApiKey("zh")).toContain("QUIRE_LLM_API_KEY");
     expect(formatDoctorHintOpenAiProbeExhausted("zh")).toContain("chat/responses");
   });
 
@@ -215,9 +215,9 @@ describe("doctor hint localization", () => {
     for (const hint of hints) {
       expect(hint).not.toMatch(CHINESE_CHARS);
     }
-    expect(formatDoctorHintBaseUrl("en")).toContain("INKOS_LLM_BASE_URL");
-    expect(formatDoctorHintModelName("en")).toContain("INKOS_LLM_MODEL");
-    expect(formatDoctorHintInvalidApiKey("en")).toContain("INKOS_LLM_API_KEY");
+    expect(formatDoctorHintBaseUrl("en")).toContain("QUIRE_LLM_BASE_URL");
+    expect(formatDoctorHintModelName("en")).toContain("QUIRE_LLM_MODEL");
+    expect(formatDoctorHintInvalidApiKey("en")).toContain("QUIRE_LLM_API_KEY");
     expect(formatDoctorHintStreamRequirement("en")).toContain("stream=true");
   });
 });
@@ -233,7 +233,7 @@ describe("fanfic error localization", () => {
     expect(tooShort).toContain("仅 42 字符");
 
     const missingCanon = formatFanficCanonMissingError();
-    expect(missingCanon).toContain("inkos fanfic init");
+    expect(missingCanon).toContain("quire fanfic init");
     expect(missingCanon).toContain("同人正典");
 
     const emptyDir = formatFanficSourceDirEmptyError("/tmp/source");

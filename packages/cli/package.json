@@ -23,7 +23,7 @@
   ],
   "type": "module",
   "bin": {
-    "inkos": "dist/index.js"
+    "quire": "dist/index.js"
   },
   "files": [
     "dist",

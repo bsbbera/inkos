@@ -48,7 +48,7 @@ export async function inspectNodeRuntimePinFiles(root: string): Promise<NodeRunt
 
   return {
     ok: false,
-    detail: `Missing or outdated: ${missing.join(", ")}. Run 'inkos doctor --repair-node-runtime'.`,
+    detail: `Missing or outdated: ${missing.join(", ")}. Run 'quire doctor --repair-node-runtime'.`,
     missing,
   };
 }

@@ -95,7 +95,7 @@ const ZH_CN: TuiCopy = {
   notes: {
     help: "可用命令：/new（建书）、/short（短篇）、/play（互动世界）、/cover（封面）、/write（写下一章）、/confirm、/cancel、/model [模型名]、/status、/clear、/depth、/quit。其他讨论和创作要求直接使用自然语言。",
     status: (stage, mode) => `当前状态：${stage}（${mode}）。`,
-    config: "当前 Ink 仪表盘里还不支持交互式 /config。请使用 inkos config set-global。",
+    config: "当前 Ink 仪表盘里还不支持交互式 /config。请使用 quire config set-global。",
     depthSet: (depthLabel) => `思考深度已切换为 ${depthLabel}。`,
     modelCurrent: (modelLabel) => `当前模型：${modelLabel}。`,
     modelSet: (model) => `当前 TUI 会话模型已切换为 ${model}。`,
@@ -166,7 +166,7 @@ const EN: TuiCopy = {
   notes: {
     help: "Commands: /new (book), /short, /play, /cover, /write, /confirm, /cancel, /model [model], /status, /clear, /depth, /quit. Use natural language for other discussion and creation requests.",
     status: (stage, mode) => `Status: ${stage} (${mode}).`,
-    config: "Interactive /config is not available inside the Ink dashboard yet. Use inkos config set-global.",
+    config: "Interactive /config is not available inside the Ink dashboard yet. Use quire config set-global.",
     depthSet: (depthLabel) => `Thinking depth set to ${depthLabel}.`,
     modelCurrent: (modelLabel) => `Current model: ${modelLabel}.`,
     modelSet: (model) => `Current TUI session model set to ${model}.`,
@@ -205,7 +205,7 @@ export function resolveTuiLocale(
   env: NodeJS.ProcessEnv = process.env,
   preferredLanguage?: string,
 ): TuiLocale {
-  const requested = normalizeLocale(env.INKOS_TUI_LOCALE ?? env.INKOS_LOCALE);
+  const requested = normalizeLocale(env.QUIRE_TUI_LOCALE ?? env.QUIRE_LOCALE);
   if (requested) {
     return requested;
   }

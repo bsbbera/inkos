@@ -132,7 +132,7 @@ genreCommand
   .option("--numerical", "Enable numerical system", false)
   .option("--power", "Enable power scaling", false)
   .option("--era", "Enable era research", false)
-  .option("--lang <language>", "Template language: zh or en (defaults to INKOS_LOCALE/LANG, then zh)")
+  .option("--lang <language>", "Template language: zh or en (defaults to QUIRE_LOCALE/LANG, then zh)")
   .action(async (id: string, opts) => {
     try {
       const root = findProjectRoot();
@@ -192,7 +192,7 @@ genreCommand
       try {
         content = await readFile(srcPath, "utf-8");
       } catch {
-        logError(`Built-in genre "${id}" not found. Use 'inkos genre list' to see available genres.`);
+        logError(`Built-in genre "${id}" not found. Use 'quire genre list' to see available genres.`);
         process.exit(1);
         return;
       }

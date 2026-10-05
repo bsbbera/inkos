@@ -145,19 +145,19 @@ export function buildAutoInitMessages(projectName: string, locale: TuiLocale): {
     return {
       initializing: `Initializing project in ${projectName}/ ...`,
       initialized: "Project initialized",
-      envTemplateHeader: "# LLM Configuration — run inkos tui to configure interactively",
+      envTemplateHeader: "# LLM Configuration — run quire tui to configure interactively",
     };
   }
 
   return {
     initializing: `正在初始化项目：${projectName}/ ...`,
     initialized: "项目已初始化",
-    envTemplateHeader: "# LLM 配置 —— 运行 inkos tui 进行交互式配置",
+    envTemplateHeader: "# LLM 配置 —— 运行 quire tui 进行交互式配置",
   };
 }
 
 export async function ensureProject(cwd: string): Promise<SetupResult> {
-  const configPath = join(cwd, "inkos.json");
+  const configPath = join(cwd, "quire.json");
   const hasConfig = await fileExists(configPath);
 
   if (!hasConfig) {
@@ -230,11 +230,11 @@ export async function interactiveLlmSetup(
     const finalService = resolveSetupService(provider, effectiveBaseUrl);
 
     const envContent = [
-      `INKOS_LLM_PROVIDER=${finalProvider}`,
-      ...(finalService ? [`INKOS_LLM_SERVICE=${finalService}`] : []),
-      `INKOS_LLM_BASE_URL=${effectiveBaseUrl}`,
-      `INKOS_LLM_API_KEY=${apiKey.trim()}`,
-      `INKOS_LLM_MODEL=${model.trim()}`,
+      `QUIRE_LLM_PROVIDER=${finalProvider}`,
+      ...(finalService ? [`QUIRE_LLM_SERVICE=${finalService}`] : []),
+      `QUIRE_LLM_BASE_URL=${effectiveBaseUrl}`,
+      `QUIRE_LLM_API_KEY=${apiKey.trim()}`,
+      `QUIRE_LLM_MODEL=${model.trim()}`,
     ].join("\n");
 
     if (useGlobal) {
@@ -269,9 +269,9 @@ async function autoInit(cwd: string): Promise<void> {
     version: "0.1.0",
     language: "zh",
     llm: {
-      provider: process.env.INKOS_LLM_PROVIDER ?? "openai",
-      baseUrl: process.env.INKOS_LLM_BASE_URL ?? "",
-      model: process.env.INKOS_LLM_MODEL ?? "",
+      provider: process.env.QUIRE_LLM_PROVIDER ?? "openai",
+      baseUrl: process.env.QUIRE_LLM_BASE_URL ?? "",
+      model: process.env.QUIRE_LLM_MODEL ?? "",
     },
     notify: [],
     daemon: {
@@ -284,7 +284,7 @@ async function autoInit(cwd: string): Promise<void> {
   };
 
   await writeFile(
-    join(cwd, "inkos.json"),
+    join(cwd, "quire.json"),
     JSON.stringify(config, null, 2),
     "utf-8",
   );
@@ -295,10 +295,10 @@ async function autoInit(cwd: string): Promise<void> {
       join(cwd, ".env"),
       [
         messages.envTemplateHeader,
-        "INKOS_LLM_PROVIDER=openai",
-        "INKOS_LLM_BASE_URL=",
-        "INKOS_LLM_API_KEY=",
-        "INKOS_LLM_MODEL=",
+        "QUIRE_LLM_PROVIDER=openai",
+        "QUIRE_LLM_BASE_URL=",
+        "QUIRE_LLM_API_KEY=",
+        "QUIRE_LLM_MODEL=",
       ].join("\n"),
       "utf-8",
     );
@@ -322,7 +322,7 @@ async function hasGlobalConfig(): Promise<boolean> {
 async function checkEnvForKey(envPath: string): Promise<boolean> {
   try {
     const content = await readFile(envPath, "utf-8");
-    const match = content.match(/INKOS_LLM_API_KEY=(.+)/);
+    const match = content.match(/QUIRE_LLM_API_KEY=(.+)/);
     return !!match && match[1]!.trim().length > 0 && !match[1]!.includes("your-api-key");
   } catch {
     return false;
@@ -360,7 +360,7 @@ export async function detectModelInfo(projectRoot: string): Promise<ModelInfo | 
 
 export async function detectProjectLanguage(projectRoot: string): Promise<string | undefined> {
   try {
-    const raw = await readFile(join(projectRoot, "inkos.json"), "utf-8");
+    const raw = await readFile(join(projectRoot, "quire.json"), "utf-8");
     const parsed = JSON.parse(raw) as { language?: string };
     return parsed.language;
   } catch {
@@ -375,12 +375,12 @@ async function parseEnvModel(envPath: string): Promise<ModelInfo | undefined> {
       const m = content.match(new RegExp(`^${key}=(.+)$`, "m"));
       return m?.[1]?.trim() ?? "";
     };
-    const key = get("INKOS_LLM_API_KEY");
+    const key = get("QUIRE_LLM_API_KEY");
     if (!key || key.includes("your-api-key")) return undefined;
     return {
-      provider: get("INKOS_LLM_PROVIDER") || "openai",
-      model: get("INKOS_LLM_MODEL") || "unknown",
-      baseUrl: get("INKOS_LLM_BASE_URL") || "",
+      provider: get("QUIRE_LLM_PROVIDER") || "openai",
+      model: get("QUIRE_LLM_MODEL") || "unknown",
+      baseUrl: get("QUIRE_LLM_BASE_URL") || "",
     };
   } catch {
     return undefined;

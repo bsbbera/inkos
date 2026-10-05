@@ -5,7 +5,7 @@ import { createWriteStream, type WriteStream } from "node:fs";
 import { writeFile, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-const PID_FILE = "inkos.pid";
+const PID_FILE = "quire.pid";
 
 export const upCommand = new Command("up")
   .description("Start the Quire daemon (autonomous mode)")
@@ -21,7 +21,7 @@ export const upCommand = new Command("up")
       pidPath = join(root, PID_FILE);
       try {
         const existingPid = await readFile(pidPath, "utf-8");
-        logError(`Daemon already running (PID: ${existingPid.trim()}). Run 'inkos down' first.`);
+        logError(`Daemon already running (PID: ${existingPid.trim()}). Run 'quire down' first.`);
         process.exit(1);
       } catch {
         // No PID file, good
@@ -37,7 +37,7 @@ export const upCommand = new Command("up")
       await writeFile(pidPath, String(process.pid), "utf-8");
 
       // File logging for daemon
-      const logPath = join(root, "inkos.log");
+      const logPath = join(root, "quire.log");
       logStream = createWriteStream(logPath, { flags: "a" });
 
       const scheduler = new Scheduler({

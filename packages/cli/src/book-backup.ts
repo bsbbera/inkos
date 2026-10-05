@@ -31,11 +31,11 @@ export interface RestoreBookBackupResult {
 }
 
 /**
- * Whole-book backups live OUTSIDE books/ (at .inkos/backups/<bookId>/<backupId>/),
+ * Whole-book backups live OUTSIDE books/ (at .quire/backups/<bookId>/<backupId>/),
  * so a backup never recursively contains other backups.
  */
 export function bookBackupsDir(root: string, bookId: string): string {
-  return join(root, ".inkos", "backups", bookId);
+  return join(root, ".quire", "backups", bookId);
 }
 
 export async function createBookBackup(
@@ -105,7 +105,7 @@ export async function restoreBookBackup(
   if (!backupInfo?.isDirectory()) {
     throw new Error(
       `Backup "${backupId}" not found for book "${bookId}". `
-      + `List available backups with: inkos book backup ${bookId} --list`,
+      + `List available backups with: quire book backup ${bookId} --list`,
     );
   }
 

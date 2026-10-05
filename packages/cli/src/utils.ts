@@ -120,7 +120,7 @@ export function buildPipelineConfig(
   }
 
   const hasLogging = sinks.length > 0;
-  const logger = hasLogging ? createLogger({ tag: "inkos", sinks }) : undefined;
+  const logger = hasLogging ? createLogger({ tag: "quire", sinks }) : undefined;
 
   const onStreamProgress = hasLogging
     ? (progress: { readonly elapsedMs: number; readonly totalChars: number; readonly chineseChars: number; readonly status: string }) => {
@@ -138,7 +138,7 @@ export function buildPipelineConfig(
     projectRoot: root,
     defaultLLMConfig: config.llm,
     foundationReviewRetries: config.foundation.reviewRetries,
-    writingReviewRetries: config.writing?.reviewRetries ?? 1,
+    writingReviewRetries: config.writing?.reviewRetries ?? 2,
     chapterReviewMode: extra?.chapterReviewMode,
     revisionGate: extra?.revisionGate,
     modelOverrides: config.modelOverrides,
@@ -181,7 +181,7 @@ export async function resolveBookId(
 
   if (books.length === 0) {
     throw new Error(
-      "No books found. Create one first:\n  inkos book create --title '...' --genre xuanhuan",
+      "No books found. Create one first:\n  quire book create --title '...' --genre xuanhuan",
     );
   }
   if (books.length === 1) {

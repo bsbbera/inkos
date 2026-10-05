@@ -83,7 +83,7 @@ bookCommand
           genre: book.genre,
           platform: book.platform,
           location: `books/${bookId}/`,
-          nextStep: `inkos write next ${bookId}`,
+          nextStep: `quire write next ${bookId}`,
         }, null, 2));
       } else {
         log(formatBookCreateCreated(language, bookId));
@@ -175,7 +175,7 @@ bookCommand
         if (opts.json) {
           log(JSON.stringify({ books: [] }));
         } else {
-          log("No books found. Create one with: inkos book create --title '...'");
+          log("No books found. Create one with: quire book create --title '...'");
         }
         return;
       }
@@ -265,7 +265,7 @@ bookCommand
 
 bookCommand
   .command("backup")
-  .description("Snapshot the whole book directory into .inkos/backups/<book-id>/ (or list backups with --list)")
+  .description("Snapshot the whole book directory into .quire/backups/<book-id>/ (or list backups with --list)")
   .argument("<book-id>", "Book ID")
   .option("--list", "List existing backups instead of creating one")
   .option("--json", "Output JSON")
@@ -310,7 +310,7 @@ bookCommand
   .command("restore")
   .description("Restore a whole-book backup (the current book state is automatically backed up first)")
   .argument("<book-id>", "Book ID")
-  .argument("<backup-id>", "Backup ID, see `inkos book backup <book-id> --list`")
+  .argument("<backup-id>", "Backup ID, see `quire book backup <book-id> --list`")
   .option("--json", "Output JSON")
   .action(async (bookId: string, backupId: string, opts) => {
     try {

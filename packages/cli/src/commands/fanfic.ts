@@ -75,7 +75,7 @@ fanficCommand
           fanficMode: mode,
           source: sourceName,
           location: `books/${bookId}/`,
-          nextStep: `inkos write next ${bookId}`,
+          nextStep: `quire write next ${bookId}`,
         }, null, 2));
       } else {
         log(`Fanfic created: ${bookId}`);
@@ -83,7 +83,7 @@ fanficCommand
         log(`  Location: books/${bookId}/`);
         log(`  fanfic_canon.md + foundation generated.`);
         log("");
-        log(`Next: inkos write next ${bookId}`);
+        log(`Next: quire write next ${bookId}`);
       }
     } catch (e) {
       if (opts.json) {

@@ -15,7 +15,7 @@ configCommand
   .argument("<value>", "Config value")
   .action(async (key: string, value: string) => {
     const root = findProjectRoot();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
 
     try {
       const raw = await readFile(configPath, "utf-8");
@@ -90,7 +90,7 @@ configCommand
 
 configCommand
   .command("set-global")
-  .description("Set global LLM config (~/.inkos/.env), shared by all projects")
+  .description("Set global LLM config (~/.quire/.env), shared by all projects")
   .requiredOption("--provider <provider>", "LLM provider (openai / anthropic)")
   .requiredOption("--base-url <url>", "API base URL")
   .requiredOption("--api-key <key>", "API key")
@@ -106,15 +106,15 @@ configCommand
 
       const lines = [
         "# Quire Global LLM Configuration",
-        `INKOS_LLM_PROVIDER=${opts.provider}`,
-        `INKOS_LLM_BASE_URL=${opts.baseUrl}`,
-        `INKOS_LLM_API_KEY=${opts.apiKey}`,
-        `INKOS_LLM_MODEL=${opts.model}`,
+        `QUIRE_LLM_PROVIDER=${opts.provider}`,
+        `QUIRE_LLM_BASE_URL=${opts.baseUrl}`,
+        `QUIRE_LLM_API_KEY=${opts.apiKey}`,
+        `QUIRE_LLM_MODEL=${opts.model}`,
       ];
-      if (opts.temperature) lines.push(`INKOS_LLM_TEMPERATURE=${opts.temperature}`);
-      if (opts.thinkingBudget) lines.push(`INKOS_LLM_THINKING_BUDGET=${opts.thinkingBudget}`);
-      if (opts.apiFormat) lines.push(`INKOS_LLM_API_FORMAT=${opts.apiFormat}`);
-      if (opts.lang) lines.push(`INKOS_DEFAULT_LANGUAGE=${opts.lang}`);
+      if (opts.temperature) lines.push(`QUIRE_LLM_TEMPERATURE=${opts.temperature}`);
+      if (opts.thinkingBudget) lines.push(`QUIRE_LLM_THINKING_BUDGET=${opts.thinkingBudget}`);
+      if (opts.apiFormat) lines.push(`QUIRE_LLM_API_FORMAT=${opts.apiFormat}`);
+      if (opts.lang) lines.push(`QUIRE_DEFAULT_LANGUAGE=${opts.lang}`);
 
       await writeFile(GLOBAL_ENV_PATH, lines.join("\n") + "\n", "utf-8");
       log(`Global config saved to ${GLOBAL_ENV_PATH}`);
@@ -127,17 +127,17 @@ configCommand
 
 configCommand
   .command("show-global")
-  .description("Show global LLM config (~/.inkos/.env)")
+  .description("Show global LLM config (~/.quire/.env)")
   .action(async () => {
     try {
       const content = await readFile(GLOBAL_ENV_PATH, "utf-8");
       const masked = content.replace(
-        /(INKOS_LLM_API_KEY=)(.{8})(.*)(.{4})/,
+        /(QUIRE_LLM_API_KEY=)(.{8})(.*)(.{4})/,
         "$1$2...$4",
       );
       log(masked);
     } catch {
-      log("No global config found. Run 'inkos config set-global' to create one.");
+      log("No global config found. Run 'quire config set-global' to create one.");
     }
   });
 
@@ -146,7 +146,7 @@ configCommand
   .description("Show current project configuration")
   .action(async () => {
     const root = findProjectRoot();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
 
     try {
       const raw = await readFile(configPath, "utf-8");
@@ -199,7 +199,7 @@ configCommand
     }
 
     const root = findProjectRoot();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
 
     try {
       const raw = await readFile(configPath, "utf-8");
@@ -232,7 +232,7 @@ configCommand
   .argument("<agent>", "Agent name")
   .action(async (agent: string) => {
     const root = findProjectRoot();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
 
     try {
       const raw = await readFile(configPath, "utf-8");
@@ -258,7 +258,7 @@ configCommand
   .option("--json", "Output JSON")
   .action(async (opts) => {
     const root = findProjectRoot();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
 
     try {
       const raw = await readFile(configPath, "utf-8");
@@ -303,11 +303,11 @@ configCommand
 configCommand
   .command("list-models <service>")
   .description("List available models for a service (with maxOutput / contextWindow / abilities)")
-  .option("--api-key <key>", "API Key (also reads from INKOS_LLM_API_KEY env)")
+  .option("--api-key <key>", "API Key (also reads from QUIRE_LLM_API_KEY env)")
   .option("--base-url <url>", "Live /models probe baseUrl (for custom/newapi)")
   .option("--json", "Output as JSON")
   .action(async (service: string, opts: { apiKey?: string; baseUrl?: string; json?: boolean }) => {
-    const apiKey = opts.apiKey ?? process.env.INKOS_LLM_API_KEY;
+    const apiKey = opts.apiKey ?? process.env.QUIRE_LLM_API_KEY;
     const language = resolveCliLanguage();
     const models = await listModelsForService(service, apiKey, opts.baseUrl);
     if (models.length === 0) {

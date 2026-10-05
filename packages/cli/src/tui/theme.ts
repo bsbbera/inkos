@@ -43,7 +43,7 @@ const LIGHT_THEME: TuiTheme = {
 };
 
 export function detectTerminalBackground(env: Partial<NodeJS.ProcessEnv> = process.env): TerminalBackground {
-  const explicit = env.INKOS_TUI_THEME?.trim().toLowerCase();
+  const explicit = env.QUIRE_TUI_THEME?.trim().toLowerCase();
   if (explicit === "light" || explicit === "dark") return explicit;
 
   const colorFgBg = env.COLORFGBG?.trim();

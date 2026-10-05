@@ -11,7 +11,7 @@ describe("tui command", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "inkos-default-studio-"));
+    tempDir = await mkdtemp(join(tmpdir(), "quire-default-studio-"));
     process.chdir(tempDir);
   });
 
@@ -38,8 +38,8 @@ describe("tui command", () => {
 
     await program.parseAsync([], { from: "user" });
 
-    const config = JSON.parse(await readFile(join(tempDir, "inkos.json"), "utf-8"));
-    expect(config.name).toMatch(/^inkos-default-studio-/);
+    const config = JSON.parse(await readFile(join(tempDir, "quire.json"), "utf-8"));
+    expect(config.name).toMatch(/^quire-default-studio-/);
     expect(config.llm.configSource).toBe("studio");
     expect(config.llm.model).toBe("");
     expect(config.llm.baseUrl).toBe("");
@@ -76,7 +76,7 @@ describe("tui command", () => {
 
     await program.parseAsync(["studio"], { from: "user" });
 
-    const config = JSON.parse(await readFile(join(tempDir, "inkos.json"), "utf-8"));
+    const config = JSON.parse(await readFile(join(tempDir, "quire.json"), "utf-8"));
     expect(config.llm.configSource).toBe("studio");
     expect(launchStudio).toHaveBeenCalledTimes(1);
     const [calledRoot, calledPort] = launchStudio.mock.calls[0] as unknown as [string, string];

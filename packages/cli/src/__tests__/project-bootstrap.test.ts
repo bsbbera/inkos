@@ -8,7 +8,7 @@ describe("project bootstrap", () => {
   let tempDir: string;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "inkos-bootstrap-"));
+    tempDir = await mkdtemp(join(tmpdir(), "quire-bootstrap-"));
     process.env.HOME = tempDir;
   });
 
@@ -23,8 +23,8 @@ describe("project bootstrap", () => {
     const initialized = await ensureProjectDirectoryInitialized(tempDir, { language: "zh" });
 
     expect(initialized).toBe(true);
-    const config = JSON.parse(await readFile(join(tempDir, "inkos.json"), "utf-8"));
-    expect(config.name).toMatch(/^inkos-bootstrap-/);
+    const config = JSON.parse(await readFile(join(tempDir, "quire.json"), "utf-8"));
+    expect(config.name).toMatch(/^quire-bootstrap-/);
     expect(config.version).toBe("0.1.0");
     expect(config.llm.configSource).toBe("studio");
     expect(config.llm.service).toBe("custom");
@@ -63,7 +63,7 @@ describe("project bootstrap", () => {
   });
 
   it("returns false when the directory is already an Quire project", async () => {
-    await writeFile(join(tempDir, "inkos.json"), "{}\n", "utf-8");
+    await writeFile(join(tempDir, "quire.json"), "{}\n", "utf-8");
     const { ensureProjectDirectoryInitialized } = await import("../project-bootstrap.js");
 
     await expect(ensureProjectDirectoryInitialized(tempDir, { language: "zh" })).resolves.toBe(false);

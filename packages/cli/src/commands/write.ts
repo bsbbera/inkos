@@ -153,7 +153,7 @@ writeCommand
         if (isNaN(chapter)) throw new Error(`Expected chapter number, got "${args[1]}"`);
         bookId = await resolveBookId(args[0], root);
       } else {
-        throw new Error("Usage: inkos write rewrite [book-id] <chapter>");
+        throw new Error("Usage: quire write rewrite [book-id] <chapter>");
       }
 
       if (!opts.force) {
@@ -290,7 +290,7 @@ writeCommand
         if (isNaN(chapter)) throw new Error(`Expected chapter number, got "${args[1]}"`);
         bookId = await resolveBookId(args[0], root);
       } else {
-        throw new Error("Usage: inkos write sync [book-id] <chapter>");
+        throw new Error("Usage: quire write sync [book-id] <chapter>");
       }
 
       const state = new StateManager(root);
@@ -347,7 +347,7 @@ writeCommand
         if (isNaN(chapter)) throw new Error(`Expected chapter number, got "${args[1]}"`);
         bookId = await resolveBookId(args[0], root);
       } else {
-        throw new Error("Usage: inkos write repair-state [book-id] <chapter>");
+        throw new Error("Usage: quire write repair-state [book-id] <chapter>");
       }
 
       const state = new StateManager(root);

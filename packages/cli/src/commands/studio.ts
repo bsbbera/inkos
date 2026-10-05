@@ -97,14 +97,14 @@ export async function resolveStudioLaunch(root: string): Promise<StudioLaunchSpe
   }
 
   const builtEntry = await firstAccessiblePath([
-    join(root, "node_modules", "@actalk", "inkos-studio", "dist", "api", "index.js"),
-    join(root, "node_modules", "@actalk", "inkos-studio", "server.cjs"),
-    join(cliPackageRoot, "node_modules", "@actalk", "inkos-studio", "dist", "api", "index.js"),
-    join(cliPackageRoot, "node_modules", "@actalk", "inkos-studio", "server.cjs"),
-    join(cliPackageRoot, "..", "inkos-studio", "dist", "api", "index.js"),
-    join(cliPackageRoot, "..", "inkos-studio", "server.cjs"),
+    join(root, "node_modules", "@actalk", "quire-studio", "dist", "api", "index.js"),
+    join(root, "node_modules", "@actalk", "quire-studio", "server.cjs"),
+    join(cliPackageRoot, "node_modules", "@actalk", "quire-studio", "dist", "api", "index.js"),
+    join(cliPackageRoot, "node_modules", "@actalk", "quire-studio", "server.cjs"),
+    join(cliPackageRoot, "..", "quire-studio", "dist", "api", "index.js"),
+    join(cliPackageRoot, "..", "quire-studio", "server.cjs"),
     // In this repo the workspace directory is packages/studio, not
-    // packages/inkos-studio, so a built monorepo checkout matched none of
+    // packages/quire-studio, so a built monorepo checkout matched none of
     // the paths above and fell through to "Studio not found" even though
     // `pnpm build` had just produced it.
     join(cliPackageRoot, "..", "studio", "dist", "api", "index.js"),
@@ -132,7 +132,7 @@ export async function launchStudioWorkbench(root: string, port: string): Promise
     logError(
       "Quire Studio not found. If you cloned the repo, run:\n" +
       "  cd packages/studio && pnpm install && pnpm build\n" +
-      "Then run 'inkos studio' from the project root.",
+      "Then run 'quire studio' from the project root.",
     );
     process.exit(1);
   }
@@ -142,7 +142,7 @@ export async function launchStudioWorkbench(root: string, port: string): Promise
   const child = spawn(launch.command, launch.args, {
     cwd: root,
     stdio: "inherit",
-    env: { ...process.env, INKOS_STUDIO_PORT: port },
+    env: { ...process.env, QUIRE_STUDIO_PORT: port },
   });
 
   child.on("error", (e) => {
@@ -175,7 +175,7 @@ export async function launchStudioEntry(
 ): Promise<void> {
   const prepared = await prepareStudioRoot(root);
   if (prepared.initialized) {
-    log(`No inkos.json found in ${root}. Initialized a minimal Quire project for Studio.`);
+    log(`No quire.json found in ${root}. Initialized a minimal Quire project for Studio.`);
   }
 
   if (hooks.launchStudio) {

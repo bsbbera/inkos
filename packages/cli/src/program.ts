@@ -48,7 +48,7 @@ export function createProgram(hooks: ProgramHooks = {}): Command {
   const program = new Command();
 
   program
-    .name("inkos")
+    .name("quire")
     .description("Quire — Multi-agent novel production system")
     .version(version)
     .enablePositionalOptions()
