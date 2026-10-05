@@ -1,6 +1,7 @@
 ---
 name: quire-short-market-research
-description: 商业短篇市场、平台样本、标题与移动端阅读趋势研究。Use for evidence-based short-fiction market research.
+description: "Evidence-based research into commercial short fiction - platform samples, titles, openings, pressure and evidence chains, mobile reading density - separating a durable mechanism from a passing surface trend. Use for research; it does not authorize generation."
+version: 1.0.0
 ---
 # Short-fiction market research
 

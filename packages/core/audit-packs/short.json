@@ -1,0 +1,17 @@
+{
+  "id": "short-arc",
+  "version": 1,
+  "appliesTo": ["short"],
+  "extends": "story-30",
+  "dimensions": {
+    "custom": [
+      {
+        "id": "single-sitting",
+        "label": "Single-sitting arc",
+        "instruction": "A short is read in one sitting, so it cannot spend a novel's opening. Flag a piece that reaches its first turn later than a quarter of the way in, or that opens more threads than it closes.",
+        "severity": "warning"
+      }
+    ]
+  },
+  "scoring": { "maxIterations": 2 }
+}

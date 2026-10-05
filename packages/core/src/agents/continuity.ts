@@ -5,6 +5,8 @@ import type { FanficMode } from "../models/book.js";
 import type { ChapterMemo, ContextPackage, RuleStack } from "../models/input-governance.js";
 import { readGenreProfile, readBookLanguage, readBookRules } from "./rules-reader.js";
 import { getFanficDimensionConfig, FANFIC_DIMENSIONS } from "./fanfic-dimensions.js";
+import { activeDimensions, auditPackIn, type ResolvedAuditPack } from "../pipeline/audit-pack.js";
+import { settingIn, type Setting } from "../pipeline/setting.js";
 import { readFile, readdir } from "node:fs/promises";
 import { filterHooks, filterSummaries, filterSubplots, filterEmotionalArcs, filterCharacterMatrix } from "../utils/context-filter.js";
 import { buildGovernedMemoryEvidenceBlocks } from "../utils/governed-context.js";
@@ -135,6 +137,7 @@ function buildDimensionNote(
   bookRules: BookRules | null,
   fanficMode: FanficMode | undefined,
   fanficConfig: ReturnType<typeof getFanficDimensionConfig> | undefined,
+  setting?: Setting | null,
 ): string {
   const words = bookRules?.fatigueWordsOverride && bookRules.fatigueWordsOverride.length > 0
     ? bookRules.fatigueWordsOverride
@@ -168,13 +171,26 @@ function buildDimensionNote(
       : `爽点类型：${gp.satisfactionTypes.join("、")}`;
   }
 
-  if (id === 12 && bookRules?.eraConstraints) {
-    const era = bookRules.eraConstraints;
-    const parts = [era.period, era.region].filter(Boolean);
-    if (parts.length > 0) {
+  if (id === 12) {
+    // A researched world beats the two-field era block: it names the place and
+    // the time the bible was actually written about, and the exact words that
+    // have already been ruled out are checked without a model anyway (22 §4),
+    // so what is left for this dimension is everything a word list cannot see.
+    if (setting?.enabled) {
+      const where = [setting.place.then || setting.place.name, setting.place.country].filter(Boolean).join(", ");
+      const when = setting.time.label || [setting.time.from, setting.time.to].filter(Boolean).join("–");
       return language === "en"
-        ? `Era: ${parts.join(", ")}`
-        : `年代：${parts.join("，")}`;
+        ? `Setting: ${where}, ${when}. Attitudes, prices, institutions and technology must fit it; the forbidden-word list is checked separately.`
+        : `设定：${where}，${when}。观念、物价、制度与技术都要符合；违禁词表另有专门检查。`;
+    }
+    if (bookRules?.eraConstraints) {
+      const era = bookRules.eraConstraints;
+      const parts = [era.period, era.region].filter(Boolean);
+      if (parts.length > 0) {
+        return language === "en"
+          ? `Era: ${parts.join(", ")}`
+          : `年代：${parts.join("，")}`;
+      }
     }
   }
 
@@ -296,6 +312,8 @@ function buildDimensionList(
   language: PromptLanguage,
   hasParentCanon = false,
   fanficMode?: FanficMode,
+  setting?: Setting | null,
+  pack?: ResolvedAuditPack,
 ): ReadonlyArray<{ readonly id: number; readonly name: string; readonly note: string }> {
   const activeIds = new Set(gp.auditDimensions);
 
@@ -334,7 +352,9 @@ function buildDimensionList(
   activeIds.add(33); // 章节备忘偏离 — universal (replaces legacy volume-outline drift)
 
   // Conditional overrides
-  if (gp.eraResearch || bookRules?.eraConstraints?.enabled) {
+  // A pinned setting is a stronger signal than either of the old flags: the
+  // person said where and when, and a bible was researched from it.
+  if (gp.eraResearch || bookRules?.eraConstraints?.enabled || setting?.enabled) {
     activeIds.add(12);
   }
 
@@ -358,15 +378,26 @@ function buildDimensionList(
     }
   }
 
+  // The pack is the last word on which of the catalogue runs: it layers over
+  // the genre's choice and over everything conditional above, so turning a
+  // dimension off for one book is a line of data rather than a code change.
+  const chosen = pack ? activeDimensions(activeIds, pack) : activeIds;
+
   const dims: Array<{ id: number; name: string; note: string }> = [];
 
-  for (const id of [...activeIds].sort((a, b) => a - b)) {
+  for (const id of [...chosen].sort((a, b) => a - b)) {
     const name = dimensionName(id, language);
     if (!name) continue;
 
-    const note = buildDimensionNote(id, language, gp, bookRules, fanficMode, fanficConfig);
+    const note = buildDimensionNote(id, language, gp, bookRules, fanficMode, fanficConfig, setting);
 
     dims.push({ id, name, note });
+  }
+
+  // A pack's own dimensions are a sentence each and carry no catalogue id, so
+  // they are numbered after the catalogue and named by the pack (19 §E4).
+  for (const [index, custom] of (pack?.custom ?? []).entries()) {
+    dims.push({ id: 1000 + index, name: custom.label, note: custom.instruction });
   }
 
   return dims;
@@ -443,7 +474,14 @@ export class ContinuityAuditor extends BaseAgent {
     const resolvedLanguage = bookLanguage ?? gp.language;
     const isEnglish = resolvedLanguage === "en";
     const fanficMode = hasFanficCanon ? (bookRules?.fanficMode as FanficMode | undefined) : undefined;
-    const dimensions = buildDimensionList(gp, bookRules, resolvedLanguage, hasParentCanon, fanficMode);
+    // The researched world, when there is one. Read from the book's own folder
+    // rather than passed in, because every caller of this already has the
+    // folder and none of them has the setting (22 §4).
+    const { setting } = await settingIn(bookDir);
+    // Same reasoning as the setting: the pack belongs to the book, and this is
+    // the half that has the book's folder (19 §1).
+    const pack = await auditPackIn(bookDir, "book");
+    const dimensions = buildDimensionList(gp, bookRules, resolvedLanguage, hasParentCanon, fanficMode, setting, pack);
     const dimList = dimensions
       .map((d) => `${d.id}. ${d.name}${d.note ? (isEnglish ? ` (${d.note})` : `（${d.note}）`) : ""}`)
       .join("\n");

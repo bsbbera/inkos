@@ -25,6 +25,7 @@
  */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { rulesFor } from "../pipeline/taste-engine.js";
 import { buildProseCraftSection, buildStoryCraftSection } from "./writing-methodology.js";
 
 export type RuleKind = "book" | "short" | "script" | "storyboard" | "publication";
@@ -61,10 +62,20 @@ export interface RuleStackOptions {
   /**
    * Where this work's own rule files live — a book's directory, a magazine
    * series' directory. Absent means the built-in layers only.
+   *
+   * Several, broadest first, when a work inherits rules from above itself: a
+   * magazine's brand book sits over every series, and a series file read after
+   * it wins where the two disagree.
    */
-  readonly rulesDir?: string;
+  readonly rulesDir?: string | ReadonlyArray<string>;
   /** Genre or subject law, already resolved by the caller. */
   readonly genreRules?: string;
+  /**
+   * The work these rules are for, so the person's accepted taste rules for
+   * prose (18 §4) can be added as the last layer. Only the book writer read
+   * them before; every other writer builds its rules here.
+   */
+  readonly taste?: { readonly projectRoot: string; readonly type: string; readonly id: string };
 }
 
 /** Missing rule files are the normal case, not an error: most work has none. */
@@ -97,10 +108,20 @@ export async function buildRuleStack(options: RuleStackOptions): Promise<string>
     genreRules?.trim() || null,
   ];
 
-  if (rulesDir) {
+  const dirs = typeof rulesDir === "string" ? [rulesDir] : rulesDir ?? [];
+  for (const dir of dirs) {
     for (const name of ruleFilesFor(kind)) {
-      const body = await readIfPresent(rulesDir, name);
+      const body = await readIfPresent(dir, name);
       if (body) layers.push(`## ${name}\n\n${body}`);
+    }
+  }
+
+  // Last, because later layers win and these are the person's own words.
+  if (options.taste) {
+    const { projectRoot, type, id } = options.taste;
+    const mine = await rulesFor(projectRoot, { type, id, surface: "content" }).catch(() => [] as string[]);
+    if (mine.length) {
+      layers.push(`## ${en ? "Your house rules" : "你的规则"}\n\n${mine.map((r) => `- ${r}`).join("\n")}`);
     }
   }
 

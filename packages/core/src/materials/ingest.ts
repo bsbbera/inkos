@@ -16,6 +16,12 @@ export interface IngestMaterialInput {
   readonly mimeType?: string;
   readonly title?: string;
   readonly purpose?: MaterialPurpose;
+  /**
+   * The page as already fetched. A crawl reads the article once to find its
+   * links and cuts it at a heading, and what it archives is that cut, not a
+   * second fetch of the whole page.
+   */
+  readonly html?: string;
 }
 
 export interface MaterialAsset {
@@ -50,7 +56,7 @@ export async function ingestMaterial(
   const source = await readMaterialSource(projectRoot, input, deps);
   const title = (input.title?.trim() || source.title || titleFromSource(input) || "material").slice(0, 120);
   const id = `${now.toISOString().replace(/[:.]/g, "-")}-${slug(title)}`;
-  const materialsDir = join(projectRoot, ".inkos", "materials");
+  const materialsDir = join(projectRoot, "research");
   await mkdir(materialsDir, { recursive: true });
 
   const markdown = renderMaterialMarkdown({
@@ -98,6 +104,14 @@ async function readMaterialSource(
 ): Promise<MaterialSource> {
   if (input.sourceKind === "url") {
     if (!input.url) throw new Error("ingest_material.url is required for URL sources.");
+    if (input.html !== undefined) {
+      const parsed = new URL(input.url);
+      return extractBufferMaterial(Buffer.from(input.html, "utf-8"), {
+        source: input.url,
+        filename: basename(parsed.pathname) || parsed.hostname,
+        mimeType: "text/html",
+      });
+    }
     return readUrlMaterial(input.url, deps.fetch ?? fetch);
   }
   if (!input.filePath) throw new Error("ingest_material.filePath is required for file sources.");

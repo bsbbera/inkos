@@ -16,6 +16,9 @@ import {
   type PostWriteViolation,
 } from "./post-write-validator.js";
 import { analyzeAITells } from "./ai-tells.js";
+import { settingCardIn } from "../pipeline/setting.js";
+import { voiceSamplesFor } from "../pipeline/exemplars.js";
+import { rulesFor } from "../pipeline/taste-engine.js";
 import type { ChapterIntent, ChapterMemo, ContextPackage, RuleStack } from "../models/input-governance.js";
 import type { LengthSpec } from "../models/length-governance.js";
 import type { RuntimeStateDelta } from "../models/runtime-state.js";
@@ -202,11 +205,35 @@ export class WriterAgent extends BaseAgent {
       : undefined;
 
     // ── Phase 1: Creative writing (temperature 0.7) ──
+    // What this chapter's world actually contains, picked by what this
+    // chapter's own plan says it needs (22 §4). Empty for a work with no
+    // setting pinned, which is most of them.
+    const settingCard = await settingCardIn(bookDir, [
+      input.chapterMemo ?? "", JSON.stringify(input.chapterIntentData ?? {}),
+    ].join("\n"));
+
+    /*
+     * Write the chapter in the voice, rather than restyling it into one after.
+     *
+     * The same passages the rewrite is shown (05 §2c), appended to the guide
+     * because that is already the "how this reads" block — a new chapter that
+     * lands in the voice is one fewer chapter to restyle, and restyling is
+     * where text gets lost.
+     */
+    const voiced = await voiceSamplesFor(this.ctx.projectRoot, bookDir, resolvedLanguage);
+    const styleGuideWithSamples = voiced ? `${styleGuide}\n\n${voiced}` : styleGuide;
+
+    // The person's accepted rules for prose in this book (18 §4). A missing
+    // rules file is the common case and costs one failed read.
+    const houseRules = await rulesFor(this.ctx.projectRoot, { type: "book", id: book.id, surface: "content" })
+      .catch(() => [] as string[]);
     const creativeSystemPrompt = await this.withPromptPackGuidance(buildWriterSystemPrompt(
-      book, genreProfile, bookRules, bookRulesBody, genreBody, styleGuide, styleFingerprint,
+      book, genreProfile, bookRules, bookRulesBody, genreBody, styleGuideWithSamples, styleFingerprint,
       chapterNumber, "creative", fanficContext, resolvedLanguage,
       "governed",
       resolvedLengthSpec,
+      settingCard,
+      houseRules,
     ), "longform.writer");
 
     const creativeUserPrompt = this.buildGovernedUserPrompt({

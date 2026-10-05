@@ -1,0 +1,35 @@
+{
+  "id": "script-format",
+  "version": 1,
+  "appliesTo": ["script"],
+  "extends": "story-30",
+  "dimensions": {
+    "custom": [
+      {
+        "id": "scene-heading",
+        "label": "Scene headings",
+        "instruction": "Every scene must open with a slugline naming interior or exterior, the place, and the time of day. Flag a scene that starts without one, or one whose place contradicts the scene before it.",
+        "severity": "blocking"
+      },
+      {
+        "id": "dialogue-attribution",
+        "label": "Dialogue attribution",
+        "instruction": "Every speech must sit under a character name in its own line. Flag dialogue with no speaker, a speaker introduced by a different name than the cast list uses, or an action line doing a speech's work.",
+        "severity": "blocking"
+      },
+      {
+        "id": "read-time",
+        "label": "Read time per page",
+        "instruction": "A screenplay page is about one minute on screen. Flag a page whose action blocks would take three times longer to play than to read, and any action paragraph over four lines.",
+        "severity": "warning"
+      },
+      {
+        "id": "voice-distinctness",
+        "label": "Character voice distinctness",
+        "instruction": "Cover the character names and read the dialogue. Flag any two characters whose lines could be swapped without either sounding wrong.",
+        "severity": "warning"
+      }
+    ]
+  },
+  "blocking": ["script/scene-heading", "script/dialogue-attribution"]
+}

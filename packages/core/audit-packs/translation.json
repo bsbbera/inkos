@@ -1,0 +1,29 @@
+{
+  "id": "translation-fidelity",
+  "version": 1,
+  "appliesTo": ["translation"],
+  "extends": "story-30",
+  "dimensions": {
+    "custom": [
+      {
+        "id": "glossary",
+        "label": "Glossary adherence",
+        "instruction": "Every term in the work's glossary must be rendered the way the glossary says, every time. Flag a term translated two different ways in one work, or against the glossary entry.",
+        "severity": "blocking"
+      },
+      {
+        "id": "register",
+        "label": "Register consistency",
+        "instruction": "Flag a passage whose formality drifts from the source: a formal address rendered casually, or plain speech rendered literary.",
+        "severity": "warning"
+      },
+      {
+        "id": "untranslated",
+        "label": "Untranslated fragment",
+        "instruction": "Flag any run of source-language text left in the translation that is not a deliberate proper noun or quoted term.",
+        "severity": "blocking"
+      }
+    ]
+  },
+  "blocking": ["translation/glossary", "translation/untranslated"]
+}

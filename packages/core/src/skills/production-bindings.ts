@@ -10,6 +10,16 @@ export const PRODUCTION_SKILL_IDS = {
   storyboard: ["quire-storyboard"],
   interactiveFilm: ["quire-interactive-film"],
   translation: ["quire-translation"],
+  /* A magazine page is written as one bundle — copy, furniture and briefs
+     together — so the page author gets the design skill beside the writing
+     one. It is the only capability where that pairing is the point. */
+  magazinePage: ["quire-magazine-page", "quire-editorial-design"],
+  /* Research reads and writes the setting bible; the illustration skill is
+     not here because research produces material, never a brief. */
+  settingResearch: ["quire-research-setting"],
+  /* The cleanup stage. The review skill comes with it because deslop's own
+     findings go into the same queue, in the same shape. */
+  destyle: ["quire-story-deslop", "quire-story-review"],
 } as const;
 
 export type ProductionSkillCapability = keyof typeof PRODUCTION_SKILL_IDS;

@@ -151,7 +151,18 @@ Output format (Markdown):
 ## Distinctive Habits
 (any personal writing habits worth imitating)
 
-Base the analysis on the text's actual features, not generalities. Support each section with 1-2 quoted lines from the original.`;
+## Signature Moves
+(3-5 named devices this writer returns to, one quoted example each — name them as a craft teacher would: "opens on an object, not weather")
+
+## Do / Don't
+(8-12 imperative one-line rules derived from the quotes above. Each must be something a writer can obey or break on a single sentence. "Do: end scenes on the object someone is holding." "Don't: name the emotion after showing it.")
+
+## Not This
+(the two or three generic-AI habits most opposed to this voice — the specific things a careless imitation would do)
+
+Base the analysis on the text's actual features, not generalities. Support each section with 1-2 quoted lines from the original.
+
+The last three sections are what a rewriter can actually act on; adjectives are not. Spend effort there.`;
 
 const ZH_STYLE_PROMPT = `你是一位文学风格分析专家。分析参考文本的写作风格，提取可供模仿的定性特征。
 
@@ -180,7 +191,18 @@ const ZH_STYLE_PROMPT = `你是一位文学风格分析专家。分析参考文�
 ## 独特习惯
 （任何值得模仿的个人写作习惯）
 
-分析必须基于原文实际特征，不要泛泛而谈。每个部分用1-2个原文例句佐证。`;
+## 标志性手法
+（这位作者反复使用的 3-5 个手法，各附一句原文；像写作课老师那样命名，例如「开场落在一件实物上，而不是天气」）
+
+## 该做 / 不该做
+（从上面的例句推出 8-12 条祈使句规则，每条都要能在一个句子上照办或违反。「该做：场景结束在某人手里拿着的东西上。」「不该做：写完动作后再点破情绪。」）
+
+## 不要写成这样
+（与这个声音最相悖的两三种 AI 通病——一次草率的模仿最可能犯的具体毛病）
+
+分析必须基于原文实际特征，不要泛泛而谈。每个部分用1-2个原文例句佐证。
+
+最后三节才是改写者能直接照办的内容，形容词不是。把力气花在那里。`;
 
 /** The guide when there is nothing to extract from, or nothing to extract with. */
 export function deterministicGuide(

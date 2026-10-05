@@ -102,14 +102,24 @@ export async function renderStoryboardShots(options: StoryboardArtOptions): Prom
     const outFile = safeChildPath(projectRoot, outRelative);
     await mkdir(dirname(outFile), { recursive: true });
 
+    // Line and tone, never a photograph: the storyboard's art policy (08 §1).
+    const { composeImagePrompt } = await import("./image-prompt.js");
+    const composed = composeImagePrompt({ type: "storyboard", prompt: asset.prompt });
     const body = await fetch(`${shim}/comfy/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        prompt: asset.prompt,
+        prompt: composed.prompt,
+        negative: composed.negative,
         width: options.width ?? 1536,
         height: options.height ?? 1024,
         outFile,
+        recipe: {
+          type: "storyboard",
+          slot: asset.shotId,
+          manifest: options.manifestPath,
+          components: composed.components,
+        },
       }),
       signal,
     })

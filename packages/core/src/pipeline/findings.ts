@@ -29,8 +29,11 @@ import { createHash } from "node:crypto";
 /** What a finding costs. `blocking` is the only one that stops an approval. */
 export type FindingSeverity = "blocking" | "warning" | "note";
 
-/** Whether a person has dealt with it yet. */
-export type FindingState = "open" | "accepted" | "ignored";
+/**
+ * Whether a person has dealt with it yet. `fixed` is the writer's rewrite of
+ * the span, kept apart from `accepted` (somebody's existing wording applied).
+ */
+export type FindingState = "open" | "accepted" | "ignored" | "fixed";
 
 export interface FindingLocation {
   /** Index of the paragraph in the file, counting blank-line-separated blocks from 0. */
@@ -63,6 +66,10 @@ export interface Finding extends FindingLocation {
   readonly settledAt?: string;
   /** Set when the reviewer wrote the replacement themselves rather than taking the proposal. */
   readonly settledText?: string;
+  /** Who wrote the words that settled it, when a rewrite did. */
+  readonly fixedBy?: "reviser" | "user" | "auditor-fix";
+  /** The words a rewrite replaced: the undo source, and the taste engine's evidence. */
+  readonly replaced?: string;
 }
 
 /** A finding as a checker produces it, before it is located and stored. */
@@ -348,6 +355,53 @@ export function applyParagraph(
     ok: true,
     markdown: markdown.slice(0, span.start) + replacement.trim() + markdown.slice(span.end),
   };
+}
+
+/** A finding re-pinned to where its quote sits now, or unpinned if it is gone. */
+export function relocate(finding: Finding, markdown: string): Finding {
+  if (!finding.quote) return finding;
+  return { ...finding, ...(locateQuote(markdown, finding.quote) ?? NO_LOCATION) };
+}
+
+/**
+ * Why a rewrite of `original` changed the story rather than the sentence, or
+ * null when it did not.
+ *
+ * Cheap and deterministic on purpose: it runs before anything is written. A
+ * name or a line of dialogue the finding was not about (`about`) must survive,
+ * and the length may not move by more than a third — with slack for short
+ * spans, where one word is already a third.
+ */
+export function rewriteDrops(original: string, replacement: string, about = ""): string | null {
+  const a = original.trim();
+  const b = replacement.trim();
+  const delta = Math.abs(b.length - a.length);
+  if (delta > Math.max(40, a.length * 0.3)) {
+    return `the rewrite is ${delta} characters ${b.length > a.length ? "longer" : "shorter"}`;
+  }
+  const kept = normalize(b);
+  const isAbout = (s: string) => about !== "" && (about.includes(s) || s.includes(about));
+  const lost = [...namesIn(a), ...dialogueIn(a)]
+    .filter((s) => !isAbout(s) && !kept.includes(normalize(s)));
+  return lost.length ? `the rewrite drops ${lost.map((s) => `"${s}"`).join(", ")}` : null;
+}
+
+/** Capitalised words that are not starting a sentence: names, near enough. */
+function namesIn(text: string): string[] {
+  const words = text.split(/\s+/);
+  const out = new Set<string>();
+  words.forEach((word, i) => {
+    const bare = word.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    if (!/^\p{Lu}\p{Ll}/u.test(bare)) return;
+    const prev = words[i - 1];
+    if (!prev || /[.!?:"“”'‘’]$/.test(prev) || /^["“‘(]/.test(word)) return;
+    out.add(bare);
+  });
+  return [...out];
+}
+
+function dialogueIn(text: string): string[] {
+  return [...text.matchAll(/[“"「]([^”"」]{2,})[”"」]/g)].map((m) => m[1]!.trim());
 }
 
 /** Counts the queue header shows, in the order it shows them. */

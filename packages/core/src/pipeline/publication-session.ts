@@ -23,7 +23,8 @@
 
 import { runAgentSession } from "../agent/agent-session.js";
 import { agentForStage } from "./publication-agents.js";
-import { workerModel } from "../agent/worker-agent.js";
+import { designSkillBrief } from "../skills/design-skills.js";
+import { runWorkerAgent, workerModel } from "../agent/worker-agent.js";
 import { parseJson } from "../publications/parse-json.js";
 import type { PipelineRunner } from "./runner.js";
 import type { AskFn } from "./publication-runner.js";
@@ -55,7 +56,7 @@ export interface PublicationSessionOptions {
  * which is what makes one-session-per-stage expressible at all.
  *
  * Separated by `--` rather than `:`, because a session id becomes a filename:
- * transcripts are written to `.inkos/sessions/<id>.jsonl`. On Windows a colon
+ * transcripts are written to `.quire/sessions/<id>.jsonl`. On Windows a colon
  * in a path is the alternate-data-stream separator, so every publication stage
  * failed to persist with ENOENT — which surfaced as the audit being unable to
  * read a single page. Anything outside the safe set is folded down for the
@@ -72,7 +73,8 @@ export const publicationSessionId = (issueId: string, tag: string) =>
  * know. The last lines earn their place: a model that has just used a tool
  * tends to narrate the call and lose the JSON envelope the runner must parse.
  */
-const stageSystemPrompt = (tag: string) => [
+const stageSystemPrompt = (tag: string, skill = "") => [
+  ...(skill ? [skill, ""] : []),
   `This is the "${tag}" stage.`,
   "",
   "Your final message must be the JSON this stage asks for, and nothing else.",
@@ -105,23 +107,53 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
     const agentCtx = pipeline.createAgentContext(agentForStage(tag));
     const model = workerModel(agentCtx.client, agentCtx.model);
 
-    const result = await runAgentSession(
-      {
-        sessionId: publicationSessionId(id, tag),
-        // Publications live under the workspace's own output directory, not
-        // under books/. Nothing in the session path requires a book except
-        // interactive-film authoring, which is not this.
-        bookId: null,
-        sessionKind: "publication",
-        language: language ?? "en",
-        pipeline,
-        projectRoot,
-        model,
-      },
-      prompt,
-      [{ role: "system", content: stageSystemPrompt(tag) }],
-    );
+    /*
+     * A judging stage gets no tools and no workbench prompt.
+     *
+     * Fact-check reads text and search results it has already been handed.
+     * On the session path it arrived wrapped in ~54k characters of workbench
+     * prompt and tool table, and a CLI agent took that as licence to go
+     * searching the workspace itself: up to 22 steps for a prompt that only
+     * asked for a list, until the CLI's own five-minute deadline cut it off
+     * with an empty reply. Two of those in a row failed a 50-page run.
+     */
+    const judging = tag.startsWith("factcheck");
+    // The magazine's design and art stages read the same two skills every
+    // other type's do — they are stage-bound, not magazine-bound.
+    const skill = await designSkillBrief(tag);
+    const talk = async (text: string, suffix: string): Promise<{ responseText: string; errorMessage?: string }> => {
+      if (judging) {
+        const response = await runWorkerAgent(agentCtx.client, agentCtx.model, [
+          {
+            role: "system",
+            content: `${skill ? `${skill}
 
+` : ""}This is the "${tag}" stage. `
+              + "Your reply is the JSON asked for and nothing else.",
+          },
+          { role: "user", content: text },
+        ], { signal });
+        return { responseText: response.content };
+      }
+      return runAgentSession(
+        {
+          sessionId: publicationSessionId(id, `${tag}${suffix}`),
+          // Publications live under the workspace's own output directory, not
+          // under books/. Nothing in the session path requires a book except
+          // interactive-film authoring, which is not this.
+          bookId: null,
+          sessionKind: "publication",
+          language: language ?? "en",
+          pipeline,
+          projectRoot,
+          model,
+        },
+        text,
+        [{ role: "system", content: stageSystemPrompt(tag, skill) }],
+      );
+    };
+
+    const result = await talk(prompt, "");
     if (result.errorMessage) {
       throw new Error(`${tag}: ${result.errorMessage}`);
     }
@@ -129,11 +161,30 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
     try {
       return parseJson(result.responseText);
     } catch (error) {
-      // The raw text matters here: a stage that fails to produce JSON has
-      // usually said why, and swallowing it leaves only "invalid JSON".
+      /*
+       * One unreadable envelope should not cost the run.
+       *
+       * A fifty-page issue died at its first research stage because the reply
+       * carried a control character inside a string. The findings were fine;
+       * the punctuation around them was not. So the stage is asked once more,
+       * told what broke, before the run is given up on.
+       */
       const said = result.responseText.trim().slice(0, 400);
+      const why = error instanceof Error ? error.message : String(error);
+      signal?.throwIfAborted();
+      const retry = await talk(
+        `${prompt}\n\nYour last answer could not be read as JSON (${why}). `
+        + "Send the same answer again as one valid JSON document and nothing else: "
+        + "no prose around it, no code fence, and every newline inside a string written as \\n.",
+        "-repair",
+      );
+      if (!retry.errorMessage) {
+        try {
+          return parseJson(retry.responseText);
+        } catch { /* the first failure is the one worth reporting */ }
+      }
       throw new Error(
-        `${tag}: ${error instanceof Error ? error.message : String(error)}`
+        `${tag}: ${why} (asked again once, still unreadable)`
         + (said ? `\n\nThe model said:\n${said}` : ""),
       );
     }

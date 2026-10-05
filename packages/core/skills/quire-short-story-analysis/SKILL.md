@@ -1,6 +1,7 @@
 ---
 name: quire-short-story-analysis
-description: 商业短篇拆稿、情绪链、证据链和反转机制分析。Use to deconstruct a short story into transferable craft.
+description: "Deconstructs a complete short story into story core, motivation, pressure chain, evidence chain, emotional movement, reversal setup, payoff and opening, quoting sparingly and extracting method rather than replacement prose. Use for analysis, never as a silent route into a new run."
+version: 1.0.0
 ---
 # Short-story analysis
 

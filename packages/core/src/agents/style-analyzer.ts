@@ -4,6 +4,7 @@
  */
 
 import type { StyleProfile } from "../models/style-profile.js";
+import { fingerprint } from "./style-fingerprint.js";
 
 // Common rhetorical patterns in Chinese fiction
 const RHETORICAL_PATTERNS: ReadonlyArray<{ readonly name: string; readonly regex: RegExp }> = [
@@ -112,5 +113,8 @@ export function analyzeStyle(
     rhetoricalFeatures,
     sourceName,
     analyzedAt: new Date().toISOString(),
+    // The measurable half (05 §2a). Everything above describes a voice for a
+    // person to read; this is what a distance can be computed over.
+    v2: fingerprint(text, language),
   };
 }

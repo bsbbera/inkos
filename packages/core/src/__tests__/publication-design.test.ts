@@ -48,3 +48,24 @@ describe("contrast", () => {
     expect(contrast("#777777", "#999999")).toBeLessThan(7);
   });
 });
+
+describe("the design stage is told the law it will be judged by", () => {
+  // The law refuses a register that is not in the catalogue and a design with
+  // no folio. The prompt asked for "register" as free text, listed only the
+  // figure techniques, and never mentioned the folio — so every design the
+  // stage produced failed its own check and could not be signed off. The issue
+  // photography-film sat at "design: done, cannot approve" because of it.
+  it("names the registers, the techniques and the furniture", async () => {
+    const { DEFAULT_DESIGN_PROMPT } = await import("../pipeline/publication-design.js");
+    const styles = await import("../publications/styles.js");
+    expect(DEFAULT_DESIGN_PROMPT).toContain('"fixed"');
+    expect(DEFAULT_DESIGN_PROMPT).toMatch(/folio/i);
+    // Every tier-1 register the checker accepts is offered by name.
+    const { sectionBlockFor } = await import("../pipeline/publication-runner.js");
+    const block = sectionBlockFor({
+      sections: [{ n: 1, label: "One", question: "?", from: 1, to: 2 }],
+    } as never);
+    for (const register of styles.registers()) expect(block, register.name).toContain(register.name);
+    for (const technique of styles.techniques()) expect(block, technique.name).toContain(technique.name);
+  });
+});

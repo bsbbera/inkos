@@ -14,9 +14,27 @@
  * the draft away.
  */
 
+import { distance, fingerprint, gaps } from "../agents/style-fingerprint.js";
+import { exemplarBlock, exemplarsFor, type Exemplar } from "./exemplars.js";
+import type { StyleProfileV2 } from "../models/style-profile.js";
+
 /** How far a rewrite may drift in length before it is treated as a loss. */
 const SHRANK_TOO_FAR = 0.55;
 const GREW_TOO_FAR = 1.9;
+
+/**
+ * Close enough to the voice that a second pass would be spending tokens on
+ * noise. Chosen against the distances two chapters by one author score.
+ */
+const RETRY_ABOVE = 0.35;
+
+export interface RestyleResult {
+  readonly text: string;
+  /** How far from the voice it was before, and after. Absent with no target. */
+  readonly before?: number;
+  readonly after?: number;
+  readonly chunks: number;
+}
 
 export class RestyleRefused extends Error {
   constructor(message: string) {
@@ -106,21 +124,31 @@ export async function restyleProse(input: {
   readonly styleGuide: string;
   readonly language: "zh" | "en";
   readonly chat: (system: string, user: string) => Promise<string>;
-}): Promise<string> {
+  /** Real passages by the author, shown rather than described (05 §2c). */
+  readonly exemplars?: ReadonlyArray<Exemplar>;
+  /** The voice's own measurements, to check the rewrite against (05 §3). */
+  readonly target?: StyleProfileV2;
+  /** Period words the rewrite must not replace with modern ones (22 §4). */
+  readonly prefer?: ReadonlyArray<string>;
+  /** Told what actually happened, per chunk. */
+  readonly onProgress?: (message: string) => void;
+}): Promise<RestyleResult> {
   const original = input.text.trim();
   if (!original) throw new RestyleRefused("There is nothing written here to restyle.");
 
   const voice = voiceOnly(input.styleGuide);
   if (!voice) throw new RestyleRefused("This work has no imported voice to restyle it into.");
 
-  const reply = await input.chat(
-    input.language === "en" ? EN_SYSTEM : ZH_SYSTEM,
-    input.language === "en"
-      ? `## The voice to write in\n\n${voice}\n\n## The text to rewrite\n\n${original}`
-      : `## 目标文风\n\n${voice}\n\n## 待改写的正文\n\n${original}`,
-  );
+  const before = input.target ? distance(input.target, fingerprint(original, input.language)) : null;
+  const chunks = chunkProse(original, input.language);
+  const pieces: string[] = [];
 
-  const rewritten = formatProse(unfence(reply));
+  for (const [i, chunk] of chunks.entries()) {
+    if (chunks.length > 1) input.onProgress?.(`Restyling part ${i + 1} of ${chunks.length}…`);
+    pieces.push(await restyleChunk({ ...input, voice, chunk, index: i, of: chunks.length }));
+  }
+
+  const rewritten = formatProse(pieces.join("\n\n"));
   if (!rewritten) throw new RestyleRefused("The model returned nothing.");
 
   /*
@@ -141,7 +169,134 @@ export async function restyleProse(input: {
     );
   }
 
-  return rewritten;
+  /*
+   * Every line of dialogue that went in has to come back.
+   *
+   * The length guard catches a summary of the whole chapter; it does not catch
+   * a rewrite that keeps the prose and quietly drops three exchanges, which is
+   * the same destruction at a scale nobody notices until a later chapter
+   * refers to something that is no longer on the page.
+   */
+  const kept = quotedLinesKept(original, rewritten, input.language);
+  if (kept !== null && kept < 0.9) {
+    throw new RestyleRefused(
+      `The rewrite dropped ${Math.round((1 - kept) * 100)}% of the spoken lines. Left as it was.`,
+    );
+  }
+
+  const after = input.target ? distance(input.target, fingerprint(rewritten, input.language)) : null;
+  return {
+    text: rewritten,
+    ...(before === null ? {} : { before }),
+    ...(after === null ? {} : { after }),
+    chunks: chunks.length,
+  };
+}
+
+/** One chunk, with one targeted retry when the voice did not land (05 §3). */
+async function restyleChunk(input: {
+  readonly voice: string;
+  readonly chunk: string;
+  readonly index: number;
+  readonly of: number;
+  readonly language: "zh" | "en";
+  readonly chat: (system: string, user: string) => Promise<string>;
+  readonly exemplars?: ReadonlyArray<Exemplar>;
+  readonly target?: StyleProfileV2;
+  readonly prefer?: ReadonlyArray<string>;
+  readonly onProgress?: (message: string) => void;
+}): Promise<string> {
+  const isEn = input.language === "en";
+  const shown = input.exemplars?.length
+    ? exemplarBlock(exemplarsFor(input.exemplars, input.chunk, input.language), input.language)
+    : "";
+  const keepWords = input.prefer?.length
+    ? (isEn
+        ? `\n\n## Keep these words\n\nThis story's world uses: ${input.prefer.join(", ")}. Do not replace them with modern equivalents.`
+        : `\n\n## 保留这些词\n\n本作世界使用：${input.prefer.join("、")}。不要替换成现代通用词。`)
+    : "";
+  const place = input.of > 1
+    ? (isEn
+        ? `\n\n(This is part ${input.index + 1} of ${input.of}. Rewrite only what is given; do not summarise, open or close the piece.)`
+        : `\n\n（这是第 ${input.index + 1}/${input.of} 部分。只改写给出的内容，不要总结、不要另起开头或结尾。）`)
+    : "";
+
+  const ask = async (extra: string): Promise<string> => {
+    const reply = await input.chat(
+      isEn ? EN_SYSTEM : ZH_SYSTEM,
+      isEn
+        ? `## The voice to write in\n\n${input.voice}${shown ? `\n\n${shown}` : ""}${keepWords}${extra}${place}\n\n## The text to rewrite\n\n${input.chunk}`
+        : `## 目标文风\n\n${input.voice}${shown ? `\n\n${shown}` : ""}${keepWords}${extra}${place}\n\n## 待改写的正文\n\n${input.chunk}`,
+    );
+    return formatProse(unfence(reply));
+  };
+
+  const first = await ask("");
+  if (!input.target || !first) return first;
+
+  const got = fingerprint(first, input.language);
+  const missed = gaps(input.target, got);
+  if (distance(input.target, got) <= RETRY_ABOVE || !missed.length) return first;
+
+  // One retry, and only with the measured gaps in hand. "More like the voice"
+  // is what produced the first attempt; naming the three numbers that are
+  // wrong is a different instruction.
+  input.onProgress?.(`Part ${input.index + 1} missed the voice — retrying on ${missed.length} measured gaps.`);
+  const second = await ask(isEn
+    ? `\n\n## What the last attempt got wrong\n\n${missed.map((g) => `- ${g}`).join("\n")}`
+    : `\n\n## 上一稿的偏差\n\n${missed.map((g) => `- ${g}`).join("\n")}`);
+  if (!second) return first;
+  // Keep whichever actually landed closer: a retry is an attempt, not an
+  // improvement by definition.
+  return distance(input.target, fingerprint(second, input.language))
+    < distance(input.target, got) ? second : first;
+}
+
+/**
+ * Cut prose into restyle-sized pieces on heading or paragraph boundaries.
+ *
+ * A whole chapter in one call is where voice goes to die: the model holds the
+ * instruction for two pages and then reverts to its own house style, and the
+ * length guard cannot see that because the word count is fine.
+ */
+export function chunkProse(text: string, language: "zh" | "en", size = 1200): ReadonlyArray<string> {
+  const isZh = language === "zh";
+  const budget = isZh ? size * 1.6 : size;
+  const blocks = String(text ?? "").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  const measure = (s: string) => (isZh ? s.replace(/\s+/g, "").length : (s.match(/[A-Za-z0-9']+/g) ?? []).length);
+
+  const out: string[] = [];
+  let buffer: string[] = [];
+  let size_ = 0;
+  for (const block of blocks) {
+    const n = measure(block);
+    // A heading starts a new piece: it is the author's own boundary.
+    const isHeading = /^#{1,6}\s/.test(block);
+    if (buffer.length && (isHeading || size_ + n > budget)) {
+      out.push(buffer.join("\n\n"));
+      buffer = [];
+      size_ = 0;
+    }
+    buffer.push(block);
+    size_ += n;
+  }
+  if (buffer.length) out.push(buffer.join("\n\n"));
+  return out.length ? out : [String(text ?? "")];
+}
+
+/**
+ * What share of the spoken lines survived.
+ *
+ * Matched loosely — a restyle is allowed to reword a line — so what is counted
+ * is that a comparable number of exchanges came back, not that any particular
+ * sentence is identical. `null` when there was no dialogue to check.
+ */
+export function quotedLinesKept(before: string, after: string, language: "zh" | "en"): number | null {
+  const pattern = language === "en" ? /[“"]([^”"]{2,400})[”"]/g : /[「“]([^」”]{2,400})[」”]/g;
+  const count = (text: string) => (text.match(pattern) ?? []).length;
+  const had = count(before);
+  if (had < 2) return null;
+  return Math.min(1, count(after) / had);
 }
 
 /**

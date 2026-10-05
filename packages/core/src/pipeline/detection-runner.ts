@@ -7,9 +7,42 @@ import type { DetectionConfig } from "../models/project.js";
 import type { DetectionHistoryEntry } from "../models/detection.js";
 import type { AgentContext } from "../agents/base.js";
 import { detectAIContent, type DetectionResult } from "../agents/detector.js";
+import { slopScore } from "../agents/slop-score.js";
 import { ReviserAgent } from "../agents/reviser.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
+import { auditPackIn } from "./audit-pack.js";
+import { languageOf } from "./story-audit.js";
+
+/**
+ * Score the text, by the external service when one is configured and by the
+ * local count of machine-made habits when it is not (19 §5.5).
+ *
+ * Without this, no key meant no score and the whole destyle stage did nothing
+ * for most people. The local score is on the same scale, so `threshold`,
+ * `maxRetries` and the rewrite loop below are unchanged by which one answered.
+ */
+async function scoreText(
+  config: DetectionConfig,
+  content: string,
+  bookDir?: string,
+): Promise<DetectionResult> {
+  try {
+    return await detectAIContent(config, content);
+  } catch (error) {
+    // A missing key is the expected case, not a failure. A service that is
+    // configured and genuinely broken falls back too rather than stopping a
+    // run: a local score is worth more here than an exception.
+    const pack = bookDir ? await auditPackIn(bookDir, "book").catch(() => undefined) : undefined;
+    const local = slopScore(content, languageOf(content), pack);
+    return {
+      score: local.score,
+      provider: local.provider,
+      detectedAt: new Date().toISOString(),
+      raw: { reasons: local.reasons, why: error instanceof Error ? error.message : String(error) },
+    };
+  }
+}
 
 export interface DetectChapterResult {
   readonly chapterNumber: number;
@@ -32,7 +65,7 @@ export async function detectChapter(
   content: string,
   chapterNumber: number,
 ): Promise<DetectChapterResult> {
-  const detection = await detectAIContent(config, content);
+  const detection = await scoreText(config, content);
   return {
     chapterNumber,
     detection,
@@ -55,7 +88,7 @@ export async function detectAndRewrite(
   const maxRetries = config.maxRetries;
 
   let currentContent = content;
-  const firstDetection = await detectAIContent(config, currentContent);
+  const firstDetection = await scoreText(config, currentContent, bookDir);
   const originalScore = firstDetection.score;
 
   if (firstDetection.score <= config.threshold) {
@@ -103,7 +136,7 @@ export async function detectAndRewrite(
     currentContent = reviseOutput.revisedContent;
 
     // Re-detect
-    const reDetection = await detectAIContent(config, currentContent);
+    const reDetection = await scoreText(config, currentContent, bookDir);
     finalScore = reDetection.score;
 
     await recordHistory(bookDir, {

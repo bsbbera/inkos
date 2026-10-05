@@ -869,7 +869,7 @@ describe("ArchitectAgent", () => {
     const { join } = await import("node:path");
 
     const agent = buildPhase5Agent();
-    const tmpDir = await mkdtemp(join(tmpdir(), "inkos-arch-test-"));
+    const tmpDir = await mkdtemp(join(tmpdir(), "quire-arch-test-"));
     try {
       await agent.writeFoundationFiles(tmpDir, {
         storyBible: "legacy shim body",
@@ -887,8 +887,8 @@ describe("ArchitectAgent", () => {
 
       await expect(access(join(tmpDir, "story", "outline", "story_frame.md"))).resolves.not.toThrow();
       await expect(access(join(tmpDir, "story", "outline", "volume_map.md"))).resolves.not.toThrow();
-      await expect(access(join(tmpDir, "story", "roles", "主要角色", "林辞.md"))).resolves.not.toThrow();
-      await expect(access(join(tmpDir, "story", "roles", "次要角色", "配角A.md"))).resolves.not.toThrow();
+      await expect(access(join(tmpDir, "story", "roles", "major", "林辞.md"))).resolves.not.toThrow();
+      await expect(access(join(tmpDir, "story", "roles", "minor", "配角A.md"))).resolves.not.toThrow();
       // Shim 文件也要在（向后兼容读取点用）
       await expect(access(join(tmpDir, "story", "story_bible.md"))).resolves.not.toThrow();
       await expect(access(join(tmpDir, "story", "character_matrix.md"))).resolves.not.toThrow();
@@ -904,7 +904,7 @@ describe("ArchitectAgent", () => {
     const { join } = await import("node:path");
 
     const agent = buildPhase5Agent();
-    const tmpDir = await mkdtemp(join(tmpdir(), "inkos-arch-legacy-test-"));
+    const tmpDir = await mkdtemp(join(tmpdir(), "quire-arch-legacy-test-"));
     try {
       await agent.writeFoundationFiles(tmpDir, {
         storyBible: "# Legacy Story Bible\n",

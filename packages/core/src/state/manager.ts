@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import type { BookConfig } from "../models/book.js";
 import type { ChapterMeta } from "../models/chapter.js";
 import { bootstrapStructuredStateFromMarkdown, resolveDurableStoryProgress } from "./state-bootstrap.js";
+import { roleDirFor } from "../utils/outline-paths.js";
 
 const BOOK_LOCK_HEARTBEAT_MS = 30_000;
 const BOOK_LOCK_LEASE_MS = 3 * 60_000;
@@ -71,8 +72,10 @@ export class StateManager {
     const storyDir = join(bookDir, "story");
     const runtimeDir = join(storyDir, "runtime");
     const outlineDir = join(storyDir, "outline");
-    const rolesMajorDir = join(storyDir, "roles", "主要角色");
-    const rolesMinorDir = join(storyDir, "roles", "次要角色");
+    // English for a new book; whatever an older book already uses, so nothing
+    // on disk moves and no book grows a second empty roles folder.
+    const rolesMajorDir = await roleDirFor(bookDir, "major");
+    const rolesMinorDir = await roleDirFor(bookDir, "minor");
 
     await mkdir(storyDir, { recursive: true });
     await mkdir(runtimeDir, { recursive: true });
@@ -206,7 +209,7 @@ export class StateManager {
           await this.unlinkWithRetry(lockPath);
         } catch (error) {
           if ((error as NodeJS.ErrnoException | undefined)?.code !== "ENOENT") {
-            console.warn(`[inkos] Failed to release book lock ${lockPath}: ${String(error)}`);
+            console.warn(`[quire] Failed to release book lock ${lockPath}: ${String(error)}`);
           }
         }
       };
@@ -322,7 +325,7 @@ export class StateManager {
       if (owner.heartbeatTask) return;
       const task = refresh()
         .catch((error) => {
-          console.warn(`[inkos] Failed to refresh book lock ${lockPath}: ${String(error)}`);
+          console.warn(`[quire] Failed to refresh book lock ${lockPath}: ${String(error)}`);
         })
         .finally(() => {
           if (owner.heartbeatTask === task) owner.heartbeatTask = undefined;
@@ -380,13 +383,13 @@ export class StateManager {
   }
 
   async loadProjectConfig(): Promise<Record<string, unknown>> {
-    const configPath = join(this.projectRoot, "inkos.json");
+    const configPath = join(this.projectRoot, "quire.json");
     const raw = await readFile(configPath, "utf-8");
     return JSON.parse(raw);
   }
 
   async saveProjectConfig(config: Record<string, unknown>): Promise<void> {
-    const configPath = join(this.projectRoot, "inkos.json");
+    const configPath = join(this.projectRoot, "quire.json");
     await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
   }
 

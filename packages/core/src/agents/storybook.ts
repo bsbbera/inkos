@@ -111,6 +111,8 @@ export class StorybookAgent extends BaseAgent {
     readonly plan: SpreadPlan;
     readonly total: number;
     readonly before?: string;
+    /** The person's accepted taste rules for prose (18 §4). */
+    readonly rules?: ReadonlyArray<string>;
   }): Promise<SpreadText> {
     const reply = await this.chat([
       {
@@ -126,6 +128,9 @@ export class StorybookAgent extends BaseAgent {
           `What happens: ${input.plan.beat}`,
           `What the picture shows: ${input.plan.art}`,
           ...(input.before ? ["", `The spread before said: ${input.before}`] : []),
+          ...(input.rules?.length
+            ? ["", "The author's own rules - follow every one:", ...input.rules.map((r) => `- ${r}`)]
+            : []),
           "",
           "Write the words on this spread. Read aloud they take about fifteen seconds:",
           "roughly 20 to 50 words. Do not describe the picture — it is beside the words.",

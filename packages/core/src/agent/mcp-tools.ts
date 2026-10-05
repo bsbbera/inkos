@@ -1,101 +1,125 @@
 /**
- * External MCP servers, exposed to the agent as ordinary tools.
+ * The user's MCP servers, reachable from a session without carrying them all.
  *
- * A CLI model reaches these itself — it is an agent runtime with its own tool
- * loop and its own MCP client. An API or offline model has neither, so
- * without this an Ollama or Anthropic model in the same workbench would have
- * strictly fewer tools than a CLI model, for no reason the user could see.
- *
- * Discovery, process supervision and the JSON-RPC transport all live in
- * Quire's shim already, so this only calls that over HTTP rather than
- * starting a second copy of it.
+ * Every enabled server stays on, but its tools are not handed to the model up
+ * front. They used to be: two PowerPoint servers alone are ~250k tokens of
+ * schema, past most models' context window, so every request failed before it
+ * was sent. The model gets two small tools instead — find what it needs, then
+ * call it — the way Claude Code defers MCP tools. Calls still go through the
+ * shim and are executed by this host, never inside a CLI's own loop.
  */
-import type { TSchema } from "@sinclair/typebox";
+import { Type, type Static } from "@mariozechner/pi-ai";
 import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
 
 const shimBase = () => `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`;
 
-interface McpServerInfo {
-  readonly enabled?: boolean;
-}
-
-interface McpToolInfo {
+export interface McpToolInfo {
+  readonly server: string;
   readonly name: string;
   readonly description?: string;
   readonly inputSchema?: unknown;
 }
 
-const EMPTY_SCHEMA = { type: "object", properties: {} } as unknown as TSchema;
-
 function textResult(text: string): AgentToolResult<unknown> {
   return { content: [{ type: "text", text }], details: undefined };
 }
 
-/**
- * Tool names are namespaced by server. Two MCP servers offering a `search`
- * tool is normal, and an un-namespaced collision would silently route every
- * call to whichever was registered last.
- */
-const toolName = (server: string, tool: string) =>
-  `mcp_${server}_${tool}`.replace(/[^A-Za-z0-9_]/g, "_");
-
-export async function createExternalMcpTools(
-  { timeoutMs = 5000 }: { readonly timeoutMs?: number } = {},
-): Promise<AgentTool[]> {
-  let servers: Record<string, McpServerInfo>;
+async function enabledServers(timeoutMs: number): Promise<string[]> {
   try {
     const res = await fetch(`${shimBase()}/mcp/servers`, { signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) return [];
-    servers = ((await res.json()) as { servers?: Record<string, McpServerInfo> }).servers ?? {};
+    const servers = ((await res.json()) as { servers?: Record<string, { enabled?: boolean }> }).servers ?? {};
+    return Object.entries(servers).filter(([, info]) => info?.enabled !== false).map(([name]) => name);
   } catch {
-    // No shim, or it is still starting. Tools are an enhancement here, never a
-    // precondition: the session must run with whatever else it has.
+    // No shim, or it is still starting. Tools are an enhancement, never a
+    // precondition: the session runs with whatever else it has.
     return [];
   }
+}
 
-  const names = Object.entries(servers)
-    .filter(([, info]) => info?.enabled !== false)
-    .map(([name]) => name);
-
-  // Servers are contacted in parallel and independently: one that hangs or is
-  // misconfigured must not keep the others out of the session.
-  const perServer = await Promise.all(names.map(async (server) => {
+// Servers are asked in parallel and independently: one that hangs must not
+// keep the others' tools out of a search.
+async function toolsOf(servers: ReadonlyArray<string>, timeoutMs: number): Promise<McpToolInfo[]> {
+  const per = await Promise.all(servers.map(async (server) => {
     try {
       const res = await fetch(
         `${shimBase()}/mcp/tools?server=${encodeURIComponent(server)}`,
         { signal: AbortSignal.timeout(timeoutMs * 4) },
       );
       if (!res.ok) return [];
-      const tools = ((await res.json()) as { tools?: McpToolInfo[] }).tools ?? [];
-      return tools.map((tool) => buildTool(server, tool));
+      const tools = ((await res.json()) as { tools?: Array<Omit<McpToolInfo, "server">> }).tools ?? [];
+      return tools.map((tool) => ({ ...tool, server }));
     } catch {
       return [];
     }
   }));
-
-  return perServer.flat();
+  return per.flat();
 }
 
-function buildTool(server: string, tool: McpToolInfo): AgentTool {
-  return {
-    name: toolName(server, tool.name),
-    label: `${server}: ${tool.name}`,
-    description: tool.description ?? `${tool.name} (via the ${server} MCP server)`,
-    // The MCP schema is already JSON Schema, which is what reaches the model.
-    // It is not TypeBox-constructed, so it carries none of TypeBox's symbols
-    // and has to be cast rather than converted.
-    parameters: (tool.inputSchema as TSchema | undefined) ?? EMPTY_SCHEMA,
-    async execute(_toolCallId: string, params: unknown): Promise<AgentToolResult<unknown>> {
+const STOP = new Set(["the", "and", "for", "with", "from", "that", "this", "into", "use", "tool"]);
+const words = (s: string) => s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1 && !STOP.has(w));
+
+/** Tools whose name or description share words with the request, best first. */
+export function rankMcpTools(tools: ReadonlyArray<McpToolInfo>, query: string, limit = 8): McpToolInfo[] {
+  const asked = new Set(words(query));
+  if (!asked.size) return [];
+  return tools
+    .map((tool) => {
+      const name = new Set(words(`${tool.server} ${tool.name}`));
+      const said = new Set(words(tool.description ?? ""));
+      let score = 0;
+      for (const w of asked) score += (name.has(w) ? 3 : 0) + (said.has(w) ? 1 : 0);
+      return { tool, score };
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((r) => r.tool);
+}
+
+const FindParams = Type.Object({
+  need: Type.String({ description: "A few words for what you want to do, e.g. \"add a slide\" or \"render the scene\"." }),
+});
+const CallParams = Type.Object({
+  server: Type.String({ description: "The server, as mcp_find returned it." }),
+  tool: Type.String({ description: "The tool name, as mcp_find returned it." }),
+  arguments: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "The tool's inputs." })),
+});
+
+export async function createExternalMcpTools(
+  { timeoutMs = 5000 }: { readonly timeoutMs?: number } = {},
+): Promise<AgentTool[]> {
+  const servers = await enabledServers(timeoutMs);
+  if (!servers.length) return [];
+
+  const find: AgentTool<typeof FindParams> = {
+    name: "mcp_find",
+    label: "Find a connected tool",
+    description: `Find a tool on the user's connected MCP servers (${servers.join(", ")}). `
+      + "Returns the few tools that match and the inputs each takes; run one with mcp_call.",
+    parameters: FindParams,
+    async execute(_id: string, params: Static<typeof FindParams>) {
+      const found = rankMcpTools(await toolsOf(servers, timeoutMs), params.need);
+      if (!found.length) return textResult(`No connected tool matches "${params.need}". Servers: ${servers.join(", ")}.`);
+      return textResult(found.map((t) =>
+        `${t.server} / ${t.name}: ${t.description ?? ""}\ninputs: ${JSON.stringify(t.inputSchema ?? {})}`).join("\n\n"));
+    },
+  };
+
+  const call: AgentTool<typeof CallParams> = {
+    name: "mcp_call",
+    label: "Run a connected tool",
+    description: "Run one tool on a connected MCP server. Find it with mcp_find first.",
+    parameters: CallParams,
+    async execute(_id: string, params: Static<typeof CallParams>) {
       const res = await fetch(`${shimBase()}/mcp/call`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ server, tool: tool.name, args: params ?? {} }),
+        body: JSON.stringify({ server: params.server, tool: params.tool, args: params.arguments ?? {} }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(
-          `${server}/${tool.name} failed: ${(body as { error?: string }).error ?? res.status}`,
-        );
+        throw new Error(`${params.server}/${params.tool} failed: ${(body as { error?: string }).error ?? res.status}`);
       }
       // MCP returns content blocks; the text ones are what the model can read.
       const content = (body as { content?: Array<{ type?: string; text?: string }> }).content;
@@ -106,4 +130,6 @@ function buildTool(server: string, tool: McpToolInfo): AgentTool {
       return textResult(JSON.stringify(body));
     },
   };
+
+  return [find, call] as unknown as AgentTool[];
 }

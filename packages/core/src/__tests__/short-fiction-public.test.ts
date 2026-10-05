@@ -157,9 +157,9 @@ describe("public short-fiction chain", () => {
   });
 
   it("resolves cover generation from project cover config and stored cover secret", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-short-cover-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-short-cover-"));
     try {
-      await writeFile(join(root, "inkos.json"), JSON.stringify({
+      await writeFile(join(root, "quire.json"), JSON.stringify({
         name: "cover-test",
         version: "0.1.0",
         language: "zh",
@@ -195,9 +195,9 @@ describe("public short-fiction chain", () => {
   });
 
   it("uses a custom cover base URL stored in the project cover config", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-short-cover-custom-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-short-cover-custom-"));
     try {
-      await writeFile(join(root, "inkos.json"), JSON.stringify({
+      await writeFile(join(root, "quire.json"), JSON.stringify({
         name: "cover-test",
         version: "0.1.0",
         language: "zh",
@@ -261,10 +261,10 @@ describe("public short-fiction chain", () => {
   });
 
   it("generates a standalone cover artifact without running the short fiction pipeline", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-cover-tool-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-cover-tool-"));
     const originalFetch = globalThis.fetch;
     const controller = new AbortController();
-    process.env.INKOS_TEST_COVER_KEY = "sk-cover";
+    process.env.QUIRE_TEST_COVER_KEY = "sk-cover";
     try {
       const fetchMock = vi.fn(async (_url: unknown, _init?: { readonly body?: unknown }) => new Response(JSON.stringify({
         data: [{ b64_json: "ZmFrZQ==" }],
@@ -280,7 +280,7 @@ describe("public short-fiction chain", () => {
         outputDir: "covers/demo",
         coverEndpoint: "https://images.example.test/v1/images/generations",
         coverModel: "gpt-image-2",
-        coverApiKeyEnv: "INKOS_TEST_COVER_KEY",
+        coverApiKeyEnv: "QUIRE_TEST_COVER_KEY",
         signal: controller.signal,
       });
 
@@ -305,7 +305,7 @@ describe("public short-fiction chain", () => {
       expect(body).not.toContain("固定模板");
     } finally {
       globalThis.fetch = originalFetch;
-      delete process.env.INKOS_TEST_COVER_KEY;
+      delete process.env.QUIRE_TEST_COVER_KEY;
       await rm(root, { recursive: true, force: true });
     }
   });

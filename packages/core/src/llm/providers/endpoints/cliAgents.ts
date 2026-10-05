@@ -20,14 +20,14 @@
  * The shim owns the model list, live and fallback both. Nothing about which
  * models exist is compiled into this file any more.
  */
-import type { InkosEndpoint } from "../types.js";
+import type { QuireEndpoint } from "../types.js";
 
 // The port must follow the shim the surrounding app actually started: a dev
 // build installed beside the release one runs its shim on a different port,
 // and a baked-in 8787 would silently point it at the other app's shim.
 const SHIM = `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`;
 
-export const CLAUDE_CLI: InkosEndpoint = {
+export const CLAUDE_CLI: QuireEndpoint = {
   id: "claudeCli",
   label: "Claude Code (CLI)",
   group: "cli",
@@ -41,7 +41,7 @@ export const CLAUDE_CLI: InkosEndpoint = {
   models: [],
 };
 
-export const CODEX_CLI: InkosEndpoint = {
+export const CODEX_CLI: QuireEndpoint = {
   id: "codexCli",
   label: "Codex (CLI)",
   group: "cli",
@@ -55,7 +55,7 @@ export const CODEX_CLI: InkosEndpoint = {
   models: [],
 };
 
-export const DEVIN_CLI: InkosEndpoint = {
+export const DEVIN_CLI: QuireEndpoint = {
   id: "devinCli",
   label: "Devin (CLI)",
   group: "cli",
@@ -72,7 +72,7 @@ export const DEVIN_CLI: InkosEndpoint = {
   models: [],
 };
 
-export const ANTIGRAVITY_CLI: InkosEndpoint = {
+export const ANTIGRAVITY_CLI: QuireEndpoint = {
   id: "antigravityCli",
   label: "Antigravity (CLI)",
   group: "cli",

@@ -12,13 +12,13 @@ describe("Quire agent trajectory metadata", () => {
   it("uses an opaque stable conversation id", () => {
     const first = opaqueConversationId("session-with-user-visible-name");
     expect(first).toBe(opaqueConversationId("session-with-user-visible-name"));
-    expect(first).toMatch(/^inkos-[0-9a-f]{32}$/);
+    expect(first).toMatch(/^quire-[0-9a-f]{32}$/);
     expect(first).not.toContain("user-visible-name");
   });
 
   it("keeps one run while assigning roles and preserving the parent Pi turn", async () => {
     await runWithAgentTrajectory({
-      conversationId: "inkos-conversation",
+      conversationId: "quire-conversation",
       runId: "run-1",
       agentRole: "main",
     }, async () => {
@@ -52,7 +52,7 @@ describe("Quire agent trajectory metadata", () => {
 
   it("emits metadata only for kkaiapi endpoints", () => {
     const trace = runWithAgentTrajectory({
-      conversationId: "inkos-conversation",
+      conversationId: "quire-conversation",
       runId: "run-1",
       agentRole: "main",
     }, () => beginAgentModelCall());
@@ -63,8 +63,8 @@ describe("Quire agent trajectory metadata", () => {
       budgetTokens: 4096,
     })).toMatchObject({
       "X-Quire-Trace-Version": "1",
-      "X-Quire-Scaffold": "pi-inkos",
-      "X-Quire-Conversation-ID": "inkos-conversation",
+      "X-Quire-Scaffold": "pi-quire",
+      "X-Quire-Conversation-ID": "quire-conversation",
       "X-Quire-Run-ID": "run-1",
       "X-Quire-Agent-Role": "main",
       "X-Quire-Pi-Turn-Index": "1",

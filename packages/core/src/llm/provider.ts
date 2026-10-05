@@ -37,7 +37,7 @@ export interface StreamProgress {
 
 export type OnStreamProgress = (progress: StreamProgress) => void;
 
-const INKOS_USER_AGENT = "Quire/1.3.5";
+const QUIRE_USER_AGENT = "Quire/1.3.5";
 const UNKNOWN_MODEL_FALLBACK_MAX_TOKENS = 8192 * 3;
 const TRANSIENT_LLM_RETRIES = 2;
 const DEFAULT_FIRST_STREAM_EVENT_TIMEOUT_MS = 120_000;
@@ -78,11 +78,11 @@ function createStreamActivityDeadline(
   overrides?: StreamDeadlineOptions,
 ): StreamActivityDeadline {
   const firstEventTimeoutMs = readPositiveTimeout(
-    process.env.INKOS_LLM_FIRST_EVENT_TIMEOUT_MS,
+    process.env.QUIRE_LLM_FIRST_EVENT_TIMEOUT_MS,
     readPositiveTimeout(overrides?.firstEventTimeoutMs, defaults.firstEventTimeoutMs),
   );
   const idleTimeoutMs = readPositiveTimeout(
-    process.env.INKOS_LLM_STREAM_IDLE_TIMEOUT_MS,
+    process.env.QUIRE_LLM_STREAM_IDLE_TIMEOUT_MS,
     readPositiveTimeout(overrides?.idleTimeoutMs, defaults.idleTimeoutMs),
   );
   const controller = new AbortController();
@@ -213,7 +213,7 @@ function sanitizeHttpHeaders(headers?: Record<string, string>): Record<string, s
 }
 
 function mergeUserAgent(headers?: Record<string, string>): Record<string, string> {
-  return { "User-Agent": INKOS_USER_AGENT, ...(sanitizeHttpHeaders(headers) ?? {}) };
+  return { "User-Agent": QUIRE_USER_AGENT, ...(sanitizeHttpHeaders(headers) ?? {}) };
 }
 
 export function createStreamMonitor(
@@ -317,26 +317,26 @@ export function createLLMClient(config: LLMConfig): LLMClient {
   // --- Build pi-ai Model object ---
   const serviceName = config.service ?? "custom";
   const preset = resolveServicePreset(serviceName);
-  const inkosProvider = getEndpoint(serviceName);
+  const quireProvider = getEndpoint(serviceName);
   const modelCard = lookupModel(serviceName, config.model);
 
-  const piApi = resolvePiApi(serviceName, config.apiFormat, (inkosProvider?.api ?? preset?.api) as PiApi) as PiApi;
-  const baseUrl = config.baseUrl || inkosProvider?.baseUrl || preset?.baseUrl || "";
+  const piApi = resolvePiApi(serviceName, config.apiFormat, (quireProvider?.api ?? preset?.api) as PiApi) as PiApi;
+  const baseUrl = config.baseUrl || quireProvider?.baseUrl || preset?.baseUrl || "";
   const extraHeaders = sanitizeHttpHeaders(config.headers ?? parseEnvHeaders());
   const compat = piApi === "openai-completions"
-    ? resolveProviderCompat(inkosProvider, baseUrl)
+    ? resolveProviderCompat(quireProvider, baseUrl)
     : undefined;
 
   const provider = config.provider === "anthropic" ? "anthropic" : "openai";
   // pi-ai provider 字段：大多数情况 pi-ai 会按 baseUrl 自动嗅探（openrouter.ai / api.z.ai /
   // api.x.ai / deepseek.com / anthropic.com 等）。这里只列 pi-ai 嗅探不到、需要显式指定的少数情况。
   let piProvider: string;
-  if (inkosProvider?.id === "google") piProvider = "google";
-  else if (inkosProvider?.id === "zhipu") piProvider = "zai";
-  else if (inkosProvider?.id === "openrouter") piProvider = "openrouter";
-  else if (inkosProvider?.id === "githubCopilot") piProvider = "githubCopilot";
-  else if (inkosProvider?.id === "ollama") piProvider = "ollama";
-  else if (inkosProvider?.api === "anthropic-messages") piProvider = "anthropic";
+  if (quireProvider?.id === "google") piProvider = "google";
+  else if (quireProvider?.id === "zhipu") piProvider = "zai";
+  else if (quireProvider?.id === "openrouter") piProvider = "openrouter";
+  else if (quireProvider?.id === "githubCopilot") piProvider = "githubCopilot";
+  else if (quireProvider?.id === "ollama") piProvider = "ollama";
+  else if (quireProvider?.api === "anthropic-messages") piProvider = "anthropic";
   else piProvider = provider;
 
   const piModel: PiModel<PiApi> = {
@@ -400,7 +400,7 @@ function resolveProviderCompat(
 }
 
 function parseEnvHeaders(): Record<string, string> | undefined {
-  const raw = process.env.INKOS_LLM_HEADERS;
+  const raw = process.env.QUIRE_LLM_HEADERS;
   if (!raw) return undefined;
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -515,7 +515,7 @@ function stripReservedKeys(extra: Record<string, unknown>): Record<string, unkno
 // 硬要求 temperature === 1，其他值会被直接 400 拒绝（Moonshot 返回
 // `invalid temperature: only 1 is allowed for this model`）。
 //
-// inkos 让 writer/validator/architect 各自带 per-call 温度（0.1~1.5），
+// quire 让 writer/validator/architect 各自带 per-call 温度（0.1~1.5），
 // 所以 provider 层统一夹制：如果 bank 里模型卡标了 temperature 字段，
 // 就把 per-call 温度 clamp 到那个值，并对每个模型名打一次 warning。
 //
@@ -535,7 +535,7 @@ function clampTemperatureForModel(
   if (!warnedFixedTemperatureModels.has(model)) {
     warnedFixedTemperatureModels.add(model);
     console.warn(
-      `[inkos] 模型 "${model}" API 要求 temperature=${locked}，已 clamp（原值 ${requested}）`,
+      `[quire] 模型 "${model}" API 要求 temperature=${locked}，已 clamp（原值 ${requested}）`,
     );
   }
   return locked;
@@ -718,12 +718,12 @@ function wrapLLMErrorByStatus(error: unknown, context?: LLMErrorContext): Error 
       `  1. API Key 无效或过期\n` +
       `  2. API 提供方的内容审查拦截了请求（公益/免费 API 常见）\n` +
       `  3. 账户余额不足\n` +
-      `  建议：用 inkos doctor 测试 API 连通性，或换一个不限制内容的 API 提供方${ctxLine}`,
+      `  建议：用 quire doctor 测试 API 连通性，或换一个不限制内容的 API 提供方${ctxLine}`,
     );
   }
   if (msg.includes("401")) {
     return new Error(
-      `API 返回 401 (未授权)。请检查 .env 中的 INKOS_LLM_API_KEY 是否正确。${ctxLine}`,
+      `API 返回 401 (未授权)。请检查 .env 中的 QUIRE_LLM_API_KEY 是否正确。${ctxLine}`,
     );
   }
   if (msg.includes("429")) {
@@ -762,7 +762,7 @@ function wrapLLMErrorByStatus(error: unknown, context?: LLMErrorContext): Error 
       `  1. baseUrl 地址不正确（当前：${baseUrl || "未知"}）\n` +
       `  2. 网络不通或被防火墙拦截\n` +
       `  3. API 服务暂时不可用\n` +
-      `  建议：检查 INKOS_LLM_BASE_URL 是否包含完整路径（如 /v1）`,
+      `  建议：检查 QUIRE_LLM_BASE_URL 是否包含完整路径（如 /v1）`,
     );
   }
   // R4 Bug 2: 5xx "status code (no body)" — 尝试从 OpenAI SDK APIError 里抽 body 给用户看具体原因
@@ -1184,7 +1184,7 @@ async function chatCompletionViaCustomAnthropicCompatible(
   const response = await fetchWithProxy(`${baseUrl.replace(/\/$/, "")}/messages`, {
     method: "POST",
     headers: sanitizeHttpHeaders({
-      "User-Agent": INKOS_USER_AGENT,
+      "User-Agent": QUIRE_USER_AGENT,
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01",
       "Content-Type": "application/json",
@@ -1695,7 +1695,7 @@ function resolvePiModel(client: LLMClient, model: string): PiModel<PiApi> {
   return { ...base, id: model, name: model };
 }
 
-/** Convert inkos LLMMessage[] to pi-ai Context. */
+/** Convert quire LLMMessage[] to pi-ai Context. */
 function toPiContext(messages: ReadonlyArray<LLMMessage>): PiContext {
   const systemParts = messages.filter((m) => m.role === "system").map((m) => m.content);
   const systemPrompt = systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
@@ -1759,7 +1759,7 @@ async function chatCompletionViaPiAi(
     }
     if (!content) {
       const diag = `usage=${response.usage.input}+${response.usage.output}`;
-      console.warn(`[inkos] LLM 非流式响应无文本内容 (${diag})`);
+      console.warn(`[quire] LLM 非流式响应无文本内容 (${diag})`);
       throw new Error(`LLM returned empty response (${diag})`);
     }
     return {
@@ -1834,7 +1834,7 @@ async function chatCompletionViaPiAi(
   }
   if (!content) {
     const diag = `usage=${inputTokens}+${outputTokens}`;
-    console.warn(`[inkos] LLM 流式响应无文本内容 (${diag})`);
+    console.warn(`[quire] LLM 流式响应无文本内容 (${diag})`);
     throw new Error(`LLM returned empty response from stream (${diag})`);
   }
   if (!sawDone) {

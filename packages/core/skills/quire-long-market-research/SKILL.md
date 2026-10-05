@@ -1,6 +1,7 @@
 ---
 name: quire-long-market-research
-description: 长篇网文市场、榜单、平台趋势与对标研究。Use for evidence-based long-form fiction market research, not for ordinary drafting.
+description: "Evidence-based market research for long-form fiction - platform differences, comparable works, audience expectation and topic selection - keeping observed evidence, interpretation and recommendation apart. Use for research questions, never as a writing formula or a route into drafting."
+version: 1.0.0
 ---
 # Long-form market research
 

@@ -113,7 +113,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-e2e-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-e2e-"));
     const bookDir = join(root, "books", "legacy-book");
 
     try {
@@ -159,7 +159,8 @@ describe("pipeline.reviseFoundation", () => {
       // New files created
       await expect(access(join(bookDir, "story", "outline", "story_frame.md"))).resolves.not.toThrow();
       await expect(access(join(bookDir, "story", "outline", "volume_map.md"))).resolves.not.toThrow();
-      await expect(access(join(bookDir, "story", "roles", "主要角色", "林辞.md"))).resolves.not.toThrow();
+      // This book has no roles folder yet, so it gets the English one.
+      await expect(access(join(bookDir, "story", "roles", "major", "林辞.md"))).resolves.not.toThrow();
       // Backup exists
       const storyEntries = await readdir(join(bookDir, "story"));
       const backupDir = storyEntries.find((e) => e.startsWith(".backup-phase4-"));
@@ -179,7 +180,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-runtime-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-runtime-"));
     const bookDir = join(root, "books", "live-book");
 
     try {
@@ -253,7 +254,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-phase5-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-phase5-"));
     const bookDir = join(root, "books", "phase5-book");
 
     try {
@@ -327,7 +328,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-ghost-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-ghost-"));
     const bookDir = join(root, "books", "ghost-book");
 
     try {
@@ -394,7 +395,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-legacyfallback-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-legacyfallback-"));
     const bookDir = join(root, "books", "safe-book");
 
     try {
@@ -463,7 +464,7 @@ describe("pipeline.reviseFoundation", () => {
     const { PipelineRunner } = await import("../pipeline/runner.js");
     const { StateManager } = await import("../state/manager.js");
 
-    const root = await mkdtemp(join(tmpdir(), "inkos-revise-backup-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-revise-backup-"));
     const bookDir = join(root, "books", "p5");
 
     try {

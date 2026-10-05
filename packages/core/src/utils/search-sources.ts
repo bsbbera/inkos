@@ -22,7 +22,8 @@ export const RESULTS_PER_SOURCE = 5;
 export interface SearchSource {
   /** Stable, human-readable, and recorded on every claim this source supports. */
   readonly id: string;
-  readonly kind: "key" | "mcp";
+  /** `local`: the person's own notes and library (personal-sources.ts). */
+  readonly kind: "key" | "mcp" | "local";
   run(query: string, limit: number): Promise<ReadonlyArray<SearchResult>>;
 }
 

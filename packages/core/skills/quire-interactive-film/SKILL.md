@@ -1,6 +1,7 @@
 ---
 name: quire-interactive-film
-description: 互动影游的剧情树、变量旗标、可拍节点、多结局与资产连续性方法。Used for creation and authoring of interactive-film projects.
+description: "Method for interactive film and game-script work: branch trees whose choices differ in intent, cost, information or consequence; flags that serve story causality rather than RPG stats; shootable nodes; and endings earned by the accumulated path. Use for interactive-film authoring, not ordinary prose."
+version: 1.0.0
 ---
 # Interactive film creation
 

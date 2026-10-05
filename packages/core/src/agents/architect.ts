@@ -3,8 +3,9 @@ import type { BookConfig, FanficMode } from "../models/book.js";
 import type { GenreProfile } from "../models/genre-profile.js";
 import { readGenreProfile } from "./rules-reader.js";
 import { writeFile, mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { renderHookSnapshot } from "../utils/memory-retrieval.js";
+import { roleDirFor } from "../utils/outline-paths.js";
 import {
   shouldPromoteHook,
   type PromotionContext,
@@ -446,7 +447,7 @@ Do not duplicate the same fact across sections. The protagonist's arc lives only
 
 === SECTION: story_frame ===
 
-Four prose sections, ~600-900 chars each. No tables. No bullet lists. Real paragraphs. **Do NOT write the protagonist's full arc here** — that is owned by roles/主要角色/<protagonist>.md. Use a single-line pointer inside this block (e.g. "The protagonist is X; full arc lives in roles/主要角色/X.md").
+Four prose sections, ~600-900 chars each. No tables. No bullet lists. Real paragraphs. **Do NOT write the protagonist's full arc here** — that is owned by roles/major/<protagonist>.md. Use a single-line pointer inside this block (e.g. "The protagonist is X; full arc lives in roles/major/X.md").
 
 ## 01_Theme_and_Tonal_Ground
 What is this book actually about — not "hero grows from weak to strong" (empty), but a concrete proposition. Then the tonal ground: warm / cold / fierce / severe — which, and why this and not another. End with a one-line pointer to the protagonist role file.
@@ -824,11 +825,19 @@ You MUST emit all **5 SECTION blocks in order**: story_frame → volume_map → 
     return `# 故事圣经（兼容指针——已废弃）\n\n> 本文件仅为外部读取保留。权威来源已迁移至：\n> - outline/story_frame.md（主题 / 基调 / 核心冲突 / 世界铁律 / 终局）\n> - outline/volume_map.md（章级别的分卷地图）\n> - roles/ 文件夹（一人一卡角色档案）\n`;
   }
 
-  private buildCharacterMatrixShim(roles: ReadonlyArray<ArchitectRole>, language: "zh" | "en"): string {
+  private buildCharacterMatrixShim(
+    roles: ReadonlyArray<ArchitectRole>,
+    language: "zh" | "en",
+    // The folders this book actually uses, which are English for anything made
+    // after the rename and the old Chinese names for anything before it. A
+    // pointer file that names a folder the book does not have is worse than no
+    // pointer file, because it reads as authoritative.
+    dirs: { readonly major: string; readonly minor: string },
+  ): string {
     const majorLines = roles.filter((role) => role.tier === "major")
-      .map((role) => `- roles/主要角色/${role.name}.md`);
+      .map((role) => `- roles/${dirs.major}/${role.name}.md`);
     const minorLines = roles.filter((role) => role.tier === "minor")
-      .map((role) => `- roles/次要角色/${role.name}.md`);
+      .map((role) => `- roles/${dirs.minor}/${role.name}.md`);
 
     if (language === "en") {
       return `# Character Matrix (compat pointer — deprecated)\n\n> This file is kept for external readers only. Authoritative source is now the roles/ directory (one-file-per-character).\n\n## Major characters\n\n${majorLines.join("\n") || "(none)"}\n\n## Minor characters\n\n${minorLines.join("\n") || "(none)"}\n`;
@@ -849,8 +858,10 @@ You MUST emit all **5 SECTION blocks in order**: story_frame → volume_map → 
     const storyDir = join(bookDir, "story");
     const outlineDir = join(storyDir, "outline");
     const rolesDir = join(storyDir, "roles");
-    const rolesMajorDir = join(rolesDir, "主要角色");
-    const rolesMinorDir = join(rolesDir, "次要角色");
+    // English for a new book, whatever this book already uses for an old one.
+    // A book made before the rename keeps its folders; nothing on disk moves.
+    const rolesMajorDir = await roleDirFor(bookDir, "major");
+    const rolesMinorDir = await roleDirFor(bookDir, "minor");
 
     await Promise.all([
       mkdir(storyDir, { recursive: true }),
@@ -947,7 +958,9 @@ You MUST emit all **5 SECTION blocks in order**: story_frame → volume_map → 
     ));
     writes.push(writeFile(
       join(storyDir, "character_matrix.md"),
-      this.buildCharacterMatrixShim(roles, language),
+      this.buildCharacterMatrixShim(roles, language, {
+        major: basename(rolesMajorDir), minor: basename(rolesMinorDir),
+      }),
       "utf-8",
     ));
 

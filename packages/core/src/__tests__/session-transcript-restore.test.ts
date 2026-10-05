@@ -25,7 +25,7 @@ describe("session transcript restore", () => {
   let projectRoot: string;
 
   beforeEach(async () => {
-    projectRoot = await mkdtemp(join(tmpdir(), "inkos-restore-"));
+    projectRoot = await mkdtemp(join(tmpdir(), "quire-restore-"));
   });
 
   afterEach(async () => {
@@ -977,7 +977,7 @@ describe("session transcript restore", () => {
         role: "assistant",
         content: [{ type: "text", text: "I have processed the tool results." }],
         api: "openai-completions",
-        provider: "inkos",
+        provider: "quire",
         model: "synthetic-tool-result-bridge",
         usage,
         stopReason: "stop",

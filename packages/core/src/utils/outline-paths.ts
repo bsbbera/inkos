@@ -148,6 +148,42 @@ export interface RoleCard {
 }
 
 /**
+ * What the two role folders are called.
+ *
+ * English is canonical and is what a new book gets. The Chinese names came
+ * first and are still on disk in every book made before this change, so they
+ * are read forever — a folder name is the user's data, and renaming it under
+ * them is how a working book loses its cast.
+ *
+ * The order matters: the first entry is what gets created, the rest are only
+ * recognized.
+ */
+export const ROLE_DIR_NAMES = {
+  major: ["major", "主要角色"],
+  minor: ["minor", "次要角色"],
+} as const satisfies Readonly<Record<"major" | "minor", ReadonlyArray<string>>>;
+
+/**
+ * The folder this book's roles of one tier actually live in.
+ *
+ * An existing folder wins, whatever it is called, so a book started before the
+ * rename keeps one home for its characters rather than growing a second empty
+ * one beside it. A book with neither gets the English name.
+ */
+export async function roleDirFor(bookDir: string, tier: "major" | "minor"): Promise<string> {
+  const root = join(bookDir, "story", "roles");
+  for (const name of ROLE_DIR_NAMES[tier]) {
+    try {
+      await access(join(root, name));
+      return join(root, name);
+    } catch {
+      // Not this one.
+    }
+  }
+  return join(root, ROLE_DIR_NAMES[tier][0]);
+}
+
+/**
  * Read the roles/ directory. Returns [] when no roles are present (e.g. old
  * books still on character_matrix.md).
  */

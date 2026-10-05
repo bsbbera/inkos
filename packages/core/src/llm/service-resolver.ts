@@ -3,7 +3,7 @@ import type { Model, Api } from "@mariozechner/pi-ai";
 import { resolveServicePiProvider, resolveServicePreset } from "./service-presets.js";
 import { getServiceApiKey } from "./secrets.js";
 import { getEndpoint } from "./providers/index.js";
-import type { InkosEndpoint } from "./providers/types.js";
+import type { QuireEndpoint } from "./providers/types.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 
 export interface ResolvedModel {
@@ -15,7 +15,7 @@ export interface ResolvedModel {
 }
 
 function resolveProviderCompat(
-  provider: InkosEndpoint | undefined,
+  provider: QuireEndpoint | undefined,
   baseUrl: string,
 ): Record<string, unknown> | undefined {
   const compat = {
@@ -63,7 +63,7 @@ export async function resolveServiceModel(
   const apiKey = await getServiceApiKey(projectRoot, service);
   if (!apiKey && !isApiKeyOptionalForEndpoint({ provider: preset?.providerFamily, baseUrl: effectiveBaseUrl })) {
     throw new Error(
-      `API key not found for service "${service}". Add it in .inkos/secrets.json or set the environment variable.`,
+      `API key not found for service "${service}". Add it in .quire/secrets.json or set the environment variable.`,
     );
   }
 

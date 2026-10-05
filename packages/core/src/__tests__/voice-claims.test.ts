@@ -14,27 +14,40 @@ describe("voice claims", () => {
   // The bug this exists for: the model read mag-content as a procedure and
   // wrote a magazine by hand, so no issue was ever registered.
   it("sends a claimed skill to publication_create", () => {
-    const out = redirectDescription(skill("mag-content", "Write a 50-70 page magazine"), "magazine");
+    const out = redirectDescription(skill("quire-magazine-page", "Write a 50-70 page magazine"), "magazine");
     expect(out.description).toContain("publication_create");
     expect(out.description).toContain('type="magazine"');
   });
 
   it("leaves the body alone — the pipeline still reads it as voice", () => {
-    const original = skill("mag-content", "Write a magazine");
+    const original = skill("quire-magazine-page", "Write a magazine");
     expect(redirectDescription(original, "magazine").body).toBe(original.body);
   });
 
   it("touches nothing when no definition claims the skill", async () => {
     const skills = [skill("cookbook", "Write a cookbook")];
-    // Real registry: the builtin magazine claims mag-content, not cookbook.
+    // Real registry: the builtin magazine claims quire-magazine-page, not cookbook.
     const out = await applyVoiceClaims(process.cwd(), skills);
     expect(out[0]?.description).toBe("Write a cookbook");
   });
 
   it("rewrites the claimed one and only that one", async () => {
-    const skills = [skill("mag-content", "Write a magazine"), skill("cookbook", "Write a cookbook")];
+    const skills = [skill("quire-magazine-page", "Write a magazine"), skill("cookbook", "Write a cookbook")];
     const out = await applyVoiceClaims(process.cwd(), skills);
     expect(out[0]?.description).toContain("publication_create");
     expect(out[1]?.description).toBe("Write a cookbook");
+  });
+
+  // The definition names a preference order. Only one of them supplies the
+  // voice, but both are doors a model could walk through by hand, so both are
+  // closed — claiming only the winner left the other one open on exactly the
+  // machines that have it.
+  it("claims every candidate the definition names, not just the winner", async () => {
+    const out = await applyVoiceClaims(process.cwd(), [
+      skill("mag-content", "Write a magazine"),
+      skill("quire-magazine-page", "Write a magazine"),
+    ]);
+    expect(out[0]?.description).toContain("publication_create");
+    expect(out[1]?.description).toContain("publication_create");
   });
 });

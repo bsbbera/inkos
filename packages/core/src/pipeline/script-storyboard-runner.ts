@@ -183,6 +183,7 @@ export async function runScriptCreation(
     kind: "script",
     language: options.language === "en" ? "en" : "zh",
     rulesDir: join(options.projectRoot, baseDir),
+    taste: { projectRoot: options.projectRoot, type: "script", id: projectId },
   });
   const input: ScriptCreationInput = {
     rules,
@@ -260,6 +261,7 @@ export async function runInteractiveFilmCreation(
     kind: "storyboard",
     language: options.language === "en" ? "en" : "zh",
     rulesDir: join(options.projectRoot, baseDir),
+    taste: { projectRoot: options.projectRoot, type: "interactive-film", id: projectId },
   });
   const input: InteractiveFilmCreationInput = {
     rules,
@@ -385,6 +387,7 @@ export async function runStoryboardCreation(
     kind: "storyboard",
     language: options.language === "en" ? "en" : "zh",
     rulesDir: join(options.projectRoot, baseDir),
+    taste: { projectRoot: options.projectRoot, type: "storyboard", id: projectId },
   });
   const input: StoryboardCreationInput = {
     rules,

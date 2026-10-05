@@ -45,6 +45,7 @@
   "files": [
     "dist",
     "!dist/__tests__",
+    "audit-packs",
     "genres",
     "skills",
     "publications"

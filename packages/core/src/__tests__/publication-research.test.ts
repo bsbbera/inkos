@@ -30,7 +30,7 @@ describe("searchProviders", () => {
   it("takes the configured provider before the environment", async () => {
     const dir = root();
     process.env.TAVILY_API_KEY = "env-key";
-    writeFileSync(join(dir, "inkos.json"), JSON.stringify({
+    writeFileSync(join(dir, "quire.json"), JSON.stringify({
       researchSearch: { enabled: true, provider: "brave", apiKey: "cfg-key" },
     }));
     try {

@@ -77,11 +77,13 @@ describe("build executors", () => {
     expect(out.error).toContain("reflow-shaped");
   });
 
-  it("names the type it cannot build yet", async () => {
+  it("says what is missing when a script has nothing to typeset", async () => {
+    // Scripts are typeset now (typeset.ts); with no script.md the reason is
+    // the missing file, not an unsupported type.
     const root = await mkdtemp(join(tmpdir(), "quire-exec-"));
     const out = await exportWork({ projectRoot: root, type: "script", id: "ep-7", unit: 1 });
     expect(out.ok).toBe(false);
-    expect(out.error).toContain("screenplay");
+    expect(out.error).toContain("script.md");
   });
 
   it("reports the real reason a book has nothing to export", async () => {

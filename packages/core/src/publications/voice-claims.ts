@@ -22,8 +22,12 @@ export async function voiceClaims(projectRoot: string): Promise<Map<string, stri
   const claims = new Map<string, string>();
   const registry = await loadPublicationRegistry(projectRoot);
   for (const source of registry.definitions) {
-    const skill = source.definition.prompts?.voiceSkill;
-    if (skill) claims.set(skill, source.definition.id);
+    const named = source.definition.prompts?.voiceSkill;
+    // Every candidate is claimed, not just the one that wins: whichever of
+    // them is installed is the one a model would otherwise follow by hand.
+    for (const skill of typeof named === "string" ? [named] : named ?? []) {
+      if (skill) claims.set(skill, source.definition.id);
+    }
   }
   return claims;
 }

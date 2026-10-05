@@ -94,7 +94,7 @@ interface ConfiguredSkillDir {
 
 function configuredSkillDirs(input: LoadConfiguredAgentSkillsInput): ConfiguredSkillDir[] {
   const env = input.env ?? process.env;
-  const envDirs = (env.INKOS_SKILL_DIRS ?? "")
+  const envDirs = (env.QUIRE_SKILL_DIRS ?? "")
     .split(delimiter)
     .map((value) => value.trim())
     .filter(Boolean);

@@ -130,7 +130,7 @@ export interface AgentSessionConfig {
   model: Model<Api> | { provider: string; modelId: string };
   /** Optional API key. When omitted, falls back to env-based key lookup. */
   apiKey?: string;
-  /** Allow the read tool to read absolute paths outside projectRoot/books. Defaults to false; set INKOS_AGENT_ALLOW_SYSTEM_READ=1 to enable. */
+  /** Allow the read tool to read absolute paths outside projectRoot/books. Defaults to false; set QUIRE_AGENT_ALLOW_SYSTEM_READ=1 to enable. */
   allowSystemFileRead?: boolean;
   /** Optional listener for streaming events (for SSE forwarding). */
   onEvent?: (event: AgentEvent) => void;
@@ -1135,7 +1135,7 @@ async function runAgentSessionUnlocked(
   const skillResolutionKey = skillResolutionCacheKey(skillResolution);
   const model = resolveModel(config.model);
   const requestedModelIdentity = agentModelIdentity(model);
-  const allowSystemFileRead = config.allowSystemFileRead ?? envFlagEnabled(process.env.INKOS_AGENT_ALLOW_SYSTEM_READ, false);
+  const allowSystemFileRead = config.allowSystemFileRead ?? envFlagEnabled(process.env.QUIRE_AGENT_ALLOW_SYSTEM_READ, false);
   const suppressProductionTools = config.suppressProductionTools ?? false;
   const playWorldExists = sessionKind === "play"
     ? Boolean(await new PlayStore(projectRoot).loadWorld(sessionId))
@@ -1245,7 +1245,10 @@ async function runAgentSessionUnlocked(
     // at launch. It did — and those calls ran inside the CLI's own loop, where
     // no confirmation gate could reach them. The shim now hands the CLI
     // nothing, so this table is the only way any model reaches a tool.
-    const externalMcpTools = await createExternalMcpTools();
+    // Two gateway tools, not every schema (mcp-tools.ts). A publication stage
+    // gets none: its search goes through research_web, and nothing else on
+    // those servers is a stage's business.
+    const externalMcpTools = sessionKind === "publication" ? [] : await createExternalMcpTools();
 
     // Some models cannot call tools at all. Handing them a tool table anyway
     // produces the worst outcome available: asked to research something they

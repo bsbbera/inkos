@@ -1,6 +1,7 @@
 ---
 name: quire-story-import
-description: 导入已有小说、逆向重建设定与续写工程，并区分母本参考。Use for importing manuscripts or attaching external canon safely.
+description: "Turns an existing manuscript into an editable, continuable project - distinguishing real chapter import from reference material and bound canon, preserving chapter order, and reporting gaps and uncertainty rather than inventing canon to look complete. Use for imports and for attaching external canon safely."
+version: 1.0.0
 ---
 # Story import and reconstruction
 

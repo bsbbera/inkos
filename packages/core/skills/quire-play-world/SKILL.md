@@ -1,6 +1,7 @@
 ---
 name: quire-play-world
-description: 品类中立的开放世界与分支互动推进方法。Used by Quire Play workers for coherent action, state, time, and scene progression.
+description: "Genre-neutral method for open-world and branching interactive play: advance one adjacent dramatic beat from the player's literal action, preserve negation and agency exactly, keep the world graph consistent, and render a playable novel beat rather than a system log."
+version: 1.0.0
 ---
 # Interactive world play
 

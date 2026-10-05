@@ -2,7 +2,8 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createIssue, setLastError } from "../pipeline/publication-runner.js";
+import { createIssue, run, setLastError } from "../pipeline/publication-runner.js";
+import { ensurePipeline, loadPipeline } from "../pipeline/orchestrator.js";
 import type { RunnerContext } from "../pipeline/publication-runner.js";
 import { findPublicationDefinition } from "../publications/registry.js";
 
@@ -35,6 +36,28 @@ describe("setLastError", () => {
     await setLastError(ctx, id, { message: "boom" });
     await setLastError(ctx, id, null);
     expect((await stored(ctx, id)).lastError).toBeNull();
+  });
+
+  // The Run page read "fact-check, running" after the issue page said failed.
+  it("tells the run file too: failed with the reason, idle after a stop, cleared on a new run", async () => {
+    const ctx = await ctxFor();
+    const { id } = await createIssue(ctx, { subject: "kolam", angle: "the maths of it" });
+    const ref = { type: "publication", id } as const;
+    await ensurePipeline({ projectRoot: ctx.projectRoot, ref, totalUnits: 2 });
+
+    const failing = { ...ctx, ask: async () => { throw new Error("model returned no JSON"); } };
+    await expect(run(failing, id, { from: "plan", stopAt: "plan" })).rejects.toThrow();
+    const failed = await loadPipeline(ctx.projectRoot, ref);
+    expect(failed?.status).toBe("failed");
+    expect(failed?.units.failed.find((f) => f.unit === 0)?.error).toMatch(/^plan: /);
+
+    const stop = new AbortController();
+    stop.abort();
+    await expect(run({ ...failing, signal: stop.signal }, id, { from: "plan", stopAt: "plan" })).rejects.toThrow();
+    const stopped = await loadPipeline(ctx.projectRoot, ref);
+    expect(stopped?.status).toBe("idle");
+    expect(stopped?.units.failed.some((f) => f.unit === 0)).toBe(false);
+    expect((await stored(ctx, id)).lastError).toMatchObject({ stage: "plan", stopped: true });
   });
 
   it("never throws over a missing issue: the run's own error is the one that matters", async () => {

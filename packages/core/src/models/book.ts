@@ -78,7 +78,7 @@ export type ChapterReviewMode = "auto" | "manual";
 /**
  * Resolve the effective chapter review mode for a book:
  * book-level `writing.reviewMode` (book.json) overrides the project-level
- * `writing.reviewMode` (inkos.json); both unset falls back to "auto".
+ * `writing.reviewMode` (quire.json); both unset falls back to "auto".
  */
 export function resolveChapterReviewMode(
   book: Pick<BookConfig, "writing">,
@@ -92,7 +92,7 @@ export type RevisionGate = "strict" | "lenient" | "always";
 /**
  * Resolve the effective manual-revision gate for a book:
  * book-level `writing.revisionGate` (book.json) overrides the project-level
- * `writing.revisionGate` (inkos.json); both unset falls back to "strict".
+ * `writing.revisionGate` (quire.json); both unset falls back to "strict".
  *
  * - "strict": apply only when audit counts do not worsen AND at least one of
  *   blocking/AI-tell improves (historical default behavior).

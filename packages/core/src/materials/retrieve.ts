@@ -69,7 +69,7 @@ export async function retrieveMaterials(
     });
   }
 
-  const searchIndex = new LocalSearchIndex(join(projectRoot, ".inkos", "retrieval.db"));
+  const searchIndex = new LocalSearchIndex(join(projectRoot, ".quire", "retrieval.db"));
   try {
     searchIndex.replaceScope(MATERIAL_SCOPE, documents);
     const limit = normalizeLimit(input.limit);
@@ -89,8 +89,9 @@ export async function retrieveMaterials(
   }
 }
 
-async function listMaterialAssets(projectRoot: string): Promise<MaterialAsset[]> {
-  const materialsDir = join(projectRoot, ".inkos", "materials");
+/** Every archived material in the project, as its manifest describes it. */
+export async function listMaterialAssets(projectRoot: string): Promise<MaterialAsset[]> {
+  const materialsDir = join(projectRoot, "research");
   let entries: string[] = [];
   try {
     entries = await readdir(materialsDir);

@@ -62,20 +62,28 @@ function craftOf(body: string): string {
 export async function resolveVoice(args: {
   readonly projectRoot: string;
   readonly fallback: string;
-  readonly skillId?: string | undefined;
+  /** One id, or a preference order in which the first installed one wins. */
+  readonly skillId?: string | ReadonlyArray<string> | undefined;
   readonly maxChars?: number;
 }): Promise<VoiceResult> {
-  if (!args.skillId) return { voice: args.fallback };
+  const wanted = (typeof args.skillId === "string" ? [args.skillId] : args.skillId ?? [])
+    .filter(Boolean);
+  if (!wanted.length) return { voice: args.fallback };
 
   try {
     const { skills } = await loadAvailableAgentSkills({ projectRoot: args.projectRoot });
     const registry = createSkillRegistry({ skills });
-    const skill = registry.getSkill(args.skillId);
+    /*
+     * First installed wins, not first named. A definition lists the person's
+     * own skill ahead of the builtin, so their machine keeps writing in the
+     * voice they tuned and a machine without it still has one to use.
+     */
+    const skill = wanted.map((id) => registry.getSkill(id)).find(Boolean);
     if (!skill) {
       return {
         voice: args.fallback,
-        diagnostic: `voice skill "${args.skillId}" is not installed — using ${""
-          }the type's own voice instead`,
+        diagnostic: `voice skill ${wanted.map((id) => `"${id}"`).join(" or ")} is not `
+          + "installed — using the type's own voice instead",
       };
     }
 

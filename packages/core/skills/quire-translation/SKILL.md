@@ -1,6 +1,7 @@
 ---
 name: quire-translation
-description: 长文任意语言互译、术语一致性、分段续跑与章节审校方法。Used by Quire translation workers.
+description: "Long-form translation and translation review in any language pair: meaning, omissions, names, pronouns, chronology, dialogue ownership and register preserved, the project glossary as persistent authority, and segment batching that still reads neighbouring context. Used by translation workers."
+version: 1.0.0
 ---
 # Long-form translation
 

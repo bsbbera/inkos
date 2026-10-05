@@ -1,6 +1,7 @@
 ---
 name: quire-story-cover
-description: 根据作品、平台与用户视觉要求设计或生成封面。Use for story-cover direction and confirmed cover generation.
+description: "Cover direction and generation from the work itself - title, genre, protagonist, central conflict, emotional promise, platform and display size - treating the user's visual instructions as authoritative and keeping deterministic typography separate from image generation. Use for cover strategy, prompts and confirmed generation."
+version: 1.0.0
 ---
 # Story cover
 

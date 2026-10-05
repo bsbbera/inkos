@@ -174,7 +174,8 @@ function log(state: PipelineState, entry: HistoryEntry): ReadonlyArray<HistoryEn
  * - It only ever moves forward. A report for a stage the run has already left
  *   is stale — a page rewritten after its gate opened — and is ignored, which
  *   is what stops a late call from dragging a run backwards.
- * - It never crosses a gate. A gate is a person, and no runner may walk one.
+ * - It crosses gates like any other step - a gate is a sign-off, not a stop -
+ *   and leaves each one it crosses open for that sign-off.
  * - It clears unit progress on the way, because the units done in the stage
  *   being left belong to that stage, not to the one being entered.
  */
@@ -189,12 +190,16 @@ export function reachStage(
   const from = sequence.indexOf(state.stage);
   const to = sequence.indexOf(stage);
   if (from < 0 || to < 0 || to < from) return state;
-  const crossed = sequence.slice(from, to);
-  if (crossed.some((s) => isGate(s))) return state;
+  const gates: Record<string, GateRecord> = { ...state.gates };
+  for (const s of sequence.slice(from, to)) {
+    const g = gateOf(s);
+    if (g && gates[g]?.state !== "approved") gates[g] = { ...gates[g], state: "waiting" };
+  }
   return {
     ...state,
     stage,
     status: "running",
+    gates,
     units: { ...state.units, done: [], failed: [] },
     history: log(state, {
       at: now(),
@@ -202,6 +207,33 @@ export function reachStage(
       stage,
       note: `entered from ${state.stage}`,
     }),
+  };
+}
+
+/**
+ * Put the run back on an earlier stage, to perform it again.
+ *
+ * The inverse of `reachStage`, and only ever backwards. Units clear because the
+ * stage is being done again; gates keep their records, because doing work
+ * again is not taking a sign-off back — `withdraw` is that.
+ */
+export function rewind(
+  state: PipelineState,
+  pipeline: ProductionPipeline,
+  stage: StageId,
+  now: Now = systemNow,
+): PipelineState {
+  if (state.stage === stage) return state;
+  const sequence = stageSequence(pipeline);
+  const from = sequence.indexOf(state.stage);
+  const to = sequence.indexOf(stage);
+  if (to < 0 || (from >= 0 && to > from)) return state;
+  return {
+    ...state,
+    stage,
+    status: "running",
+    units: { ...state.units, done: [], failed: [] },
+    history: log(state, { at: now(), event: "stage:rewound", stage, note: `back from ${state.stage}` }),
   };
 }
 
@@ -250,6 +282,23 @@ function stageComplete(state: PipelineState): boolean {
 }
 
 /**
+ * Why this kind walks past this stage, or null when it performs it.
+ *
+ * Every kind declares the whole spine (`SPINE` in the registry); a kind that
+ * cannot use a step says so here rather than dropping it from the graph. The
+ * sentence is written for the person reading the strip, not for the log.
+ */
+export function skipReason(pipeline: ProductionPipeline, stage: StageId): string | null {
+  return pipeline.skip?.[stage] ?? null;
+}
+
+/** A macro-stage with nothing left to perform — every step of it is skipped. */
+export function macroSkipped(pipeline: ProductionPipeline, gate: PipelineGate): boolean {
+  const subs = gate === "content" ? pipeline.content : gate === "design" ? pipeline.design : pipeline.build;
+  return subs.length > 0 && subs.every((sub) => skipReason(pipeline, `${gate}.${sub}`) !== null);
+}
+
+/**
  * Move to the next step, or explain why not.
  *
  * The one function that changes `stage`. Everything else records facts about
@@ -265,22 +314,24 @@ export function advance(
 ): { readonly state: PipelineState; readonly moved: boolean; readonly reason?: string } {
   if (state.stage === DONE) return { state, moved: false, reason: "already done" };
 
+  /*
+   * A gate is a sign-off, not a stop. The run walks through it and the gate
+   * stays open for a yes whenever the person gets to it: the prompts exist
+   * from the first draft, and the writing, the pictures and the layout can all
+   * be changed at any point, so holding the pictures back until the words were
+   * signed bought nothing but a wait.
+   */
   const gate = gateOf(state.stage);
-  if (gate) {
-    // A gate is not something the pipeline can walk past on its own. It waits
-    // for a person, and `approve` is what calls back in here.
-    if (state.gates[gate]?.state !== "approved") {
-      const waiting: PipelineState = {
-        ...state,
-        status: "waiting-gate",
-        gates: { ...state.gates, [gate]: { ...state.gates[gate], state: "waiting" } },
-        history: state.gates[gate]?.state === "waiting"
-          ? state.history
-          : log(state, { at: now(), event: "gate:open", gate, stage: state.stage }),
-      };
-      return { state: waiting, moved: false, reason: `waiting on ${gate} gate` };
-    }
-  } else if (!stageComplete(state)) {
+  /*
+   * A skipped stage is walked past, not waited on.
+   *
+   * It is still a step of this run: it is in the sequence, the strip draws it,
+   * and the history says it was skipped and why. What it is not is work — so
+   * the "are all units done" question below does not apply to it, and asking
+   * it would park the run on a stage nothing will ever perform.
+   */
+  const skipped = gate ? null : skipReason(pipeline, state.stage);
+  if (!gate && !skipped && !stageComplete(state)) {
     const reason = state.units.failed.length > 0
       ? `${state.units.failed.length} unit(s) failed`
       : `${state.units.done.length}/${state.units.total} units done`;
@@ -291,23 +342,48 @@ export function advance(
   const index = sequence.indexOf(state.stage);
   const next = index === -1 ? DONE : sequence[index + 1] ?? DONE;
   const nextGate = gateOf(next);
+  /*
+   * A sign-off given early stands; only an unsigned gate reads as open.
+   *
+   * A gate whose every step was skipped signs itself. Asking someone to
+   * approve the design of a translation — which has none, by declaration —
+   * would put a permanent "waiting on you" on the Home screen for a decision
+   * with nothing in it. The signature says who made it.
+   */
+  const opened = (g: PipelineGate): GateRecord => {
+    const held = state.gates[g] ?? { state: "blocked" as GateState };
+    if (held.state === "approved") return { ...held, state: "approved" };
+    if (macroSkipped(pipeline, g)) {
+      return { ...held, state: "approved", at: now(), by: "quire", note: "every step of this was skipped" };
+    }
+    return { ...held, state: "waiting" };
+  };
 
   const moved: PipelineState = {
     ...state,
     stage: next,
-    status: next === DONE ? "done" : nextGate ? "waiting-gate" : "running",
+    status: next === DONE ? "done" : "running",
     // Unit progress is per stage. Carrying it forward would make the next
     // stage look finished before it had started.
     units: { ...state.units, done: [], failed: [] },
-    gates: nextGate
-      ? { ...state.gates, [nextGate]: { ...state.gates[nextGate], state: "waiting" } }
-      : state.gates,
-    history: log(state, {
-      at: now(),
-      event: nextGate ? "gate:open" : next === DONE ? "run:done" : "stage:start",
-      stage: next,
-      ...(nextGate ? { gate: nextGate } : {}),
-    }),
+    gates: {
+      ...state.gates,
+      // Reached by `reachStage` rather than walked into: still "blocked".
+      ...(gate ? { [gate]: opened(gate) } : {}),
+      ...(nextGate ? { [nextGate]: opened(nextGate) } : {}),
+    },
+    // Two facts when a stage is skipped: that it was, and where the run went.
+    // One entry would lose whichever half it left out.
+    history: [
+      ...state.history,
+      ...(skipped ? [{ at: now(), event: "stage:skipped", stage: state.stage, note: skipped }] : []),
+      {
+        at: now(),
+        event: nextGate ? "gate:open" : next === DONE ? "run:done" : "stage:start",
+        stage: next,
+        ...(nextGate ? { gate: nextGate } : {}),
+      },
+    ],
   };
   return { state: moved, moved: true };
 }
@@ -399,7 +475,6 @@ export function reject(input: {
   const perUnit = withPerUnit(state.gates[gate], input.units, "rejected");
   let next: PipelineState = {
     ...state,
-    status: "waiting-gate",
     gates: {
       ...state.gates,
       [gate]: {
@@ -445,20 +520,10 @@ export function withdraw(input: {
   const perUnit = withPerUnit(record, units, "waiting");
 
   /*
-   * The run goes back to the gate it is no longer allowed past.
-   *
-   * Reopening the record alone left the state incoherent: the content gate
-   * read "waiting" while the run stood in design.artplan, which is a position
-   * it only reached by being approved. Whatever design has produced stays on
-   * disk - withdrawal is not deletion - but the run is behind the gate again,
-   * and re-approving walks it forward through `advance` exactly as the first
-   * approval did.
+   * The run stays where it is. A gate no longer holds anything back, so taking
+   * a sign-off back is a fact about the sign-off, not a reason to stop or
+   * redo the pictures.
    */
-  const sequence = input.pipeline ? stageSequence(input.pipeline) : [];
-  const gateStage = `gate:${gate}`;
-  const here = sequence.indexOf(state.stage);
-  const there = sequence.indexOf(gateStage);
-  const rewind = there !== -1 && here !== -1 && here > there;
 
   /*
    * Everything downstream loses its sign-off for these units too.
@@ -497,20 +562,8 @@ export function withdraw(input: {
 
   return {
     ...state,
-    ...(rewind
-      ? {
-          stage: gateStage,
-          status: "waiting-gate" as const,
-          // Unit progress belongs to the stage that was interrupted, not to
-          // the gate we are standing back at.
-          units: { ...state.units, done: [], failed: [] },
-        }
-      : {}),
     gates,
-    history: log(state, {
-      at: now(), event: "gate:withdrawn", gate, units,
-      ...(rewind ? { stage: gateStage, note: `run returned from ${state.stage}` } : {}),
-    }),
+    history: log(state, { at: now(), event: "gate:withdrawn", gate, units }),
   };
 }
 

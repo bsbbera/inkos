@@ -7,9 +7,9 @@
  * - API 文档：https://platform.moonshot.cn/docs/api-reference
  * - 模型列表：https://platform.moonshot.cn/docs/pricing/chat
  */
-import type { InkosEndpoint } from "../types.js";
+import type { QuireEndpoint } from "../types.js";
 
-export const MOONSHOT: InkosEndpoint = {
+export const MOONSHOT: QuireEndpoint = {
   id: "moonshot",
   label: "Moonshot (Kimi)",
   group: "china",

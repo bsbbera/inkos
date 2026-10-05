@@ -141,12 +141,18 @@ describe("the proof copy", () => {
 describe("the type on the rails", () => {
   it("declares a graph that ends somewhere this app can reach", () => {
     const spec = PRODUCTIONS.find((p) => p.id === "storybook");
-    expect(spec?.pipeline?.build).toEqual(["export"]);
-    expect(spec?.pipeline?.outputs).toEqual(["html"]);
+    // The spine is the same for every kind; what a storybook does not do it
+    // declares as skipped, with the reason, instead of dropping the step.
+    expect(spec?.pipeline?.build).toEqual(["layout", "export"]);
+    expect(spec?.pipeline?.skip?.["build.layout"]).toMatch(/proof copy/);
+    expect(spec?.pipeline?.skip?.["content.destyle"]).toMatch(/read aloud/);
+    // The proof copy always; the print PDF when Typst is installed (07 §Print).
+    expect(spec?.pipeline?.outputs).toEqual(["html", "print-pdf"]);
     expect(stageSequence(spec!.pipeline!)).toEqual([
-      "content.plan", "content.write", "content.audit", "gate:content",
+      "content.research", "content.plan", "content.write", "content.factcheck",
+      "content.audit", "content.destyle", "gate:content",
       "design.artplan", "design.generate", "design.review", "gate:design",
-      "build.export", "gate:build", "done",
+      "build.layout", "build.export", "gate:build", "done",
     ]);
   });
 

@@ -11,7 +11,7 @@ describe("StateManager", () => {
   let manager: StateManager;
 
   beforeEach(async () => {
-    tempDir = await mkdtemp(join(tmpdir(), "inkos-test-"));
+    tempDir = await mkdtemp(join(tmpdir(), "quire-test-"));
     manager = new StateManager(tempDir);
   });
 
@@ -877,8 +877,8 @@ describe("StateManager", () => {
 
       const storyDir = join(manager.bookDir("phase5-book"), "story");
       const outlineStat = await stat(join(storyDir, "outline"));
-      const rolesMajorStat = await stat(join(storyDir, "roles", "主要角色"));
-      const rolesMinorStat = await stat(join(storyDir, "roles", "次要角色"));
+      const rolesMajorStat = await stat(join(storyDir, "roles", "major"));
+      const rolesMinorStat = await stat(join(storyDir, "roles", "minor"));
 
       expect(outlineStat.isDirectory()).toBe(true);
       expect(rolesMajorStat.isDirectory()).toBe(true);

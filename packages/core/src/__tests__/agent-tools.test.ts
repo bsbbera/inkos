@@ -48,7 +48,7 @@ describe("agent deterministic writing tools", () => {
   let state: StateManager;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-agent-tools-"));
+    root = await mkdtemp(join(tmpdir(), "quire-agent-tools-"));
     state = new StateManager(root);
 
     await state.saveBookConfig("harbor", {
@@ -689,7 +689,7 @@ describe("agent deterministic writing tools", () => {
       },
       {
         action: "continuation_import",
-        payload: { continuationImport: { title: "雾港续章", sourcePath: ".inkos/uploads/novel.txt" } },
+        payload: { continuationImport: { title: "雾港续章", sourcePath: ".quire/uploads/novel.txt" } },
         title: "导入并续写作品",
       },
       {
@@ -727,7 +727,7 @@ describe("agent deterministic writing tools", () => {
   });
 
   it("uses the single host-provided attachment as the derivative source when the model omits its path", async () => {
-    const attachmentPath = ".inkos/uploads/session/style-source.md";
+    const attachmentPath = ".quire/uploads/session/style-source.md";
     const tool = createProposeActionTool("zh", {
       attachmentPaths: () => [attachmentPath],
     });
@@ -755,7 +755,7 @@ describe("agent deterministic writing tools", () => {
   });
 
   it("replaces a truncated uploaded-file path with the single host-provided attachment", async () => {
-    const attachmentPath = ".inkos/uploads/session/style-source.md";
+    const attachmentPath = ".quire/uploads/session/style-source.md";
     const tool = createProposeActionTool("zh", {
       attachmentPaths: () => [attachmentPath],
     });
@@ -766,7 +766,7 @@ describe("agent deterministic writing tools", () => {
       imitationCreate: {
         title: "借来的三分钟",
         storyIdea: "港口夜班修表师发现全镇的钟每天借走三分钟。",
-        referencePath: ".inkos/uploads/1786846...",
+        referencePath: ".quire/uploads/1786846...",
       },
     });
 
@@ -782,8 +782,8 @@ describe("agent deterministic writing tools", () => {
   it("does not guess among multiple attachment paths", async () => {
     const tool = createProposeActionTool("zh", {
       attachmentPaths: () => [
-        ".inkos/uploads/session/one.md",
-        ".inkos/uploads/session/two.md",
+        ".quire/uploads/session/one.md",
+        ".quire/uploads/session/two.md",
       ],
     });
 

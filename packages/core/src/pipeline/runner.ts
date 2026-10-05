@@ -47,6 +47,7 @@ import {
   readCharacterContext,
   readStoryFrame,
   readVolumeMap,
+  roleDirFor,
 } from "../utils/outline-paths.js";
 import { loadNarrativeMemorySeed, loadSnapshotCurrentStateFacts } from "../state/runtime-state-store.js";
 import { rewriteStructuredStateFromMarkdown } from "../state/state-bootstrap.js";
@@ -980,8 +981,9 @@ export class PipelineRunner {
 
     const outlineDir = join(storyDir, "outline");
     await mkdir(outlineDir, { recursive: true });
-    await mkdir(join(storyDir, "roles", "主要角色"), { recursive: true });
-    await mkdir(join(storyDir, "roles", "次要角色"), { recursive: true });
+    // English for a new book; whatever an older book already uses for an old one.
+    await mkdir(await roleDirFor(bookDir, "major"), { recursive: true });
+    await mkdir(await roleDirFor(bookDir, "minor"), { recursive: true });
 
     const { profile: gp } = await this.loadGenreProfile(book.genre);
     await architect.writeFoundationFiles(

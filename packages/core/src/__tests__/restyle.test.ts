@@ -32,7 +32,7 @@ describe("rewriting a draft", () => {
     const out = await restyleProse({
       text: ORIGINAL, styleGuide: "## Voice\nDry and close.", language: "en", chat,
     });
-    expect(out).toBe(REWRITTEN.trim());
+    expect(out.text).toBe(REWRITTEN.trim());
     const [system, user] = chat.mock.calls[0] as [string, string];
     expect(system).toContain("You do not rewrite the story");
     expect(user).toContain("Dry and close.");
@@ -44,8 +44,8 @@ describe("rewriting a draft", () => {
       text: ORIGINAL, styleGuide: "## Voice", language: "en",
       chat: chatting("```markdown\n" + REWRITTEN + "\n```"),
     });
-    expect(out.startsWith("```")).toBe(false);
-    expect(out).toContain("Dark, all at once.");
+    expect(out.text.startsWith("```")).toBe(false);
+    expect(out.text).toContain("Dark, all at once.");
   });
 
   it("refuses a rewrite that summarised the draft instead", async () => {

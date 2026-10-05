@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { factCheck, factCheckReport, isProblem } from "../pipeline/fact-check.js";
+import { evidenceFor, factCheck, factCheckReport, isProblem, EVIDENCE_PER_CLAIM, SNIPPET_CHARS } from "../pipeline/fact-check.js";
 import type { SearchSource } from "../utils/search-sources.js";
 
 const source = (rows: Array<{ title: string; url: string; snippet: string }>): SearchSource => ({
@@ -157,5 +157,28 @@ describe("factCheckReport", () => {
   it("says so plainly when there was nothing to check", () => {
     expect(factCheckReport({ at: "now", checked: 0, findings: [], searchedWith: [] }))
       .toBe("Nothing checkable in this text.");
+  });
+});
+
+describe("evidenceFor", () => {
+  const row = (source: string, i: number, snippet = "short") =>
+    ({ source, title: `${source} ${i}`, url: `https://${source}.example/${i}`, snippet });
+
+  // Seven claims at ten long results each made a 45,000-character prompt.
+  it("keeps a few results per claim, taking turns between sources, each cut short", () => {
+    const rows = [
+      ...[1, 2, 3, 4, 5].map((i) => row("tavily", i, "x".repeat(2000))),
+      ...[1, 2, 3, 4, 5].map((i) => row("brave", i)),
+    ];
+    const text = evidenceFor(rows);
+    expect(text.match(/^\[\d+\]/gm)).toHaveLength(EVIDENCE_PER_CLAIM);
+    expect(text).toContain("tavily 1");
+    expect(text).toContain("brave 1");
+    expect(text.indexOf("brave 1")).toBeLessThan(text.indexOf("tavily 2"));
+    expect(text.length).toBeLessThan(EVIDENCE_PER_CLAIM * (SNIPPET_CHARS + 80));
+  });
+
+  it("uses everything when there is less than the cap", () => {
+    expect(evidenceFor([row("tavily", 1)]).match(/^\[\d+\]/gm)).toHaveLength(1);
   });
 });

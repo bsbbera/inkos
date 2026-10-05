@@ -234,7 +234,7 @@ describe("chatCompletion via pi-ai", () => {
     expect(error.message).toContain("shim.log");
     // The generic advice sent people to check a URL, a firewall and an env var
     // that were all correct.
-    expect(error.message).not.toContain("INKOS_LLM_BASE_URL");
+    expect(error.message).not.toContain("QUIRE_LLM_BASE_URL");
   });
 
   it("retries transient socket termination errors before failing the chapter pipeline", async () => {
@@ -494,7 +494,7 @@ describe("chatCompletion via pi-ai", () => {
     });
 
     const result = await runWithAgentTrajectory({
-      conversationId: "inkos-conv",
+      conversationId: "quire-conv",
       runId: "run-7",
       agentRole: "workflow",
     }, () => chatCompletion(client, "deepseek-v4-flash", [{ role: "user", content: "write" }]));
@@ -508,7 +508,7 @@ describe("chatCompletion via pi-ai", () => {
     expect(first["X-Quire-Client-Attempt"]).toBe("1");
     expect(second["X-Quire-Client-Attempt"]).toBe("2");
     expect(second).toMatchObject({
-      "X-Quire-Conversation-ID": "inkos-conv",
+      "X-Quire-Conversation-ID": "quire-conv",
       "X-Quire-Run-ID": "run-7",
       "X-Quire-Agent-Role": "workflow",
     });

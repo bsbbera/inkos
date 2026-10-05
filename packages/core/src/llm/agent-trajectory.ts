@@ -31,7 +31,7 @@ interface AgentTrajectoryScope extends AgentTrajectoryScopeInput {
 const trajectoryStorage = new AsyncLocalStorage<AgentTrajectoryScope>();
 
 export function opaqueConversationId(sessionId: string): string {
-  return `inkos-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
+  return `quire-${createHash("sha256").update(sessionId).digest("hex").slice(0, 32)}`;
 }
 
 export function runWithAgentTrajectory<T>(
@@ -96,7 +96,7 @@ export function agentTrajectoryHeaders(
   if (!trace || !isKkaiapiEndpoint(baseUrl)) return {};
   return {
     "X-Quire-Trace-Version": "1",
-    "X-Quire-Scaffold": "pi-inkos",
+    "X-Quire-Scaffold": "pi-quire",
     "X-Quire-Conversation-ID": trace.conversationId,
     "X-Quire-Run-ID": trace.runId,
     "X-Quire-Model-Call-ID": trace.modelCallId,

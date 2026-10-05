@@ -26,7 +26,7 @@ const LLMCoverConfigSchema = z.object({
 }).optional();
 
 // C1 (v2.0.0 breaking): 删除 maxTokens / maxTokensCap 字段。
-// 每个模型的真实 maxOutput 来自 providers/<name>.ts 的 InkosModel.maxOutput；
+// 每个模型的真实 maxOutput 来自 providers/<name>.ts 的 QuireModel.maxOutput；
 // 老配置里写的 maxTokens / maxTokensCap 会被 zod strip 静默丢弃（不报错）。
 export const LLMConfigSchema = z.object({
   provider: z.enum(["anthropic", "openai", "custom"]),
@@ -109,7 +109,8 @@ export const FoundationConfigSchema = z.object({
 export type FoundationConfig = z.infer<typeof FoundationConfigSchema>;
 
 export const WritingConfigSchema = z.object({
-  reviewRetries: z.number().int().min(0).max(10).default(1),
+  // 2, not 1: with one round a failed revise is never re-checked for what it broke.
+  reviewRetries: z.number().int().min(0).max(10).default(2),
   reviewMode: z.enum(["auto", "manual"]).default("auto"),
   revisionGate: z.enum(["strict", "lenient", "always"]).default("strict"),
 });
@@ -157,7 +158,7 @@ export const ProjectConfigSchema = z.object({
     reviewRetries: 2,
   }),
   writing: WritingConfigSchema.default({
-    reviewRetries: 1,
+    reviewRetries: 2,
   }),
   researchSearch: ResearchSearchConfigSchema,
   modelOverrides: z.record(z.string(), ModelOverrideValueSchema).optional(),

@@ -3,7 +3,7 @@ import { toPosixPath } from "../utils/posix-path.js";
 
 describe("toPosixPath", () => {
   it("converts Windows separators", () => {
-    expect(toPosixPath(".inkos\\materials\\a.md")).toBe(".inkos/materials/a.md");
+    expect(toPosixPath("research\\a.md")).toBe("research/a.md");
   });
 
   it("keeps posix paths unchanged", () => {

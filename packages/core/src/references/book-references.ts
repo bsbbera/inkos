@@ -143,7 +143,7 @@ export async function loadBookReferenceManifest(
 
 export async function loadMaterialAsset(projectRoot: string, materialIdInput: string): Promise<MaterialAsset> {
   const materialId = assertMaterialId(materialIdInput);
-  const materialsDir = join(projectRoot, ".inkos", "materials");
+  const materialsDir = join(projectRoot, "research");
   const manifestPath = safeChildPath(materialsDir, `${materialId}.json`);
   const parsed = JSON.parse(await readFile(manifestPath, "utf-8")) as Partial<MaterialAsset>;
   if (

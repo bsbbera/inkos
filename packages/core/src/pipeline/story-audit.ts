@@ -20,12 +20,29 @@
  * work they wrote before this existed.
  */
 import { readFile, writeFile } from "node:fs/promises";
+import { designSkillBrief } from "../skills/design-skills.js";
 import { runWorkerAgent } from "../agent/worker-agent.js";
 import { parseJson } from "../publications/parse-json.js";
 import type { PipelineRunner } from "./runner.js";
 import { analyzeAITells } from "../agents/ai-tells.js";
+import { anachronismFindings } from "./anachronism.js";
 import { detectCrossChapterRepetition } from "../agents/post-write-validator.js";
+import { distance, fingerprint, gaps } from "../agents/style-fingerprint.js";
+import type { StyleProfileV2 } from "../models/style-profile.js";
+import type { Lexicon } from "./setting.js";
+
+/**
+ * Far enough from the target voice to be worth saying so.
+ *
+ * Two chapters by one author sit well under this; a chapter that has reverted
+ * to model house style sits above it. A warning, never blocking: drifting is
+ * something a writer is allowed to do on purpose.
+ */
+const DRIFTED_ABOVE = 0.45;
 import { safeChildPath } from "../utils/path-safety.js";
+import {
+  activeDimensions, customDimensionPrompt, isSuppressed, noAuditPack, type ResolvedAuditPack,
+} from "./audit-pack.js";
 import type { ReviewDimension } from "./publication-review.js";
 import {
   locate, normalizeSeverity, type Finding, type FindingSeverity, type RawFinding,
@@ -215,10 +232,54 @@ export function languageOf(text: string): "zh" | "en" {
  * formulaic transitions, list-shaped prose, and phrases one section shares
  * with the rest of the piece.
  */
-export function ruleFindings(sections: ReadonlyArray<StorySection>, language: "zh" | "en"): StoryFinding[] {
+export function ruleFindings(
+  sections: ReadonlyArray<StorySection>,
+  language: "zh" | "en",
+  world?: { readonly lexicon?: Lexicon | null; readonly fidelity?: string },
+  voice?: { readonly target?: StyleProfileV2; readonly name?: string },
+  pack?: ResolvedAuditPack,
+): StoryFinding[] {
   const findings: StoryFinding[] = [];
+
+  /*
+   * Has the prose drifted out of the voice it is supposed to be in?
+   *
+   * A restyle was a one-time operation: applied once, never checked again,
+   * and a long book written after it drifts back to house style chapter by
+   * chapter with nothing noticing. Measuring it here makes the voice a
+   * property the audit holds, and costs nothing to check (05 §5).
+   */
+  if (voice?.target) {
+    const whole = sections.map((s) => s.body).join("\n\n");
+    const far = distance(voice.target, fingerprint(whole, language));
+    if (far > DRIFTED_ABOVE) {
+      const missed = gaps(voice.target, fingerprint(whole, language));
+      findings.push({
+        section: "",
+        severity: "warning",
+        category: "style-drift/voice",
+        description: voice.name
+          ? `This reads ${far.toFixed(2)} away from ${voice.name}'s voice. ${missed.join("; ")}`
+          : `This reads ${far.toFixed(2)} away from the voice it is in. ${missed.join("; ")}`,
+        suggestion: "Restyle this section, or accept that it has moved.",
+      });
+    }
+  }
   for (const section of sections) {
-    for (const issue of analyzeAITells(section.body, language).issues) {
+    // What the researched world says cannot be here. Exact, so unlike the
+    // other rule checks it can quote the sentence and be pointed at (22 §4).
+    findings.push(...anachronismFindings({
+      text: section.body,
+      lexicon: world?.lexicon ?? null,
+      ...(world?.fidelity ? { fidelity: world.fidelity } : {}),
+      section: section.heading,
+    }));
+    const tells = analyzeAITells(section.body, language, pack ? {
+      hedgeWords: pack.hedgeWords,
+      markers: pack.markers,
+      ...(pack.paragraphMaxChars ? { paragraphMaxChars: pack.paragraphMaxChars } : {}),
+    } : undefined);
+    for (const issue of tells.issues) {
       findings.push({
         section: section.heading,
         severity: normalizeSeverity(issue.severity),
@@ -257,13 +318,24 @@ export function buildStoryAuditPrompt(
   index: number,
   total: number,
   language: "zh" | "en",
+  pack?: ResolvedAuditPack,
 ): string {
+  // The pack decides which of the thirty run and what else this work wants
+  // looked at; with no pack the list is exactly the thirty (19 §E4).
+  const active = activeDimensions(STORY_DIMENSIONS.map((d) => d.n), pack ?? noAuditPack());
+  const dims = STORY_DIMENSIONS.filter((d) => active.has(d.n));
+  const extra = pack ? customDimensionPrompt(pack) : "";
   return [
     `You are auditing section ${index + 1} of ${total} of a finished piece of narrative.`,
     "Report only what is wrong. Do not praise, do not summarise, do not rewrite.",
     "",
     "Judge it on these dimensions:",
-    STORY_DIMENSIONS.map((d) => `${d.n}. ${d.name} — ${d.ask}`).join("\n"),
+    dims.map((d) => `${d.n}. ${d.name} — ${d.ask}`).join("\n"),
+    ...(extra ? ["", extra] : []),
+    ...(pack?.rules.length
+      ? ["", "This work has also learned these rules; hold it to them:",
+         ...pack.rules.map((r) => `- ${r}`)]
+      : []),
     "",
     "A dimension with nothing wrong produces no finding. Be specific enough to act",
     "on: \"the third paragraph names the feeling instead of showing it\" is usable,",
@@ -361,6 +433,94 @@ export function buildStoryRevisePrompt(
 }
 
 /**
+ * Rewrite the words one finding is about, and nothing round them.
+ *
+ * The auditor's own `fix` is written blind, in the middle of judging forty
+ * other things, and reads like it. This hands the same span to the writer with
+ * what writing needs — the paragraphs either side, the work's voice, the
+ * editor's note — and asks back for the replacement alone, so the rest of the
+ * page cannot move.
+ */
+export interface RewritableFinding {
+  readonly category: string;
+  readonly title: string;
+  readonly description: string;
+  readonly suggestion: string;
+  readonly fix?: string;
+}
+
+/**
+ * How much of the file one rewrite is allowed to replace.
+ *
+ * `beat` is the paragraph plus the one either side: a pacing or a
+ * scene-not-summary finding cannot be answered inside a single paragraph, and
+ * widening the span is cheaper than regenerating the chapter (19 §5b).
+ */
+export type RewriteScope = "quote" | "paragraph" | "beat";
+
+export interface FindingRewriteInput {
+  readonly finding: RewritableFinding;
+  /**
+   * Everything else flagged in the same paragraph, so one call answers all of
+   * them. Fourteen findings over four paragraphs become four calls and one
+   * write, and the rest of the page never moves.
+   */
+  readonly also?: ReadonlyArray<RewritableFinding>;
+  readonly scope: RewriteScope;
+  /** The words being replaced: the quote, or its whole paragraph. */
+  readonly span: string;
+  readonly paragraph: string;
+  readonly before: string;
+  readonly after: string;
+  readonly language: "zh" | "en";
+  readonly note?: string;
+  /** The work's style guide, when it has one. */
+  readonly voice?: string;
+}
+
+const findingBlock = (f: RewritableFinding): string[] => [
+  `[${f.category}] ${f.title}`,
+  f.description,
+  `What to do: ${f.suggestion}`,
+  ...(f.fix ? [`The checker proposed "${f.fix}". Do better than that if it is flat.`] : []),
+];
+
+export function buildFindingRewritePrompt(input: FindingRewriteInput): string {
+  const { finding } = input;
+  const also = input.also ?? [];
+  return [
+    input.scope === "quote"
+      ? "Rewrite only the MARKED WORDS so the finding below no longer applies. What you return stands exactly where they stand, inside the paragraph shown, so it must join the words either side of them."
+      : input.scope === "beat"
+        ? "Rewrite the PASSAGE below so the findings no longer apply. What you return replaces those paragraphs and nothing outside them, so it must join the text either side."
+        : "Rewrite only the PARAGRAPH so the finding below no longer applies. What you return replaces that whole paragraph.",
+    "Keep the viewpoint, the tense and what happens. Keep every name and every line of",
+    "dialogue unless the finding is about it. Add no new facts. Stay within a third of",
+    "the original length either way.",
+    `Write in ${input.language === "zh" ? "Chinese" : "English"}.`,
+    "",
+    also.length ? "FINDINGS — answer every one of them:" : "FINDING:",
+    ...findingBlock(finding),
+    ...also.flatMap((f) => ["", ...findingBlock(f)]),
+    ...(input.note?.trim() ? ["", `EDITOR'S NOTE: ${input.note.trim()}`] : []),
+    ...(input.voice?.trim() ? ["", "THE WORK'S VOICE — keep to it:", input.voice.trim().slice(0, 3000)] : []),
+    "",
+    "PARAGRAPH BEFORE:",
+    input.before.slice(-2000) || "(none)",
+    "",
+    input.scope === "beat" ? "PASSAGE:" : "PARAGRAPH:",
+    input.scope === "beat" ? input.span : input.paragraph,
+    "",
+    "PARAGRAPH AFTER:",
+    input.after.slice(0, 2000) || "(none)",
+    ...(input.scope === "quote" ? ["", "MARKED WORDS:", input.span] : []),
+    "",
+    "Respond with JSON only:",
+    '{"text":"the replacement words and nothing else"}',
+  ].join("\n");
+}
+
+/**
  * The model call these passes make, with no tools.
  *
  * An audit stage judges text and returns JSON; it has nothing to look up and
@@ -374,10 +534,16 @@ export function createStoryAsk(pipeline: PipelineRunner, signal?: AbortSignal): 
   return async (prompt: string, tag: string): Promise<Record<string, unknown>> => {
     signal?.throwIfAborted();
     const ctx = pipeline.createAgentContext("story-audit");
+    // A design or art stage is answered under the skill that owns it, for
+    // every production type. Other stages get nothing extra.
+    const skill = await designSkillBrief(tag);
     const response = await runWorkerAgent(ctx.client, ctx.model, [
       {
         role: "system",
-        content: `This is the "${tag}" stage. Your reply is the JSON asked for and nothing else.`,
+        content: `${skill ? `${skill}
+
+` : ""}This is the "${tag}" stage. `
+          + "Your reply is the JSON asked for and nothing else.",
       },
       { role: "user", content: prompt },
     ], { signal });
@@ -399,6 +565,16 @@ export interface StoryAuditOptions {
   /** Project-relative path of the markdown artifact. */
   readonly path: string;
   readonly ask: StoryAskFn;
+  /**
+   * The researched world this artifact belongs to, when it has one.
+   *
+   * Passed in rather than looked up here: this function takes a file path, not
+   * a production, and the caller is the half that knows which work the file
+   * came from (22 §4).
+   */
+  readonly world?: { readonly lexicon?: Lexicon | null; readonly fidelity?: string };
+  /** The voice this artifact is meant to be in, to measure drift against. */
+  readonly voice?: { readonly target?: StyleProfileV2; readonly name?: string };
   /** Rewrite what is found, then audit again. Default true for audit. */
   readonly revise?: boolean;
   /** Only rewrite findings about the prose sounding machine-made. */
@@ -422,6 +598,12 @@ export interface StoryAuditOptions {
    * heading is the unit a person can watch tick past.
    */
   readonly onSection?: (heading: string) => void;
+  /**
+   * The resolved audit pack for this work: which dimensions run, what else to
+   * look for, which word lists moved, and how many rewrite rounds are allowed.
+   * Absent means the builtin thirty and two rounds, exactly as before (19 §1).
+   */
+  readonly pack?: ResolvedAuditPack;
   readonly signal?: AbortSignal;
 }
 
@@ -465,15 +647,20 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
       ? `Auditing ${sections.length} sections…`
       : `Re-auditing after round ${round}…`);
 
-    findings = ruleFindings(sections, language);
+    findings = ruleFindings(sections, language, options.world, options.voice, options.pack);
     for (const [index, section] of sections.entries()) {
       signal?.throwIfAborted();
       const out = await ask(
-        buildStoryAuditPrompt(section, index, sections.length, language),
+        buildStoryAuditPrompt(section, index, sections.length, language, options.pack),
         `story-audit-${index + 1}`,
       );
       findings.push(...parseStoryFindings(out, section.heading));
     }
+
+    // "Never flag this again" is a promise, so it is kept at the last moment
+    // before anything is reported — a rule check and a model both go through it.
+    const silenced = options.pack;
+    if (silenced) findings = findings.filter((f) => !isSuppressed(silenced, f.category));
 
     /*
      * A note is worth knowing and not worth a rewrite; everything above one is.
@@ -485,7 +672,8 @@ export async function runStoryAudit(options: StoryAuditOptions): Promise<StoryAu
      */
     const actionable = findings.filter((f) =>
       f.severity !== "note" && (!options.slopOnly || isStorySlopFinding(f)));
-    if (!revise || round >= MAX_ROUNDS || actionable.length === 0) break;
+    const allowed = options.pack?.maxIterations ?? MAX_ROUNDS;
+    if (!revise || round >= allowed || actionable.length === 0) break;
 
     // Keep the original once, before anything is changed.
     if (!backedUp) {

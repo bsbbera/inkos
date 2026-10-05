@@ -1,4 +1,4 @@
-import type { InkosModel } from "./types.js";
+import type { QuireModel } from "./types.js";
 import { getAllEndpoints, getEndpoint } from "./index.js";
 
 /**
@@ -24,7 +24,7 @@ const PROVIDER_PRIORITY: readonly string[] = [
 export function lookupModel(
   serviceId: string,
   modelId: string,
-): InkosModel | undefined {
+): QuireModel | undefined {
   const lowerId = modelId.toLowerCase();
 
   const provider = getEndpoint(serviceId);
@@ -33,7 +33,7 @@ export function lookupModel(
     if (hit) return hit;
   }
 
-  const matches: Array<{ model: InkosModel; providerId: string }> = [];
+  const matches: Array<{ model: QuireModel; providerId: string }> = [];
   for (const p of getAllEndpoints()) {
     const hit = p.models.find((m) => m.id.toLowerCase() === lowerId);
     if (hit) matches.push({ model: hit, providerId: p.id });
@@ -49,13 +49,13 @@ export function lookupModel(
 }
 
 /** 某 service 下可用（enabled !== false）的模型列表 */
-export function listEnabledModels(serviceId: string): InkosModel[] {
+export function listEnabledModels(serviceId: string): QuireModel[] {
   const provider = getEndpoint(serviceId);
   if (!provider) return [];
   return provider.models.filter((m) => m.enabled !== false);
 }
 
-export function isActiveTextModel(model: InkosModel): boolean {
+export function isActiveTextModel(model: QuireModel): boolean {
   if (model.enabled === false) return false;
   if (model.status === "disabled" || model.status === "deprecated" || model.status === "nonText") return false;
   if (model.capabilities?.text === false) return false;
@@ -63,7 +63,7 @@ export function isActiveTextModel(model: InkosModel): boolean {
   return true;
 }
 
-export function listActiveTextModels(serviceId: string): InkosModel[] {
+export function listActiveTextModels(serviceId: string): QuireModel[] {
   const provider = getEndpoint(serviceId);
   if (!provider) return [];
   return provider.models.filter(isActiveTextModel);
@@ -82,7 +82,7 @@ export function listActiveTextModels(serviceId: string): InkosModel[] {
 export function modelCapabilities(
   serviceId: string,
   modelId: string,
-): NonNullable<InkosModel["capabilities"]> {
+): NonNullable<QuireModel["capabilities"]> {
   const provider = getEndpoint(serviceId);
   const card = lookupModel(serviceId, modelId);
   return { ...provider?.modelDefaults, ...card?.capabilities };

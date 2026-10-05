@@ -1,0 +1,34 @@
+{
+  "id": "magazine-readability",
+  "version": 1,
+  "appliesTo": ["publication"],
+  "extends": "story-30",
+  "dimensions": {
+    "custom": [
+      {
+        "id": "section-voice",
+        "label": "Section keeps its register",
+        "instruction": "Each section of an issue has one way of talking. Flag a page whose register leaves its section's — a playful section turning textbook, a reference section turning chatty.",
+        "severity": "warning"
+      },
+      {
+        "id": "question-hook",
+        "label": "Question hook",
+        "instruction": "A feature opens on a question the page then answers. Flag a feature whose first block is neither a question nor a deck ending in one.",
+        "severity": "note"
+      },
+      {
+        "id": "story-spine",
+        "label": "Three-beat section spine",
+        "instruction": "A section runs wonder, then how, then so-what across its pages. Flag a section whose pages do not move through those three, or that repeats one beat twice running.",
+        "severity": "warning"
+      }
+    ]
+  },
+  "blocking": [
+    "readability/over-cap",
+    "readability/grade",
+    "readability/subject-label"
+  ],
+  "scoring": { "maxIterations": 2 }
+}

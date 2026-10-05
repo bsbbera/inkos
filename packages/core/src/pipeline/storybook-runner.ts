@@ -19,6 +19,7 @@ import { dirname, join } from "node:path";
 import { safeChildPath } from "../utils/path-safety.js";
 import { StorybookAgent, type SpreadPlan } from "../agents/storybook.js";
 import type { AgentContext } from "../agents/base.js";
+import { rulesFor } from "./taste-engine.js";
 
 export const STORYBOOK_DIR = "storybooks";
 
@@ -162,6 +163,8 @@ export async function writeStorybookSpread(input: {
     plan: beat,
     total: meta.spreads,
     ...(before ? { before } : {}),
+    rules: await rulesFor(input.projectRoot, { type: "storybook", id: input.id, surface: "content" })
+      .catch(() => [] as string[]),
   });
 
   await writeInto(input.projectRoot, relative, renderSpread(input.unit, written.text, written.art));
@@ -226,7 +229,19 @@ export async function buildStorybookProof(input: {
       .catch(() => "");
     // `../art/generated/…`: the file sits in build/, and a proof that only
     // opens from the project root is a proof nobody can send anywhere.
-    const picture = art.find((n) => n.startsWith(`${unit}-`) && !n.endsWith(".recipe.json"));
+    // The one chosen in the gallery, when one was; else the first drawn.
+    const candidates = art.filter((n) => n.startsWith(`${unit}-`) && /\.(png|jpe?g|webp)$/i.test(n)).sort();
+    let picture = candidates[0];
+    for (const name of candidates) {
+      const recipe = await readFile(
+        safeChildPath(input.projectRoot, join(bookDir(input.id), "art", "generated", name.replace(/\.[^.]+$/, ".recipe.json"))),
+        "utf-8",
+      ).then((t) => JSON.parse(t) as { approved?: unknown }).catch(() => ({} as { approved?: unknown }));
+      if (typeof recipe.approved === "string") {
+        picture = name;
+        break;
+      }
+    }
     sections.push([
       `<section class="spread">`,
       picture

@@ -306,6 +306,7 @@ describe("runChapterReviewCycle v9", () => {
       },
       createReviser: () => ({ reviseChapter }),
       auditor: { auditChapter },
+      maxReviewIterations: 1,
     });
 
     expect(reviseChapter).toHaveBeenCalledTimes(1);

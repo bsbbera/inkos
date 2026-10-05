@@ -81,7 +81,7 @@ export async function searchProviders(projectRoot: string): Promise<SearchSettin
 
   try {
     const raw = JSON.parse(
-      await readFile(`${projectRoot}/inkos.json`, "utf-8"),
+      await readFile(`${projectRoot}/quire.json`, "utf-8"),
     ) as Record<string, unknown>;
     const cfg = ResearchSearchConfigSchema.parse(raw.researchSearch ?? {});
     if (cfg.enabled && (cfg.apiKey || cfg.apiKeyEnv)) {
@@ -108,7 +108,11 @@ export async function searchProviders(projectRoot: string): Promise<SearchSettin
  */
 export async function allSearchSources(projectRoot: string): Promise<SearchSource[]> {
   const keys = (await searchProviders(projectRoot)).map(keySource);
-  return [...keys, ...await mcpSearchSources()];
+  // The person's own notes first: an issue built from what they read should
+  // quote what they read before it quotes the web (13 §Sources).
+  const { personalSource } = await import("./personal-sources.js");
+  const personal = await personalSource(projectRoot).catch(() => null);
+  return [...(personal ? [personal] : []), ...keys, ...await mcpSearchSources()];
 }
 
 /**

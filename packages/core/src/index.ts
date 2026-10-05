@@ -6,7 +6,7 @@ export { type CurrentState, type ParticleLedger, type PendingHooks, type Pending
 export { type GenreProfile, type ParsedGenreProfile, GenreProfileSchema, parseGenreProfile } from "./models/genre-profile.js";
 export { type BookRules, type ParsedBookRules, BookRulesSchema, parseBookRules, tryParseBookRulesFrontmatter } from "./models/book-rules.js";
 export { type DetectionHistoryEntry, type DetectionStats } from "./models/detection.js";
-export { type StyleProfile } from "./models/style-profile.js";
+export { type StyleProfile, type StyleProfileV2 } from "./models/style-profile.js";
 export { type LengthCountingMode, type LengthSpec, type LengthTelemetry, type LengthWarning, LengthCountingModeSchema, LengthSpecSchema, LengthTelemetrySchema, LengthWarningSchema } from "./models/length-governance.js";
 export {
   commitProductionArtifacts,
@@ -508,7 +508,7 @@ export {
   type CoverProviderPreset,
 } from "./llm/cover-providers.js";
 export { migrateConfig, type MigrationResult } from "./llm/config-migration.js";
-export { getAllEndpoints, getEndpoint, type InkosEndpoint, type InkosModel, type EndpointGroup } from "./llm/providers/index.js";
+export { getAllEndpoints, getEndpoint, type QuireEndpoint, type QuireModel, type EndpointGroup } from "./llm/providers/index.js";
 export { probeModelsFromUpstream, type ProbedModel } from "./llm/providers/probe.js";
 
 // Agents
@@ -539,7 +539,9 @@ export { buildFanficCanonSection, buildCharacterVoiceProfiles, buildFanficModeIn
 export * from "./prompts/index.js";
 
 // Utils
-export { isNewLayoutBook, isBookFoundationComplete } from "./utils/outline-paths.js";
+export {
+  ROLE_DIR_NAMES, isNewLayoutBook, isBookFoundationComplete, roleDirFor,
+} from "./utils/outline-paths.js";
 export { fetchUrl, searchWeb } from "./utils/web-search.js";
 export {
   runResearchReport,
@@ -742,6 +744,8 @@ export {
 export { exportInk } from "./interactive-film/export-ink.js";
 export { buildPlayableHtml } from "./interactive-film/export-html.js";
 export { ingestMaterial, type IngestMaterialInput, type MaterialAsset } from "./materials/ingest.js";
+export { ingestLinkedPages, CRAWL_MAX_PAGES, type CrawlInput, type CrawlResult } from "./materials/crawl.js";
+export { listMaterialAssets } from "./materials/retrieve.js";
 export { runWorkerAgent, type WorkerAgentOptions } from "./agent/worker-agent.js";
 
 export { loadPublicationRegistry, findPublicationDefinition, userDefinitionsDir } from "./publications/registry.js";
@@ -749,15 +753,17 @@ export type { PublicationRegistry, PublicationDiagnostic } from "./publications/
 export type { PublicationDefinition, PublicationDefinitionSource } from "./publications/types.js";
 export {
   runStoryAudit, runStoryDeslop, reviseStoryFile, createStoryAsk, storyAuditReport,
+  buildFindingRewritePrompt, languageOf,
   STORY_DIMENSIONS, STORY_SLOP_DIMENSIONS,
 } from "./pipeline/story-audit.js";
+export type { RewritableFinding, RewriteScope } from "./pipeline/story-audit.js";
 export type {
-  StoryAudit, StoryFinding, StoryReviseOptions, StoryRevised,
+  StoryAudit, StoryAskFn, StoryFinding, StoryReviseOptions, StoryRevised, FindingRewriteInput,
 } from "./pipeline/story-audit.js";
 export {
   applyFix, applyParagraph, blocksApproval, countBySeverity, findingId, locate,
   locateQuote, mergeFindings, normalizeSeverity, paragraphAt, paragraphOf,
-  paragraphSpan, NO_LOCATION,
+  paragraphSpan, relocate, rewriteDrops, NO_LOCATION,
 } from "./pipeline/findings.js";
 export type {
   ApplyOutcome, Finding, FindingLocation, FindingSeverity, FindingState, RawFinding,
@@ -769,20 +775,79 @@ export type { FactCheckResult, FactFinding, CheckableClaim } from "./pipeline/fa
 export {
   searchAllSources, mcpSearchSources, keySource, RESULTS_PER_SOURCE,
 } from "./utils/search-sources.js";
+export { allSearchSources, searchProviders } from "./pipeline/publication-research.js";
 export type { SearchSource, SearchSweep, SourcedResult } from "./utils/search-sources.js";
 export { modelCapabilities, modelSearchesWeb } from "./llm/providers/lookup.js";
 
 export {
-  PRODUCTIONS, auditableRoots, productionByDir, refFromPath, type UnitRef,
+  ALL_GATES, PRODUCTIONS, SPINE, artPolicyOf, auditableRoots, productionByDir, refFromPath, type UnitRef,
 } from "./productions/registry.js";
 export type {
-  ProductionSpec, ProductionPipeline, PipelineGate, BuildShape, BuildOutput,
+  ArtPolicy, ProductionSpec, ProductionPipeline, PipelineGate, BuildShape, BuildOutput, Surface,
 } from "./productions/registry.js";
+export {
+  buildWorldPrompt, composeImagePrompt, parseWorld, readWorld, worldPathOf, workDirOf,
+  POLICY_NEGATIVE, TECHNIQUE_POOLS, TREATMENT_SUFFIX,
+} from "./pipeline/image-prompt.js";
+export type { ComposedPrompt, ImageWorld, StoredWorld } from "./pipeline/image-prompt.js";
+export {
+  buildReaderPrompt, parseReaderMap, paragraphsOf, personasFor, readerFindings, runReaderMap,
+  COLD as READER_COLD, READER_PERSONAS,
+} from "./pipeline/reader-sim.js";
+export type { ReaderMap, ReaderPersona, ReaderPoint } from "./pipeline/reader-sim.js";
+export {
+  KIT_SLOTS, TREATMENTS_BY_SLOT, pageCandidates, postProcessFor, rollTreatment, seedOf,
+} from "./pipeline/treatments.js";
+export type { PostOp, Colours as TreatmentColours } from "./pipeline/treatments.js";
+export {
+  buildCastPrompt, castDirOf, castIn, parseCast, readCast, sheetPrompt, slugOf, traitLine,
+} from "./pipeline/cast.js";
+export type { CastSheet } from "./pipeline/cast.js";
+export {
+  KITS_DIR, captureIntoKit, keyOf as kitKeyOf, kitAssetFor, kitDirOf, kitIdOf, latestKit,
+  mix as mixHex, proposeKit, writeKit,
+} from "./pipeline/kit.js";
+export type { Kit, KitAsset, KitManifest, KitSwatches, KitTextStyles, KitFx } from "./pipeline/kit.js";
+export { ASPECT_SIZE, buildArtDirectorPrompt, parseArtDirection } from "./pipeline/art-director.js";
+export {
+  diffSentences, driftProposals, languageOfText, pageChanges, pdfPagesText, sentencesOf, styleDrift,
+} from "./pipeline/final-learn.js";
+export type { Drift, SentenceDiff } from "./pipeline/final-learn.js";
+export {
+  BIBLE_SECTIONS, SERIES_DIR, SETTINGS_DIR, askPathOf, biblePathOf, bibleSections, buildSettingCard,
+  cardPathOf, copySetting, lexiconPathOf, libraryDirOf, listLibrarySettings, makeSetting, readBible,
+  readLexicon, readSetting, readSettingCard, settingDirOf, settingFromEra, settingPathOf, settingSlug,
+  sourcesPathOf, writeSetting, writeSettingCard,
+} from "./pipeline/setting.js";
+export type {
+  BibleSection, Fidelity, Lexicon, LexiconForbidden, LexiconPrefer, Setting, SettingKind,
+  SettingLens, SettingPlace, SettingTime, SourceRecord,
+} from "./pipeline/setting.js";
+export {
+  buildDetectPrompt, buildLexiconPrompt, buildSectionPrompt, intakeTextOf, parseGuess, parseLexicon,
+  researchSetting,
+} from "./pipeline/setting-research.js";
+export type { ResearchResult, SettingGuess } from "./pipeline/setting-research.js";
+export { anachronismFindings, findAnachronisms, severityFor } from "./pipeline/anachronism.js";
+export type { AnachronismHit } from "./pipeline/anachronism.js";
+export {
+  addPromise, createSeries, joinSeries, listSeries, openPromises, readSeries, seriesBrief,
+  seriesDirOf, seriesPathOf, settlePromise, writeSeries,
+} from "./pipeline/series.js";
+export type { Series, SeriesPromise, SeriesWork } from "./pipeline/series.js";
+export { blendTarget, distance, fingerprint, gaps } from "./agents/style-fingerprint.js";
+export {
+  chooseExemplars, exemplarBlock, exemplarsFor, readExemplars, writeExemplars,
+} from "./pipeline/exemplars.js";
+export type { Exemplar } from "./pipeline/exemplars.js";
+export { FACETS, MAX_BLEND, droppedFacets, normaliseBlend } from "./pipeline/blend.js";
+export type { BlendEntry, Facet } from "./pipeline/blend.js";
 export {
   advance as advancePipeline,
   approve as approvePipelineGate,
   ensurePipeline,
   loadPipeline,
+  openGate as openPipelineGate,
   pipelineFor,
   pipelinePath,
   reject as rejectPipelineGate,
@@ -795,11 +860,16 @@ export {
   pause as pausePipeline,
   specFor as productionSpecFor,
   tryTrack as trackPipeline,
+  markStage as markPipelineStage,
+  cancelUnit as cancelPipelineUnit,
+  unitsRunning as pipelineUnitsRunning,
+  completeStage as completePipelineStage,
   waitingOn as pipelineWaitingOn,
   withdraw as withdrawPipelineGate,
 } from "./pipeline/orchestrator.js";
 export {
-  EXECUTORS, executorFor, exportWork, layout, registerExecutor, splitNegative, subjectOf,
+  EXECUTORS, executorFor, exportWork, layout, previousTreatments, registerExecutor, splitNegative,
+  subjectOf, writeBrief, writeNone,
   type ArtBrief, type StageContext, type StageExecutor, type StageResult,
 } from "./pipeline/executors.js";
 export type {
@@ -827,12 +897,60 @@ export {
   type WriteStyleGuideResult,
 } from "./pipeline/style-guide.js";
 export {
+  chunkProse,
   formatProse,
+  quotedLinesKept,
   restyleProse,
   restyleTargets,
   voiceOnly,
   RestyleRefused,
 } from "./pipeline/restyle.js";
+export type { RestyleResult } from "./pipeline/restyle.js";
+export {
+  SERVICES as PRINT_SERVICES, TRIMS, coverGeometry, defaultProfile, ean13, gutterFor, inspectPdf,
+  interiorPage, isbnDigits, normaliseProfile, preflight as printPreflight, readPrintProfile,
+  spineWidth, writePrintPackage, writePrintProfile,
+} from "./pipeline/print.js";
+export type {
+  Binding, CoverGeometry, PdfFacts, PrintFinding, PrintProfile, PrintService, Stock, Trim,
+} from "./pipeline/print.js";
+export {
+  TypstMissing, buildPrintEdition, chaptersOf, compileTypst, coverSource, inline as typstInline,
+  interiorSource, lit as typstLit, panelSheetSource, prose as typstProse, screenplaySource,
+  storybookSource, typstBinary,
+} from "./pipeline/typeset.js";
+export type { PrintEdition } from "./pipeline/typeset.js";
+export {
+  BARS, DEFAULT_MIX, audienceOf, gradeOf, prescreen, readabilityFindings, surfaceMix,
+} from "./pipeline/magazine-bar.js";
+export type { Audience, PageMetrics, SurfaceMix } from "./pipeline/magazine-bar.js";
+export {
+  loadPersonalItems, noteItem, personalConfigPath, personalSource, readMarkdownFolder,
+  readPersonalConfig, readZotero, scoreItem, writePersonalConfig,
+} from "./pipeline/personal-sources.js";
+export type { PersonalItem, PersonalSourcesConfig } from "./pipeline/personal-sources.js";
+export {
+  benchFromSettled, benchSummary, readBench, runBench, writeBenchCase,
+} from "./pipeline/audit-bench.js";
+export { slopScore } from "./agents/slop-score.js";
+export type { SlopScore } from "./agents/slop-score.js";
+export type { BenchCase, BenchResult, BenchRun } from "./pipeline/audit-bench.js";
+export {
+  DEFAULT_SCORING, activeDimensions, applyWordDelta, auditPackIn, customDimensionPrompt,
+  isSuppressed, noAuditPack, parseAuditPack, readAuditPacks, readCatalogues, resolveAuditPack,
+} from "./pipeline/audit-pack.js";
+export type {
+  AuditPack, CatalogueDimension, CustomDimension, DimensionCatalogue, ResolvedAuditPack, WordDelta,
+} from "./pipeline/audit-pack.js";
+export {
+  CAUSE_RULES, addRule, applies as ruleApplies, auditProposals, buildDistillPrompt, causeProposals,
+  cloneTaste,
+  distillGroups, exportTastePack, importTastePack, noteTrial, parseDistill, readRules, retireRule,
+  rulesFor, scopeKey,
+} from "./pipeline/taste-engine.js";
+export type {
+  DistillGroup, RuleProposal, TasteEvent, TastePackManifest, TasteRule,
+} from "./pipeline/taste-engine.js";
 export {
   STYLES_DIR,
   STYLE_MARK,
@@ -856,17 +974,25 @@ export {
 } from "./pipeline/recompose.js";
 export {
   enqueue as enqueueJob,
+  track as trackJob,
+  liveJobFor,
   cancel as cancelJob,
+  cancelWhere as cancelJobsWhere,
+  isDownstreamOf as isDownstreamOfGate,
   listJobs,
   jobById,
   pruneJobs,
   resetJobs,
   setJobSink,
+  setJobUnit,
   type Job,
   type JobStatus,
   type JobWork,
 } from "./pipeline/jobs.js";
-export { pendingUnits, reachStage, stageSequence } from "./pipeline/pipeline-state.js";
+export {
+  designSkillBrief, designSkillFor, EDITORIAL_DESIGN_SKILL, ILLUSTRATION_SKILL,
+} from "./skills/design-skills.js";
+export { macroSkipped, pendingUnits, reachStage, skipReason, stageSequence } from "./pipeline/pipeline-state.js";
 export type { PipelineState, PipelineStatus, GateState } from "./pipeline/pipeline-state.js";
 
 export { validateDefinition, renderTemplate } from "./publications/types.js";
@@ -884,6 +1010,7 @@ export {
   runAudit as runPublicationAudit, runDeslop as runPublicationDeslop,
   revisePage as revisePublicationPage, renderPage as renderPublicationPage,
   placePage as placePublicationPage, runDesign as runPublicationDesign,
+  designSection as designPublicationSection,
 } from "./pipeline/publication-runner.js";
 export { openIssueContext as openPublicationIssue, listIssueIds as listPublicationIssueIds } from "./pipeline/publication-context.js";
 export { createPublicationAsk } from "./pipeline/publication-session.js";
@@ -894,6 +1021,7 @@ export {
 } from "./pipeline/publication-memory.js";
 export { PublicationIssueSchema, validateIssue as validatePublicationIssue } from "./pipeline/publication-schema.js";
 export { briefsOf as publicationPageBriefs } from "./pipeline/publication-runner.js";
+export { nextIssueDue, setIssueSchedule, startNextIssue } from "./pipeline/publication-runner.js";
 export type { PageBrief as PublicationPageBrief } from "./pipeline/publication-runner.js";
 export type {
   PublicationIssue, PublicationPage, PublicationSection, PublicationSummary,

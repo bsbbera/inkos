@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  advance, approve, completeUnit, failUnit, initialState,
-  pendingUnits, reachStage, reject, stageSequence, withdraw,
+  advance, approve, completeUnit, failUnit, initialState, macroSkipped,
+  pendingUnits, reachStage, reject, skipReason, stageSequence, withdraw,
   type PipelineState,
 } from "../pipeline/pipeline-state.js";
-import { PRODUCTIONS } from "../productions/registry.js";
+import { ALL_GATES, PRODUCTIONS, SPINE } from "../productions/registry.js";
 import type { ProductionPipeline } from "../productions/registry.js";
 
 const spec = (id: string) => {
@@ -36,7 +36,7 @@ describe("reachStage puts a run where the work actually happened", () => {
     // chapter would complete the *plan* stage and the run would spend the rest
     // of its life one step behind itself.
     const { state, pipeline } = start("book", 3);
-    expect(state.stage).toBe("content.plan");
+    expect(state.stage).toBe("content.research");
     const moved = reachStage(state, pipeline, "content.write", now);
     expect(moved.stage).toBe("content.write");
     expect(moved.status).toBe("running");
@@ -57,11 +57,13 @@ describe("reachStage puts a run where the work actually happened", () => {
     expect(reachStage(ahead, pipeline, "content.write", now).stage).toBe("content.destyle");
   });
 
-  it("never crosses a gate, because a gate is a person", () => {
+  it("crosses a gate and leaves it open for a sign-off", () => {
     const { state, pipeline } = start("book", 3);
     const atDestyle = reachStage(state, pipeline, "content.destyle", now);
     // design.artplan sits on the far side of gate:content.
-    expect(reachStage(atDestyle, pipeline, "design.artplan", now).stage).toBe("content.destyle");
+    const past = reachStage(atDestyle, pipeline, "design.artplan", now);
+    expect(past.stage).toBe("design.artplan");
+    expect(past.gates.content?.state).toBe("waiting");
   });
 
   it("leaves the units of the stage it is leaving behind", () => {
@@ -128,23 +130,73 @@ describe("withdrawal makes downstream work stale", () => {
 describe("stageSequence", () => {
   it("walks content, design and build with a gate after each", () => {
     expect(stageSequence(spec("book"))).toEqual([
-      "content.plan", "content.write", "content.audit", "content.destyle", "gate:content",
+      "content.research", "content.plan", "content.write", "content.factcheck",
+      "content.audit", "content.destyle", "gate:content",
       "design.artplan", "design.generate", "design.review", "gate:design",
-      // No build.layout: a book reflows, so there is no per-chapter placement
-      // to perform and declaring one would park every book on a dead stage.
-      "build.export", "gate:build",
+      "build.layout", "build.export", "gate:build",
       "done",
     ]);
   });
 
-  it("skips a macro-stage a type does not have, and its gate with it", () => {
-    // A screenplay is set to an industry format on purpose. No design steps,
-    // and therefore no design gate to be stuck at.
-    const script = stageSequence(spec("script"));
-    expect(script.some((s) => s.startsWith("design."))).toBe(false);
-    expect(script).not.toContain("gate:design");
-    expect(script).toContain("gate:content");
-    expect(script).toContain("build.export");
+  it("gives every kind the same spine, and says which steps it walks past", () => {
+    // The steps a kind does not perform are declared and skipped, never
+    // missing. A novel that needs checking against the record can have that
+    // stage switched on; before this it had nowhere to switch it on.
+    const book = spec("book");
+    expect(stageSequence(book)).toContain("content.factcheck");
+    expect(skipReason(book, "content.factcheck")).toMatch(/not held to the record/i);
+    expect(skipReason(book, "content.write")).toBeNull();
+
+    // A screenplay is set to an industry format on purpose: the design steps
+    // are there, greyed, with that sentence on them.
+    const script = spec("script");
+    expect(stageSequence(script)).toContain("design.generate");
+    expect(macroSkipped(script, "design")).toBe(true);
+    expect(macroSkipped(script, "content")).toBe(false);
+
+    // Every kind that runs a pipeline declares the whole spine.
+    for (const production of PRODUCTIONS) {
+      if (!production.pipeline) continue;
+      expect(production.pipeline.content, production.id).toEqual([...SPINE.content]);
+      expect(production.pipeline.design, production.id).toEqual([...SPINE.design]);
+      expect(production.pipeline.build, production.id).toEqual([...SPINE.build]);
+      expect(production.pipeline.gates, production.id).toEqual([...ALL_GATES]);
+      // A reason is what makes a skipped step honest; an empty one is a hole.
+      for (const [stage, why] of Object.entries(production.pipeline.skip ?? {})) {
+        expect(stageSequence(production.pipeline), `${production.id} ${stage}`).toContain(stage);
+        expect(why.trim().length, `${production.id} ${stage}`).toBeGreaterThan(10);
+      }
+    }
+  });
+
+  it("walks past a skipped step without waiting for work nobody will do", () => {
+    // The stage has no executor and never will. Before skipping existed, a
+    // step like this parked the run for good.
+    let { state, pipeline } = start("short", 1);
+    expect(state.stage).toBe("content.research");
+    state = advance(finishStage(state), pipeline, now).state;
+    expect(state.stage).toBe("content.plan");
+
+    const moved = advance(state, pipeline, now);
+    expect(moved.moved).toBe(true);
+    expect(moved.state.stage).toBe("content.write");
+    const skipped = moved.state.history.filter((h) => h.event === "stage:skipped");
+    expect(skipped.at(-1)).toMatchObject({ stage: "content.plan" });
+    expect(skipped.at(-1)?.note).toMatch(/one pass/);
+  });
+
+  it("signs off a gate whose every step was skipped, instead of asking", () => {
+    // A translation has no design of its own. Asking for a design sign-off on
+    // one would put a permanent "waiting on you" on the Home screen.
+    let { state, pipeline } = start("translation", 1);
+    for (let guard = 0; guard < 30 && state.stage !== "gate:design"; guard += 1) {
+      state = state.stage.startsWith("gate:")
+        ? approve({ state, gate: state.stage.slice(5) as "content", now })
+        : finishStage(state);
+      state = advance(state, pipeline, now).state;
+    }
+    expect(state.gates.design).toMatchObject({ state: "approved", by: "quire" });
+    expect(state.gates.design?.note).toMatch(/skipped/);
   });
 
   it("gives every type that runs one a graph ending in done", () => {
@@ -164,14 +216,14 @@ describe("advance", () => {
     const result = advance(one, pipeline, now);
     expect(result.moved).toBe(false);
     expect(result.reason).toBe("1/3 units done");
-    expect(result.state.stage).toBe("content.plan");
+    expect(result.state.stage).toBe("content.research");
   });
 
   it("moves on when the last unit lands", () => {
     const { state, pipeline } = start("book", 3);
     const result = advance(finishStage(state), pipeline, now);
     expect(result.moved).toBe(true);
-    expect(result.state.stage).toBe("content.write");
+    expect(result.state.stage).toBe("content.plan");
     // The next stage starts with nothing done, or it would look finished.
     expect(result.state.units.done).toEqual([]);
   });
@@ -185,42 +237,41 @@ describe("advance", () => {
     expect(result.state.status).toBe("failed");
   });
 
-  it("stops at a gate and says so, rather than approving itself", () => {
+  it("walks through a gate and leaves it open, rather than stopping", () => {
     let { state, pipeline } = start("book", 1);
     // Walk the whole content macro-stage.
     for (const _ of pipeline.content) {
       state = advance(finishStage(state), pipeline, now).state;
     }
     expect(state.stage).toBe("gate:content");
-    expect(state.status).toBe("waiting-gate");
     expect(state.gates.content?.state).toBe("waiting");
 
-    const blocked = advance(state, pipeline, now);
-    expect(blocked.moved).toBe(false);
-    expect(blocked.reason).toBe("waiting on content gate");
-    expect(blocked.state.stage).toBe("gate:content");
+    const through = advance(state, pipeline, now);
+    expect(through.moved).toBe(true);
+    expect(through.state.stage).toBe("design.artplan");
+    // Nobody signed it, so it is still open.
+    expect(through.state.gates.content?.state).toBe("waiting");
   });
 });
 
-describe("the hand-off that did not exist", () => {
-  it("approving the last content unit is what starts the design stage", () => {
+describe("a sign-off is a record, not a stop", () => {
+  it("starts the design stage whether or not the writing is signed", () => {
     let { state, pipeline } = start("book", 2);
     for (const _ of pipeline.content) state = advance(finishStage(state), pipeline, now).state;
-    expect(state.stage).toBe("gate:content");
-
-    // One of two chapters signed off: still waiting, nothing starts.
     state = approve({ state, gate: "content", units: [1], now });
-    expect(state.gates.content?.state).toBe("waiting");
     expect(pendingUnits(state, "content")).toEqual([2]);
-    expect(advance(state, pipeline, now).moved).toBe(false);
-
-    // The last one lands and the run continues on its own.
-    state = approve({ state, gate: "content", units: [2], by: "user", now });
-    expect(state.gates.content?.state).toBe("approved");
     const moved = advance(state, pipeline, now);
     expect(moved.moved).toBe(true);
     expect(moved.state.stage).toBe("design.artplan");
     expect(moved.state.status).toBe("running");
+  });
+
+  it("keeps a sign-off given before the gate is reached", () => {
+    let { state, pipeline } = start("book", 1);
+    state = approve({ state, gate: "content", now });
+    for (const _ of pipeline.content) state = advance(finishStage(state), pipeline, now).state;
+    expect(state.stage).toBe("gate:content");
+    expect(state.gates.content?.state).toBe("approved");
   });
 });
 
@@ -259,13 +310,20 @@ describe("approvals are reversible", () => {
 });
 
 describe("a run with one gate fewer", () => {
-  it("takes a script from content straight to build", () => {
+  it("takes a script from content to build through its skipped design", () => {
     let { state, pipeline } = start("script", 1);
-    for (const _ of pipeline.content) state = advance(finishStage(state), pipeline, now).state;
+    for (let guard = 0; guard < 30 && state.stage !== "gate:content"; guard += 1) {
+      state = advance(finishStage(state), pipeline, now).state;
+    }
     expect(state.stage).toBe("gate:content");
     state = approve({ state, gate: "content", now });
-    const moved = advance(state, pipeline, now);
-    expect(moved.state.stage).toBe("build.layout");
+    // Three design steps, all skipped, then a gate that signs itself: the run
+    // arrives at the build without anyone being asked about art direction.
+    for (let guard = 0; guard < 10 && state.stage !== "build.layout"; guard += 1) {
+      state = advance(state, pipeline, now).state;
+    }
+    expect(state.stage).toBe("build.layout");
+    expect(state.gates.design?.state).toBe("approved");
   });
 
   it("reaches done and stays there", () => {
@@ -283,15 +341,9 @@ describe("a run with one gate fewer", () => {
   });
 });
 
-/*
- * Withdrawal has to move the run, not only the record.
- *
- * Reopening the content gate while the run stood in design.artplan left a
- * state that could only have been reached by an approval that no longer
- * existed.
- */
-describe("withdraw walks the run back", () => {
-  it("returns the run to the gate it is no longer past", () => {
+/* A gate holds nothing back, so taking a sign-off back moves nothing either. */
+describe("withdraw leaves the run where it is", () => {
+  it("reopens the gate without walking the run back", () => {
     const { state: fresh, pipeline } = start("short", 1);
     let state = fresh;
     // Walk it to the far side of the content gate.
@@ -306,8 +358,7 @@ describe("withdraw walks the run back", () => {
     expect(state.stage).toBe("design.artplan");
 
     const undone = withdraw({ state, gate: "content", pipeline });
-    expect(undone.stage).toBe("gate:content");
-    expect(undone.status).toBe("waiting-gate");
+    expect(undone.stage).toBe("design.artplan");
     expect(undone.gates.content?.state).toBe("waiting");
     // The record of the approval is kept; only its effect is undone.
     expect(undone.history.some((h) => h.event === "gate:approved")).toBe(true);

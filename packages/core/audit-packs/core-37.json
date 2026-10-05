@@ -1,0 +1,193 @@
+{
+  "id": "core-37",
+  "version": 1,
+  "kind": "book",
+  "note": "The continuity dimensions every book audit may run. A pack enables, disables or adds to this list; it never edits it.",
+  "dimensions": [
+    {
+      "id": 1,
+      "zh": "OOC检查",
+      "en": "OOC Check"
+    },
+    {
+      "id": 2,
+      "zh": "时间线检查",
+      "en": "Timeline Check"
+    },
+    {
+      "id": 3,
+      "zh": "设定冲突",
+      "en": "Lore Conflict Check"
+    },
+    {
+      "id": 4,
+      "zh": "战力崩坏",
+      "en": "Power Scaling Check"
+    },
+    {
+      "id": 5,
+      "zh": "数值检查",
+      "en": "Numerical Consistency Check"
+    },
+    {
+      "id": 6,
+      "zh": "伏笔检查",
+      "en": "Hook Check"
+    },
+    {
+      "id": 7,
+      "zh": "节奏检查",
+      "en": "Pacing Check"
+    },
+    {
+      "id": 8,
+      "zh": "文风检查",
+      "en": "Style Check"
+    },
+    {
+      "id": 9,
+      "zh": "信息越界",
+      "en": "Information Boundary Check"
+    },
+    {
+      "id": 10,
+      "zh": "词汇疲劳",
+      "en": "Lexical Fatigue Check"
+    },
+    {
+      "id": 11,
+      "zh": "利益链断裂",
+      "en": "Incentive Chain Check"
+    },
+    {
+      "id": 12,
+      "zh": "年代考据",
+      "en": "Era Accuracy Check"
+    },
+    {
+      "id": 13,
+      "zh": "配角降智",
+      "en": "Side Character Competence Check"
+    },
+    {
+      "id": 14,
+      "zh": "配角工具人化",
+      "en": "Side Character Instrumentalization Check"
+    },
+    {
+      "id": 15,
+      "zh": "爽点虚化",
+      "en": "Payoff Dilution Check"
+    },
+    {
+      "id": 16,
+      "zh": "台词失真",
+      "en": "Dialogue Authenticity Check"
+    },
+    {
+      "id": 17,
+      "zh": "流水账",
+      "en": "Chronicle Drift Check"
+    },
+    {
+      "id": 18,
+      "zh": "知识库污染",
+      "en": "Knowledge Base Pollution Check"
+    },
+    {
+      "id": 19,
+      "zh": "视角一致性",
+      "en": "POV Consistency Check"
+    },
+    {
+      "id": 20,
+      "zh": "段落等长",
+      "en": "Paragraph Uniformity Check"
+    },
+    {
+      "id": 21,
+      "zh": "套话密度",
+      "en": "Cliche Density Check"
+    },
+    {
+      "id": 22,
+      "zh": "公式化转折",
+      "en": "Formulaic Twist Check"
+    },
+    {
+      "id": 23,
+      "zh": "列表式结构",
+      "en": "List-like Structure Check"
+    },
+    {
+      "id": 24,
+      "zh": "支线停滞",
+      "en": "Subplot Stagnation Check"
+    },
+    {
+      "id": 25,
+      "zh": "弧线平坦",
+      "en": "Arc Flatline Check"
+    },
+    {
+      "id": 26,
+      "zh": "节奏单调",
+      "en": "Pacing Monotony Check"
+    },
+    {
+      "id": 27,
+      "zh": "敏感词检查",
+      "en": "Sensitive Content Check"
+    },
+    {
+      "id": 28,
+      "zh": "正传事件冲突",
+      "en": "Mainline Canon Event Conflict"
+    },
+    {
+      "id": 29,
+      "zh": "未来信息泄露",
+      "en": "Future Knowledge Leak Check"
+    },
+    {
+      "id": 30,
+      "zh": "世界规则跨书一致性",
+      "en": "Cross-Book World Rule Check"
+    },
+    {
+      "id": 31,
+      "zh": "番外伏笔隔离",
+      "en": "Spinoff Hook Isolation Check"
+    },
+    {
+      "id": 32,
+      "zh": "读者期待管理",
+      "en": "Reader Expectation Check"
+    },
+    {
+      "id": 33,
+      "zh": "章节备忘偏离",
+      "en": "Chapter Memo Drift Check"
+    },
+    {
+      "id": 34,
+      "zh": "角色还原度",
+      "en": "Character Fidelity Check"
+    },
+    {
+      "id": 35,
+      "zh": "世界规则遵守",
+      "en": "World Rule Compliance Check"
+    },
+    {
+      "id": 36,
+      "zh": "关系动态",
+      "en": "Relationship Dynamics Check"
+    },
+    {
+      "id": 37,
+      "zh": "正典事件一致性",
+      "en": "Canon Event Consistency Check"
+    }
+  ]
+}

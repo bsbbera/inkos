@@ -179,7 +179,7 @@ describe("ArchitectAgent — Phase 5 prose output", () => {
   let bookDir: string;
 
   beforeEach(async () => {
-    bookDir = await mkdtemp(join(tmpdir(), "inkos-phase5-arch-"));
+    bookDir = await mkdtemp(join(tmpdir(), "quire-phase5-arch-"));
   });
 
   afterEach(async () => {
@@ -227,9 +227,9 @@ describe("ArchitectAgent — Phase 5 prose output", () => {
     expect(rhythm).toContain("高潮间距");
 
     // Role files — one per character, grouped by tier
-    const majorFiles = await readdir(join(storyDir, "roles", "主要角色"));
+    const majorFiles = await readdir(join(storyDir, "roles", "major"));
     expect(majorFiles.sort()).toEqual(["林辞.md", "沈默.md"]);
-    const minorFiles = await readdir(join(storyDir, "roles", "次要角色"));
+    const minorFiles = await readdir(join(storyDir, "roles", "minor"));
     expect(minorFiles).toEqual(["老张.md"]);
 
     // Compat shim: story_bible.md must exist and point at outline/story_frame.md
@@ -240,8 +240,8 @@ describe("ArchitectAgent — Phase 5 prose output", () => {
     // Compat shim: character_matrix.md points at roles/ directory
     const matrixShim = await readFile(join(storyDir, "character_matrix.md"), "utf-8");
     expect(matrixShim).toContain("兼容指针");
-    expect(matrixShim).toContain("roles/主要角色/林辞.md");
-    expect(matrixShim).toContain("roles/次要角色/老张.md");
+    expect(matrixShim).toContain("roles/major/林辞.md");
+    expect(matrixShim).toContain("roles/minor/老张.md");
 
     // Runtime state files still produced
     const currentState = await readFile(join(storyDir, "current_state.md"), "utf-8");
@@ -368,7 +368,7 @@ describe("writeFoundationFiles — rhythm file is skipped when rhythmPrinciples 
   let bookDir: string;
 
   beforeEach(async () => {
-    bookDir = await mkdtemp(join(tmpdir(), "inkos-phase5-rhythm-skip-"));
+    bookDir = await mkdtemp(join(tmpdir(), "quire-phase5-rhythm-skip-"));
   });
 
   afterEach(async () => {

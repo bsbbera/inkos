@@ -8,7 +8,7 @@ import type {
 import type { LLMMessage, LLMResponse } from "../llm/provider.js";
 
 export function isLlmStubEnabled(): boolean {
-  return Boolean(process.env.INKOS_AGENT_LLM_STUB);
+  return Boolean(process.env.QUIRE_AGENT_LLM_STUB);
 }
 
 // Mirrors EMPTY_USAGE in agent-session.ts exactly.

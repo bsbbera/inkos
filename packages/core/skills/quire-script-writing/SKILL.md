@@ -1,6 +1,7 @@
 ---
 name: quire-script-writing
-description: 小说、创意与大纲到可演剧本的改编方法。Used for confirmed script and short-drama production.
+description: "Adapts novels, premises and outlines into performable scripts - interiority turned into behaviour, scenes built on objective, resistance, turn and consequence, the source's causal spine preserved, production constraints explicit but never flattening character logic. Use for confirmed script and short-drama production."
+version: 1.0.0
 ---
 # Script writing
 

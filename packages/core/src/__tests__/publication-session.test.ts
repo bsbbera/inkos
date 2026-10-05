@@ -1,9 +1,11 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const runAgentSession = vi.fn();
+const runWorkerAgent = vi.fn();
 vi.mock("../agent/agent-session.js", () => ({ runAgentSession }));
 vi.mock("../agent/worker-agent.js", () => ({
   workerModel: (client: unknown, id: string) => ({ id, api: "openai-completions" }),
+  runWorkerAgent,
 }));
 
 const { createPublicationAsk, publicationSessionId } = await import("../pipeline/publication-session.js");
@@ -16,7 +18,7 @@ const base = { pipeline, projectRoot: "/root", issueId: "issue-1" };
 const ok = (text: string) => runAgentSession.mockResolvedValue({ responseText: text, messages: [] });
 
 describe("publication stages run as agent sessions", () => {
-  beforeEach(() => runAgentSession.mockReset());
+  beforeEach(() => { runAgentSession.mockReset(); runWorkerAgent.mockReset(); });
 
   it("names a session per issue and stage, so two pages never share a transcript", () => {
     expect(publicationSessionId("issue-1", "page-7")).toBe("publication--issue-1--page-7");
@@ -24,7 +26,7 @@ describe("publication stages run as agent sessions", () => {
       .not.toBe(publicationSessionId("issue-2", "plan"));
   });
 
-  // A session id becomes a filename under .inkos/sessions. A colon there is
+  // A session id becomes a filename under .quire/sessions. A colon there is
   // the alternate-data-stream separator on Windows, and every publication
   // stage failed to persist with ENOENT until this was folded down.
   it("stays a legal filename, whatever the issue is called", () => {
@@ -103,5 +105,22 @@ describe("publication stages run as agent sessions", () => {
     const ask = createPublicationAsk({ ...base, signal: controller.signal });
     await expect(ask("plan it", "plan")).rejects.toThrow();
     expect(runAgentSession).not.toHaveBeenCalled();
+  });
+
+  // Fact-check judges what it was handed. On the session path a CLI agent was
+  // given a tool table and went searching the workspace until its own deadline
+  // returned nothing.
+  it("runs fact-check with no tools, and retries an unreadable reply the same way", async () => {
+    runWorkerAgent
+      .mockResolvedValueOnce({ content: "Let me look that up first." })
+      .mockResolvedValueOnce({ content: '{"claims":[]}' });
+    await expect(createPublicationAsk(base)("list claims", "factcheck:extract:p3"))
+      .resolves.toEqual({ claims: [] });
+    expect(runAgentSession).not.toHaveBeenCalled();
+    expect(runWorkerAgent).toHaveBeenCalledTimes(2);
+    const [, model, messages] = runWorkerAgent.mock.calls[0];
+    expect(model).toBe("devin/glm-5-2");
+    expect(messages[0].content).toContain('"factcheck:extract:p3" stage');
+    expect(messages[1].content).toBe("list claims");
   });
 });

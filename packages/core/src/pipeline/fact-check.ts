@@ -12,7 +12,7 @@
  * declares it does not need checking never calls it, which is the right answer
  * for fiction: a novel's claims are not supposed to be verifiable.
  */
-import { searchAllSources, RESULTS_PER_SOURCE, type SearchSource } from "../utils/search-sources.js";
+import { searchAllSources, RESULTS_PER_SOURCE, type SearchSource, type SourcedResult } from "../utils/search-sources.js";
 
 export type AskJson = (prompt: string, label: string) => Promise<Record<string, unknown>>;
 
@@ -43,6 +43,31 @@ export interface FactCheckResult {
   readonly checked: number;
   /** Sources that answered during the run, for the report. */
   readonly searchedWith: ReadonlyArray<string>;
+  /**
+   * What has been checked, by page, and against which text.
+   *
+   * The whole result used to be written once, after the last page, so a run
+   * that died on page 15 of 50 kept nothing from the first fourteen and the
+   * next attempt began at page 1. A page whose text still hashes the same is
+   * skipped on the next run; an edited one is checked again.
+   */
+  readonly pages?: Readonly<Record<string, { readonly hash: string; readonly checked: number }>>;
+  /** False while pages are still to go. Absent on results written before this existed. */
+  readonly complete?: boolean;
+}
+
+/**
+ * Whether a passage has anything a search could settle.
+ *
+ * Checked before any model call, because most of a run's cost is the two calls
+ * per page and a page with no figure, no quotation and no name has nothing for
+ * either of them to find. A digit, a quoted phrase, or a capitalised word that
+ * does not open a sentence is enough to be worth asking about.
+ */
+export function worthChecking(text: string): boolean {
+  if (/\d/.test(text)) return true;
+  if (/["“„«][^"”»]{4,}["”»]/.test(text)) return true;
+  return /[a-z,;]\s+[A-Z][a-z]{2,}/.test(text);
 }
 
 /** A verdict worth showing the user. The other two are noise on their own. */
@@ -103,6 +128,31 @@ const VERDICTS = ["supported", "unsupported", "contradicted", "unverifiable"] as
 function readVerdict(value: unknown): Verdict {
   const v = String(value ?? "");
   return (VERDICTS as ReadonlyArray<string>).includes(v) ? v as Verdict : "unverifiable";
+}
+
+/** Most results one claim is judged on, and how much of each one. */
+export const EVIDENCE_PER_CLAIM = 6;
+export const SNIPPET_CHARS = 400;
+
+/**
+ * What a claim is judged against, trimmed.
+ *
+ * Two sources at five results each, with Tavily's long extracts, made the
+ * judging prompt 45,000 characters for seven claims, and that call alone took
+ * three minutes a page. A verdict needs the passage that settles it, not the
+ * whole page around it. Sources take turns, so one source's five results do
+ * not crowd out the other's first.
+ */
+export function evidenceFor(results: ReadonlyArray<SourcedResult>): string {
+  const bySource = new Map<string, SourcedResult[]>();
+  for (const r of results) bySource.set(r.source, [...(bySource.get(r.source) ?? []), r]);
+  const queues = [...bySource.values()];
+  const picked: SourcedResult[] = [];
+  for (let i = 0; picked.length < EVIDENCE_PER_CLAIM && queues.some((q) => i < q.length); i++) {
+    for (const q of queues) if (q[i] && picked.length < EVIDENCE_PER_CLAIM) picked.push(q[i]!);
+  }
+  const clip = (s: string) => (s.length > SNIPPET_CHARS ? `${s.slice(0, SNIPPET_CHARS - 1)}…` : s);
+  return picked.map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${clip(r.snippet)}`).join("\n\n");
 }
 
 /**
@@ -187,12 +237,7 @@ export async function factCheck(args: {
       });
       continue;
     }
-    toJudge.push({
-      claim,
-      evidence: sweep.results
-        .map((r, i) => `[${i + 1}] ${r.title}\nURL: ${r.url}\n${r.snippet}`)
-        .join("\n\n"),
-    });
+    toJudge.push({ claim, evidence: evidenceFor(sweep.results) });
   }
 
   if (toJudge.length) {

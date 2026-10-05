@@ -75,7 +75,7 @@ describe("play image prompts", () => {
 
 describe("play image manifest", () => {
   let runDir: string;
-  beforeEach(async () => { runDir = await mkdtemp(join(tmpdir(), "inkos-playimg-")); });
+  beforeEach(async () => { runDir = await mkdtemp(join(tmpdir(), "quire-playimg-")); });
   afterEach(async () => { await rm(runDir, { recursive: true, force: true }); });
 
   it("returns {} for a run with no manifest yet", async () => {
@@ -96,7 +96,7 @@ describe("play image manifest", () => {
 
 describe("play image settings", () => {
   let runDir: string;
-  beforeEach(async () => { runDir = await mkdtemp(join(tmpdir(), "inkos-playset-")); });
+  beforeEach(async () => { runDir = await mkdtemp(join(tmpdir(), "quire-playset-")); });
   afterEach(async () => { await rm(runDir, { recursive: true, force: true }); });
 
   it("defaults to all-off when no settings file exists", async () => {

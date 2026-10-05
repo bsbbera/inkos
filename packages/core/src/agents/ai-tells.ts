@@ -6,7 +6,11 @@
  * - dim 21: Filler/hedge word density
  * - dim 22: Formulaic transition patterns
  * - dim 23: List-like structure (consecutive same-prefix sentences)
+ *
+ * The word lists below are the defaults, not the law: an audit pack may add to
+ * or subtract from them per work (19 §E2).
  */
+import { applyWordDelta, type WordDelta } from "../pipeline/audit-pack.js";
 
 export interface AITellIssue {
   readonly severity: "warning" | "info";
@@ -72,10 +76,45 @@ function sentenceContaining(
   return sentence.length > 2 ? sentence : undefined;
 }
 
-export function analyzeAITells(content: string, language: AITellLanguage = "zh"): AITellResult {
+/**
+ * Word lists a pack may move (19 §E2). A pack that names neither list leaves
+ * the builtin ones exactly as they are, so an audit with no pack is unchanged.
+ */
+export interface AITellDeltas {
+  readonly hedgeWords?: WordDelta;
+  readonly markers?: WordDelta;
+  /** A paragraph longer than this is flagged. Absent means no length rule. */
+  readonly paragraphMaxChars?: number;
+}
+
+export function analyzeAITells(
+  content: string,
+  language: AITellLanguage = "zh",
+  deltas?: AITellDeltas,
+): AITellResult {
   const issues: AITellIssue[] = [];
   const isEnglish = language === "en";
   const joiner = isEnglish ? ", " : "、";
+  const hedges = applyWordDelta(HEDGE_WORDS[language], deltas?.hedgeWords);
+  const transitions = applyWordDelta(TRANSITION_WORDS[language], deltas?.markers);
+
+  // A pack may set a hard paragraph ceiling — the magazine bar wants one, a
+  // novel does not, and that difference belongs in data rather than in here.
+  const cap = deltas?.paragraphMaxChars;
+  if (cap && cap > 0) {
+    for (const para of content.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)) {
+      if (para.length <= cap) continue;
+      issues.push({
+        severity: "warning",
+        category: isEnglish ? "Paragraph length" : "段落过长",
+        description: isEnglish
+          ? `A paragraph runs ${para.length} characters against a ${cap} ceiling`
+          : `段落长度 ${para.length} 字符，超过 ${cap} 上限`,
+        suggestion: isEnglish ? "Break it where the thought turns." : "在语义转折处断段。",
+        quote: para.slice(0, 120),
+      });
+    }
+  }
 
   const paragraphs = content
     .split(/\n\s*\n/)
@@ -112,7 +151,7 @@ export function analyzeAITells(content: string, language: AITellLanguage = "zh")
     /* The first hedge that actually occurs, kept so the finding can point at
        a real one rather than at a rate. */
     let firstHedge: string | undefined;
-    for (const word of HEDGE_WORDS[language]) {
+    for (const word of hedges) {
       const regex = new RegExp(word, isEnglish ? "gi" : "g");
       const matches = content.match(regex);
       hedgeCount += matches?.length ?? 0;
@@ -136,7 +175,7 @@ export function analyzeAITells(content: string, language: AITellLanguage = "zh")
 
   // dim 22: Formulaic transition repetition
   const transitionCounts: Record<string, number> = {};
-  for (const word of TRANSITION_WORDS[language]) {
+  for (const word of transitions) {
     const regex = new RegExp(word, isEnglish ? "gi" : "g");
     const matches = content.match(regex);
     const count = matches?.length ?? 0;

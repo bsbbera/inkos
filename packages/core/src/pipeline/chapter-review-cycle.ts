@@ -4,6 +4,7 @@ import type { WriteChapterOutput } from "../agents/writer.js";
 import type { ChapterIntent, ChapterMemo, ContextPackage, RuleStack } from "../models/input-governance.js";
 import type { LengthSpec } from "../models/length-governance.js";
 import { countChapterLength, isOutsideHardRange } from "../utils/length-metrics.js";
+import { auditPackIn } from "./audit-pack.js";
 
 export interface ChapterReviewCycleUsage {
   readonly promptTokens: number;
@@ -30,8 +31,8 @@ export interface ChapterReviewCycleResult {
   readonly repairApplied: boolean;
 }
 
-const DEFAULT_MAX_REVIEW_ITERATIONS = 1;
-const PASS_SCORE_THRESHOLD = 85;
+// Two: with one, a revise that broke something new is never re-checked.
+const DEFAULT_MAX_REVIEW_ITERATIONS = 2;
 const NET_IMPROVEMENT_EPSILON = 3;
 
 interface ReviewSnapshot {
@@ -173,14 +174,20 @@ export async function runChapterReviewCycle(params: {
     return { auditResult, score, lengthInRange };
   };
 
+  // What counts as good enough, and how hard to try, belong to the work rather
+  // than to this file: an audit pack may move either (19 §E3). An explicit
+  // parameter still wins, so a caller asking for one pass gets one pass.
+  const pack = await auditPackIn(params.bookDir, "book");
+
   const isPassed = (assessment: { auditResult: AuditResult; score: number; lengthInRange: boolean }): boolean =>
-    assessment.auditResult.passed && assessment.score >= PASS_SCORE_THRESHOLD && assessment.lengthInRange;
+    assessment.auditResult.passed && assessment.score >= pack.passThreshold && assessment.lengthInRange;
 
   // ---------------------------------------------------------------------------
   // Scoring loop: assess → revise → assess. Default is one automatic repair pass;
   // projects can raise it when they accept slower but more persistent repair.
   // ---------------------------------------------------------------------------
-  const maxReviewIterations = Math.max(0, Math.floor(params.maxReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS));
+  const maxReviewIterations = Math.max(0, Math.floor(
+    params.maxReviewIterations ?? pack.maxIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS));
   params.logStage({ zh: "审计草稿", en: "auditing draft" });
   const initial = await assess(finalContent);
 

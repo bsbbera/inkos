@@ -29,6 +29,10 @@ export interface PublicationRules {
   readonly maxConsecutiveDensity?: { readonly density: string; readonly max: number };
   /** Every research pillar must appear on at least one page. */
   readonly requireAllPillars?: boolean;
+  /** Page types every issue must carry — the type's recurring sections. */
+  readonly requireTypes?: readonly string[];
+  /** The type the last content page must be, before the back cover. */
+  readonly closingType?: string;
   /** Reported, never enforced: the observed density split is informational. */
   readonly reportDensityMix?: boolean;
 }
@@ -42,12 +46,25 @@ export interface PublicationPrompts {
    * instead of inside a definition file. A missing skill degrades to this.
    */
   readonly voice: string;
-  /** Skill id to take the voice from, e.g. mag-content. */
-  readonly voiceSkill?: string;
+  /**
+   * Skill id to take the voice from, e.g. mag-content.
+   *
+   * A list means preference order, and the first one actually installed wins.
+   * That is how a person's own magazine skill keeps the job on their machine
+   * while a fresh install still has a builtin to fall back to — replacing the
+   * pointer outright would have quietly swapped the voice of every issue they
+   * have already made.
+   */
+  readonly voiceSkill?: string | ReadonlyArray<string>;
   /** The research axes this publication is built from. */
   readonly pillars: string;
   /** Stage prompts. Each must ask for JSON only. */
   readonly research: string;
+  /**
+   * Turns the research into the issue's connection web (13 rev. B). Absent,
+   * a type plans straight from the research as it always did.
+   */
+  readonly web?: string;
   readonly plan: string;
   readonly page: string;
   /**
@@ -109,6 +126,11 @@ export interface PublicationDefinition {
    * and checking them would be nonsense. Absent means no.
    */
   readonly needsFactCheck?: boolean;
+  /**
+   * Page types with nothing a search could settle: a cover, a contents list, a
+   * section plate. Skipped before any model call is made for them.
+   */
+  readonly factCheckSkipTypes?: ReadonlyArray<string>;
 
   /** Where issues of this type are stored, relative to the workspace. */
   readonly outDir: string;

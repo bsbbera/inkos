@@ -1,0 +1,29 @@
+{
+  "id": "storyboard-panels",
+  "version": 1,
+  "appliesTo": ["storyboard"],
+  "extends": "story-30",
+  "dimensions": {
+    "custom": [
+      {
+        "id": "shot-variety",
+        "label": "Shot variety",
+        "instruction": "Flag three or more consecutive panels using the same framing (all wide, all close). A sequence that never changes distance reads as a slideshow.",
+        "severity": "warning"
+      },
+      {
+        "id": "caption-length",
+        "label": "Caption length",
+        "instruction": "A panel caption is a direction, not a paragraph. Flag any caption over twenty-five words or carrying more than one action.",
+        "severity": "note"
+      },
+      {
+        "id": "beat-coverage",
+        "label": "Panel covers its beat",
+        "instruction": "Every beat in the plan must appear in at least one panel, and every panel must belong to a beat. Flag a beat with no panel and a panel that illustrates nothing in the plan.",
+        "severity": "blocking"
+      }
+    ]
+  },
+  "blocking": ["storyboard/beat-coverage"]
+}

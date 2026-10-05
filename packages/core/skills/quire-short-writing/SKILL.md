@@ -1,6 +1,7 @@
 ---
 name: quire-short-writing
-description: 12–18章商业短篇的构思、一次写完、整篇审改与包装。Use for confirmed standalone short-fiction production.
+description: "Produces a complete standalone commercial short - one main line plus at most one reversal line, 12-18 focused chapters of real scenes, reversals set up by visible evidence, with title, synopsis, selling points and cover direction treated as one product. Use for confirmed standalone short-fiction production."
+version: 1.0.0
 ---
 # Short-fiction writing
 
@@ -16,3 +17,13 @@ Use this skill when the user wants a complete standalone commercial short story,
 - Respond in the user's language.
 
 Load `references/production-checklist.md` before a full production run or whole-story revision.
+
+## When a style block follows
+
+A `# Style Guide` block may be appended to your instructions. When it is, **it
+wins over genre defaults** — the genre pack says what shorts like this usually
+do, the style guide says what *this* one does. Its `## Statistical Fingerprint`
+is a measured range to land inside, not a quota to hit at every sentence, and
+`## The voice, in its own words` holds real passages to match for rhythm,
+punctuation and habit, never for content. A block of the person's own accepted
+rules may follow; those outrank both the genre pack and your own preference.

@@ -8,7 +8,7 @@ describe("material ingestion", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-material-ingest-"));
+    root = await mkdtemp(join(tmpdir(), "quire-material-ingest-"));
   });
 
   afterEach(async () => {
@@ -28,7 +28,7 @@ describe("material ingestion", () => {
     });
 
     expect(asset.kind).toBe("text");
-    expect(asset.markdownPath).toMatch(/^\.inkos\/materials\//);
+    expect(asset.markdownPath).toMatch(/^research\//);
     expect(asset.source).toBe("brief.md");
     expect(asset.excerpt).toContain("县城冷库旧账");
     const markdown = await readFile(join(root, asset.markdownPath), "utf-8");

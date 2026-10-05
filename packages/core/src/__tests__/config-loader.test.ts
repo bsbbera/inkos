@@ -5,17 +5,17 @@ import { afterEach, describe, expect, it } from "vitest";
 import { loadProjectConfig } from "../utils/config-loader.js";
 
 const ENV_KEYS = [
-  "INKOS_LLM_SERVICE",
-  "INKOS_LLM_PROVIDER",
-  "INKOS_LLM_BASE_URL",
-  "INKOS_LLM_MODEL",
-  "INKOS_LLM_API_KEY",
-  "INKOS_LLM_TEMPERATURE",
-  "INKOS_LLM_THINKING_BUDGET",
-  "INKOS_LLM_API_FORMAT",
-  "INKOS_LLM_STREAM",
-  "INKOS_LLM_EXTRA_top_p",
-  "INKOS_DEFAULT_LANGUAGE",
+  "QUIRE_LLM_SERVICE",
+  "QUIRE_LLM_PROVIDER",
+  "QUIRE_LLM_BASE_URL",
+  "QUIRE_LLM_MODEL",
+  "QUIRE_LLM_API_KEY",
+  "QUIRE_LLM_TEMPERATURE",
+  "QUIRE_LLM_THINKING_BUDGET",
+  "QUIRE_LLM_API_FORMAT",
+  "QUIRE_LLM_STREAM",
+  "QUIRE_LLM_EXTRA_top_p",
+  "QUIRE_DEFAULT_LANGUAGE",
 ] as const;
 
 describe("loadProjectConfig local provider auth", () => {
@@ -37,13 +37,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("allows missing API keys for localhost OpenAI-compatible endpoints", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-local-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-local-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "local-project",
       version: "0.1.0",
       llm: {
@@ -62,13 +62,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("still requires API keys for remote hosted endpoints", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-remote-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-remote-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "remote-project",
       version: "0.1.0",
       llm: {
@@ -78,17 +78,17 @@ describe("loadProjectConfig local provider auth", () => {
       },
     }, null, 2), "utf-8");
     await writeFile(join(root, ".env"), "", "utf-8");
-    await expect(loadProjectConfig(root)).rejects.toThrow(/INKOS_LLM_API_KEY not set/i);
+    await expect(loadProjectConfig(root)).rejects.toThrow(/QUIRE_LLM_API_KEY not set/i);
   });
 
   it("loads service-based config using defaultModel and project secrets", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-services-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-services-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "service-project",
       version: "0.1.0",
       language: "zh",
@@ -100,9 +100,9 @@ describe("loadProjectConfig local provider auth", () => {
       },
       notify: [],
     }, null, 2), "utf-8");
-    await mkdir(join(root, ".inkos"), { recursive: true });
+    await mkdir(join(root, ".quire"), { recursive: true });
     await writeFile(
-      join(root, ".inkos", "secrets.json"),
+      join(root, ".quire", "secrets.json"),
       JSON.stringify({ services: { moonshot: { apiKey: "sk-moon" } } }, null, 2),
       "utf-8",
     );
@@ -118,13 +118,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("derives provider/baseUrl from the MiniMax preset single source of truth", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-minimax-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-minimax-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "minimax-project",
       version: "0.1.0",
       language: "zh",
@@ -136,9 +136,9 @@ describe("loadProjectConfig local provider auth", () => {
       },
       notify: [],
     }, null, 2), "utf-8");
-    await mkdir(join(root, ".inkos"), { recursive: true });
+    await mkdir(join(root, ".quire"), { recursive: true });
     await writeFile(
-      join(root, ".inkos", "secrets.json"),
+      join(root, ".quire", "secrets.json"),
       JSON.stringify({ services: { minimax: { apiKey: "sk-minimax" } } }, null, 2),
       "utf-8",
     );
@@ -153,13 +153,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("loads custom service config using custom secret key and entry baseUrl", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-custom-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-custom-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "custom-project",
       version: "0.1.0",
       language: "zh",
@@ -171,9 +171,9 @@ describe("loadProjectConfig local provider auth", () => {
       },
       notify: [],
     }, null, 2), "utf-8");
-    await mkdir(join(root, ".inkos"), { recursive: true });
+    await mkdir(join(root, ".quire"), { recursive: true });
     await writeFile(
-      join(root, ".inkos", "secrets.json"),
+      join(root, ".quire", "secrets.json"),
       JSON.stringify({ services: { "custom:内网GPT": { apiKey: "sk-corp" } } }, null, 2),
       "utf-8",
     );
@@ -191,13 +191,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("keeps Studio config active when llm.configSource is studio", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-studio-source-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-studio-source-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "studio-source-project",
       version: "0.1.0",
       language: "zh",
@@ -211,14 +211,14 @@ describe("loadProjectConfig local provider auth", () => {
       notify: [],
     }, null, 2), "utf-8");
     await writeFile(join(root, ".env"), [
-      "INKOS_LLM_PROVIDER=openai",
-      "INKOS_LLM_BASE_URL=https://api-vip.codex-for.me/v1",
-      "INKOS_LLM_MODEL=gpt-5.4",
-      "INKOS_LLM_API_KEY=sk-env",
+      "QUIRE_LLM_PROVIDER=openai",
+      "QUIRE_LLM_BASE_URL=https://api-vip.codex-for.me/v1",
+      "QUIRE_LLM_MODEL=gpt-5.4",
+      "QUIRE_LLM_API_KEY=sk-env",
     ].join("\n"), "utf-8");
-    await mkdir(join(root, ".inkos"), { recursive: true });
+    await mkdir(join(root, ".quire"), { recursive: true });
     await writeFile(
-      join(root, ".inkos", "secrets.json"),
+      join(root, ".quire", "secrets.json"),
       JSON.stringify({ services: { "custom:内网GPT": { apiKey: "sk-corp" } } }, null, 2),
       "utf-8",
     );
@@ -233,13 +233,13 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("does not mix stale top-level env-era model/baseUrl with selected Studio service", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-studio-stale-top-level-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-studio-stale-top-level-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "studio-stale-project",
       version: "0.1.0",
       language: "zh",
@@ -258,14 +258,14 @@ describe("loadProjectConfig local provider auth", () => {
       notify: [],
     }, null, 2), "utf-8");
     await writeFile(join(root, ".env"), [
-      "INKOS_LLM_PROVIDER=custom",
-      "INKOS_LLM_BASE_URL=https://api.moonshot.cn/v1",
-      "INKOS_LLM_MODEL=kimi-k2.5",
-      "INKOS_LLM_API_KEY=sk-env-moon",
+      "QUIRE_LLM_PROVIDER=custom",
+      "QUIRE_LLM_BASE_URL=https://api.moonshot.cn/v1",
+      "QUIRE_LLM_MODEL=kimi-k2.5",
+      "QUIRE_LLM_API_KEY=sk-env-moon",
     ].join("\n"), "utf-8");
-    await mkdir(join(root, ".inkos"), { recursive: true });
+    await mkdir(join(root, ".quire"), { recursive: true });
     await writeFile(
-      join(root, ".inkos", "secrets.json"),
+      join(root, ".quire", "secrets.json"),
       JSON.stringify({
         services: {
           google: { apiKey: "sk-google" },
@@ -286,18 +286,18 @@ describe("loadProjectConfig local provider auth", () => {
   });
 
   it("falls back to env when Studio config is still the empty bootstrap state", async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-config-loader-studio-bootstrap-"));
+    root = await mkdtemp(join(tmpdir(), "quire-config-loader-studio-bootstrap-"));
     for (const key of ENV_KEYS) {
       previousEnv.set(key, process.env[key]);
       process.env[key] = "";
     }
 
-    process.env.INKOS_LLM_PROVIDER = "openai";
-    process.env.INKOS_LLM_BASE_URL = "https://api-vip.codex-for.me/v1";
-    process.env.INKOS_LLM_MODEL = "gpt-5.4";
-    process.env.INKOS_LLM_API_KEY = "sk-env";
+    process.env.QUIRE_LLM_PROVIDER = "openai";
+    process.env.QUIRE_LLM_BASE_URL = "https://api-vip.codex-for.me/v1";
+    process.env.QUIRE_LLM_MODEL = "gpt-5.4";
+    process.env.QUIRE_LLM_API_KEY = "sk-env";
 
-    await writeFile(join(root, "inkos.json"), JSON.stringify({
+    await writeFile(join(root, "quire.json"), JSON.stringify({
       name: "studio-bootstrap-project",
       version: "0.1.0",
       language: "zh",

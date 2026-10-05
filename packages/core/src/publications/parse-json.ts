@@ -20,6 +20,11 @@
  */
 function escapeControlsInStrings(json: string): string {
   const escapes: Record<string, string> = { "\n": "\\n", "\r": "\\r", "\t": "\\t" };
+  // Everything below 0x20 is illegal inside a JSON string, not only the three
+  // with short names. A research reply carrying some other control character
+  // ended a run with "Bad control character in string literal" even though
+  // this repair was already running: it only knew how to fix a newline.
+  const escape = (ch: string) => escapes[ch] ?? `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`;
   let out = "";
   let inString = false;
   let escaped = false;
@@ -27,7 +32,7 @@ function escapeControlsInStrings(json: string): string {
     if (escaped) { out += ch; escaped = false; continue; }
     if (ch === "\\" && inString) { out += ch; escaped = true; continue; }
     if (ch === '"') { inString = !inString; out += ch; continue; }
-    out += inString && escapes[ch] ? escapes[ch] : ch;
+    out += inString && ch < " " ? escape(ch) : ch;
   }
   return out;
 }

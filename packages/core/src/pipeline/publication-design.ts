@@ -150,15 +150,23 @@ Decide, for the whole publication:
 
 Then, for every page listed above, a layout: the arrangement, where the image
 sits, and where each of that page's blocks goes.
+{{sectionBlock}}
+Also decide the FIXED FURNITURE — the few things that never change from
+section to section, and are what make several different-looking sections one
+object: the folio (where the page number sits and how it is set), the trim,
+the grid in one line, and the divider that marks a section break.
 
 Return ONLY JSON:
 {
   "palette": {"paper": "#rrggbb", "ink": "#rrggbb", "accent": "#rrggbb"},
+  "fixed": {"folio": "...", "trim": "...", "grid": "...", "divider": "..."},
   "type": {"display": "...", "text": "...", "scale": [48, 24, 10]},
   "grid": {"columns": 12, "gutterMm": 5, "marginMm": 15, "baselineMm": 4},
   "imageDirection": "one paragraph, no single subject",
-  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": ""}}
+  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": ""}},
+  "sections": [{"n": 1, "register": "...", "technique": "...", "idiom": "...", "paper": "#rrggbb", "ink": "#rrggbb", "hue": "#rrggbb", "imagePrompt": "under 60 words, no single subject", "negative": "..."}]
 }
+"sections" holds one world per section listed above, and is [] when none are.
 `.trim();
 
 /**

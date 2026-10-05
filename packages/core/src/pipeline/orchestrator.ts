@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import { commitAtomicFileSet } from "../utils/atomic-file-set.js";
 import { PRODUCTIONS, type ProductionPipeline, type ProductionSpec, type PipelineGate } from "../productions/registry.js";
-import { executorFor, type StageResult } from "./executors.js";
+import { executorFor, type StageExecutor, type StageResult } from "./executors.js";
 import {
   advance as advanceState,
   approve as approveState,
@@ -30,6 +30,8 @@ import {
   initialState,
   pendingUnits,
   reachStage,
+  rewind as rewindState,
+  skipReason,
   PIPELINE_STATE_VERSION,
   type PipelineState,
   type StageId,
@@ -238,6 +240,36 @@ export async function reject(input: {
   return next;
 }
 
+/**
+ * Walk a run to a gate and on past it, for work that was finished without a run.
+ *
+ * Every short and book written before `pipeline.json` existed has no state, so
+ * nothing ever advanced it and its pictures and build never started. This
+ * moves a fresh (or earlier) run forward to the gate, leaves the gate open for
+ * a sign-off, and carries on into the next stage. A run already past the gate
+ * is an error rather than a quiet no-op, so a second press cannot restart it.
+ */
+export async function openGate(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  readonly gate: PipelineGate;
+  readonly totalUnits: number;
+  readonly emit?: EventSink;
+}): Promise<AdvanceResult> {
+  const pipeline = pipelineFor(input.ref.type);
+  if (!pipeline) throw new Error(`${input.ref.type} does not run a pipeline`);
+  const current = await ensurePipeline(input);
+  const target = `gate:${input.gate}` as StageId;
+  const at = reachStage(current, pipeline, target);
+  if (at.stage !== target) {
+    throw new Error(`the run is at ${current.stage} and cannot reach the ${input.gate} gate from there`);
+  }
+  return advance({
+    projectRoot: input.projectRoot, ref: input.ref, state: at,
+    ...(input.emit ? { emit: input.emit } : {}),
+  });
+}
+
 /** Reopen an approval. Never deletes the record that it was given. */
 export async function withdraw(input: {
   readonly projectRoot: string;
@@ -282,14 +314,115 @@ export async function reportUnitDone(input: {
 
   const at = input.satisfies ? reachStage(current, pipeline, input.satisfies) : current;
   if (input.satisfies && at.stage !== input.satisfies) {
-    // The run is past this stage, or a gate stands between. Either way the
-    // report is stale and crediting it would move work that is already signed
-    // off. Say where the run actually is rather than silently doing nothing.
+    // The run is past this stage, so the report is stale and crediting it
+    // would move work along twice. Say where the run actually is rather than
+    // silently doing nothing.
     return { state: at, moved: false, reason: `run is at ${at.stage}, not ${input.satisfies}` };
   }
   const next = completeUnit(at, input.unit);
   await savePipeline(input.projectRoot, input.ref, next);
   return advance({ ...input, state: next });
+}
+
+/**
+ * Stand the run on the stage a runner is about to perform.
+ *
+ * For runners that own their own loop — the magazine walks its seven steps
+ * itself — the run file used to hear only about finished pages, so it sat on
+ * `content.write` while the words were long done and the fact-check was
+ * halfway through. The runner says where it is; the state file stops lying.
+ *
+ * Only forward, like `reachStage`: a late call cannot drag a run backwards.
+ */
+export async function markStage(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  readonly stage: StageId;
+  readonly emit?: EventSink;
+}): Promise<PipelineState> {
+  const current = await loadPipeline(input.projectRoot, input.ref);
+  if (!current) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  const pipeline = pipelineFor(input.ref.type);
+  if (!pipeline) throw new Error(`${input.ref.type} does not run a pipeline`);
+  const next = reachStage(current, pipeline, input.stage);
+  if (next === current) return current;
+  await savePipeline(input.projectRoot, input.ref, next);
+  if (input.emit) input.emit(emitFor(next, input.ref, true));
+  return next;
+}
+
+/**
+ * Stand the run on an earlier stage, to do it again.
+ *
+ * `markStage` only moves forward, so a person asking to re-research an issue
+ * whose run was already writing had no way to say so: the run file stayed on
+ * `content.write` and the research was redone behind its back. Sign-offs are
+ * left alone — redoing work is not withdrawing an approval, and the stages that
+ * need one still check for it.
+ */
+export async function rewindTo(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  readonly stage: StageId;
+}): Promise<PipelineState> {
+  const current = await loadPipeline(input.projectRoot, input.ref);
+  if (!current) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  const pipeline = pipelineFor(input.ref.type);
+  if (!pipeline) throw new Error(`${input.ref.type} does not run a pipeline`);
+  const next = rewindState(current, pipeline, input.stage);
+  if (next !== current) await savePipeline(input.projectRoot, input.ref, next);
+  return next;
+}
+
+/**
+ * Change how many units a run has.
+ *
+ * A magazine's run starts before its flatplan exists, sized to the extent it
+ * asked for; the plan is the first moment the page count is real, and a plan
+ * that came back one page short must not leave the run waiting for a page
+ * that will never be written.
+ */
+export async function resizeUnits(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  readonly total: number;
+}): Promise<PipelineState> {
+  const current = await loadPipeline(input.projectRoot, input.ref);
+  if (!current) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
+  if (current.units.total === input.total || input.total < 1) return current;
+  const next: PipelineState = {
+    ...current,
+    units: {
+      ...current.units,
+      total: input.total,
+      done: current.units.done.filter((u) => u <= input.total),
+    },
+  };
+  await savePipeline(input.projectRoot, input.ref, next);
+  return next;
+}
+
+/**
+ * A whole stage done at once, for work that has no per-unit shape.
+ *
+ * An issue's fact-check is one pass over the whole issue, not fifty separate
+ * approvals, so crediting unit 1 and leaving 49 outstanding would park the run
+ * on a stage that had finished. Every unit is credited, then the run moves.
+ */
+export async function completeStage(input: {
+  readonly projectRoot: string;
+  readonly ref: ProductionRef;
+  readonly stage: StageId;
+  readonly emit?: EventSink;
+}): Promise<AdvanceResult> {
+  const at = await markStage(input);
+  if (at.stage !== input.stage) {
+    return { state: at, moved: false, reason: `run is at ${at.stage}, not ${input.stage}` };
+  }
+  let state = at;
+  for (let unit = 1; unit <= state.units.total; unit += 1) state = completeUnit(state, unit);
+  await savePipeline(input.projectRoot, input.ref, state);
+  return advance({ ...input, state });
 }
 
 /**
@@ -327,6 +460,31 @@ export async function reportUnitFailed(input: {
 }
 
 /**
+ * Units in flight, so one can be dropped without ending the stage.
+ *
+ * Cancelling used to mean cancelling a whole stage: fifty pages of art, ended
+ * because page nine was going wrong. A unit gets its own signal, chained to
+ * the stage's, and stopping it leaves the unit unfinished — not failed — so
+ * the stage stays open and the next run picks that one up.
+ */
+const unitsInFlight = new Map<string, Map<number, AbortController>>();
+
+const flightKey = (ref: ProductionRef): string => `${ref.type}/${ref.id}`;
+
+/** Stop the unit this run is working on, and let the stage carry on. */
+export function cancelUnit(ref: ProductionRef, unit: number): boolean {
+  const controller = unitsInFlight.get(flightKey(ref))?.get(unit);
+  if (!controller) return false;
+  controller.abort();
+  return true;
+}
+
+/** Which units of this run are being worked on right now. */
+export function unitsRunning(ref: ProductionRef): ReadonlyArray<number> {
+  return [...(unitsInFlight.get(flightKey(ref))?.keys() ?? [])];
+}
+
+/**
  * Do the current stage, if this app knows how, and move on when it is done.
  *
  * The missing half of the hand-off. `advance` says a stage has started and
@@ -355,6 +513,17 @@ export async function runStage(input: {
    * finished work.
    */
   readonly signal?: AbortSignal;
+  /** Told which unit is in hand, so the queue can show it and aim a stop at it. */
+  readonly onUnit?: (unit: number) => void;
+  /**
+   * The run's own executors, ahead of the registered ones.
+   *
+   * A magazine run carries its model call in its context — chat's session, the
+   * issue page's, the recurring clock's — and a registry filled once at boot
+   * cannot hold a per-run context. Same loop, same bookkeeping; only where the
+   * stage's work comes from differs.
+   */
+  readonly executor?: (stage: string) => StageExecutor | null;
 }): Promise<{
   readonly ran: boolean;
   readonly stage: string;
@@ -366,7 +535,28 @@ export async function runStage(input: {
 }> {
   const state = await loadPipeline(input.projectRoot, input.ref);
   if (!state) throw new Error(`No pipeline state for ${input.ref.type}/${input.ref.id}`);
-  const executor = executorFor(state.stage, input.ref.type);
+  const pipeline = pipelineFor(input.ref.type);
+  /*
+   * A stage this kind skips is walked past here rather than performed.
+   *
+   * It has to happen in this function as well as in `advance`, because a run
+   * can be standing *on* a skipped stage already: an older run file written
+   * before the stage existed, or one that stopped at the step before. Without
+   * this the run would sit there forever waiting for an executor that, by
+   * declaration, is never coming.
+   */
+  const skipped = pipeline ? skipReason(pipeline, state.stage) : null;
+  if (skipped) {
+    input.onProgress?.(`Skipped ${state.stage}: ${skipped}`);
+    const after = await advance({
+      projectRoot: input.projectRoot,
+      ref: input.ref,
+      state,
+      ...(input.emit ? { emit: input.emit } : {}),
+    });
+    return { ran: false, stage: state.stage, artifacts: [], advanced: after.moved };
+  }
+  const executor = input.executor?.(state.stage) ?? executorFor(state.stage, input.ref.type);
   if (!executor || gateOf(state.stage) || state.stage === "done") {
     return { ran: false, stage: state.stage, artifacts: [], advanced: false };
   }
@@ -382,6 +572,20 @@ export async function runStage(input: {
       input.onProgress?.(`Cancelled before unit ${unit}`);
       return { ran: true, stage, artifacts, advanced: false };
     }
+    /*
+     * One signal per unit, chained to the stage's.
+     *
+     * The executor is handed this rather than the stage's own, so "stop this
+     * page" and "stop this stage" are different acts with different costs.
+     */
+    const perUnit = new AbortController();
+    const relay = () => perUnit.abort();
+    input.signal?.addEventListener("abort", relay, { once: true });
+    const flight = unitsInFlight.get(flightKey(input.ref)) ?? new Map<number, AbortController>();
+    flight.set(unit, perUnit);
+    unitsInFlight.set(flightKey(input.ref), flight);
+    input.onUnit?.(unit);
+
     const result = await executor({
       projectRoot: input.projectRoot,
       type: input.ref.type,
@@ -389,10 +593,21 @@ export async function runStage(input: {
       unit,
       ...(input.shimUrl ? { shimUrl: input.shimUrl } : {}),
       ...(input.onProgress ? { onProgress: input.onProgress } : {}),
-      ...(input.signal ? { signal: input.signal } : {}),
+      signal: perUnit.signal,
     }).catch((error: unknown): StageResult => ({
       ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error),
-    }));
+    })).finally(() => {
+      input.signal?.removeEventListener("abort", relay);
+      flight.delete(unit);
+      if (flight.size === 0) unitsInFlight.delete(flightKey(input.ref));
+    });
+
+    // Stopped on its own, with the stage still wanted: the unit stays
+    // unfinished, the run stays on this stage, and the next pass picks it up.
+    if (perUnit.signal.aborted && !input.signal?.aborted) {
+      input.onProgress?.(`Stopped ${state.units.kind} ${unit}; the rest of the stage carries on`);
+      continue;
+    }
 
     if (!result.ok) {
       if (input.signal?.aborted) {
@@ -416,8 +631,11 @@ export async function runStage(input: {
     artifacts.push(...result.artifacts);
     // Reporting per unit rather than at the end: a stage interrupted halfway
     // through eight pages should resume at the ninth, not redo the eight.
+    // Credited to the stage that ran, not whichever the run now stands on: an
+    // executor that reports its own unit can finish the stage first, and the
+    // same unit then landed on the next stage, which it never touched.
     await reportUnitDone({
-      projectRoot: input.projectRoot, ref: input.ref, unit,
+      projectRoot: input.projectRoot, ref: input.ref, unit, satisfies: stage,
       ...(input.emit ? { emit: input.emit } : {}),
     });
   }
@@ -564,7 +782,7 @@ export async function resume(input: {
   const failed = state.units.failed.filter((f) => f.unit !== 0);
   const next: PipelineState = {
     ...state,
-    status: gateOf(state.stage) ? "waiting-gate" : "running",
+    status: "running",
     units: { ...state.units, failed },
     history: [...state.history, {
       at: new Date().toISOString(), event: "run:resumed", stage: state.stage,
@@ -578,11 +796,14 @@ export function waitingOn(
   states: ReadonlyArray<{ readonly ref: ProductionRef; readonly state: PipelineState }>,
 ): ReadonlyArray<WaitingProduction> {
   const out: WaitingProduction[] = [];
+  // Every gate still unsigned, wherever the run has got to: the run does not
+  // stand at a gate any more, it walks through and leaves it open.
   for (const { ref, state } of states) {
-    if (state.status !== "waiting-gate") continue;
-    const gate = gateOf(state.stage);
-    if (!gate) continue;
-    out.push({ ref, gate, units: pendingUnits(state, gate), stage: state.stage });
+    for (const [name, record] of Object.entries(state.gates)) {
+      if (record.state !== "waiting") continue;
+      const gate = name as PipelineGate;
+      out.push({ ref, gate, units: pendingUnits(state, gate), stage: state.stage });
+    }
   }
   return out;
 }

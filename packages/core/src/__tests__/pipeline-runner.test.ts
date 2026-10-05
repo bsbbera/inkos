@@ -272,7 +272,7 @@ async function createRunnerFixture(
   state: StateManager;
   bookId: string;
 }> {
-  const root = await mkdtemp(join(tmpdir(), "inkos-runner-test-"));
+  const root = await mkdtemp(join(tmpdir(), "quire-runner-test-"));
   const state = new StateManager(root);
   const bookId = "test-book";
   const now = "2026-03-19T00:00:00.000Z";
@@ -458,7 +458,7 @@ describe("PipelineRunner", () => {
   });
 
   it("initializes control documents during book creation", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-init-book-test-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-init-book-test-"));
     const bookId = "bootstrap-book";
     const brief = "# Author Intent\n\nKeep the narrative centered on mentor conflict.\n";
     const now = "2026-03-22T00:00:00.000Z";
@@ -514,7 +514,7 @@ describe("PipelineRunner", () => {
   });
 
   it("applies creation-draft overrides while initializing a book", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-init-book-overrides-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-init-book-overrides-"));
     const bookId = "override-book";
     const book: BookConfig = {
       id: bookId,
@@ -797,7 +797,7 @@ describe("PipelineRunner", () => {
   }, SLOW_PIPELINE_TEST_TIMEOUT_MS);
 
   it("cleans staged files when initBook fails before foundation is complete", async () => {
-    const root = await mkdtemp(join(tmpdir(), "inkos-init-rollback-"));
+    const root = await mkdtemp(join(tmpdir(), "quire-init-rollback-"));
     const runner = new PipelineRunner({
       client: {
         provider: "openai",
@@ -2234,7 +2234,8 @@ describe("PipelineRunner", () => {
   });
 
   it("runs at most one automatic repair iteration during writeNextChapter", async () => {
-    const { root, runner, bookId } = await createRunnerFixture();
+    // Pinned: the default is two rounds now, and this is about the cap holding.
+    const { root, runner, bookId } = await createRunnerFixture({ writingReviewRetries: 1 });
     const draftBody = "甲".repeat(220);
     const revisedBody = "乙".repeat(220);
 

@@ -1,0 +1,158 @@
+{
+  "id": "story-30",
+  "version": 1,
+  "kind": "story",
+  "note": "What a finished piece of narrative is judged on, answerable from the text alone.",
+  "dimensions": [
+    {
+      "id": 1,
+      "en": "Promise kept",
+      "ask": "Does the ending pay off what the opening promised, or does it resolve a different story?"
+    },
+    {
+      "id": 2,
+      "en": "Scene, not summary",
+      "ask": "Are the load-bearing beats played out on the page, or compressed into narration?"
+    },
+    {
+      "id": 3,
+      "en": "Causality",
+      "ask": "Does each turn follow from the last, or do events merely happen in order?"
+    },
+    {
+      "id": 4,
+      "en": "Stakes",
+      "ask": "Is it clear what the protagonist loses by failing, and does that cost stay real?"
+    },
+    {
+      "id": 5,
+      "en": "Character motivation",
+      "ask": "Does every significant choice follow from what that character wants and fears?"
+    },
+    {
+      "id": 6,
+      "en": "Character consistency",
+      "ask": "Does anyone act against their established nature without the text earning it?"
+    },
+    {
+      "id": 7,
+      "en": "Information boundary",
+      "ask": "Does any character use information they were never given?"
+    },
+    {
+      "id": 8,
+      "en": "Antagonist competence",
+      "ask": "Does the opposition act from its own interest, or exist to lose?"
+    },
+    {
+      "id": 9,
+      "en": "Dialogue differentiation",
+      "ask": "Could the speaker be identified from the line alone, or does everyone talk alike?"
+    },
+    {
+      "id": 10,
+      "en": "Dialogue function",
+      "ask": "Does dialogue do more than transfer information the reader needs?"
+    },
+    {
+      "id": 11,
+      "en": "Emotion externalised",
+      "ask": "Is feeling carried by action and body, or named outright?"
+    },
+    {
+      "id": 12,
+      "en": "Concrete detail",
+      "ask": "Is there something specific to hold, or is the writing set in a generic place?"
+    },
+    {
+      "id": 13,
+      "en": "Sensory grounding",
+      "ask": "Does more than one sense do any work?"
+    },
+    {
+      "id": 14,
+      "en": "Chapter openings",
+      "ask": "Do the sections open differently, or reach for the same door each time?"
+    },
+    {
+      "id": 15,
+      "en": "Chapter endings",
+      "ask": "Does each section end on a reason to continue, or simply stop?"
+    },
+    {
+      "id": 16,
+      "en": "Pacing",
+      "ask": "Does pressure build and release, or hold one level throughout?"
+    },
+    {
+      "id": 17,
+      "en": "Setup and payoff",
+      "ask": "Is anything planted and never used, or paid off without being planted?"
+    },
+    {
+      "id": 18,
+      "en": "Internal consistency",
+      "ask": "Do names, numbers, times, places and established facts hold throughout?"
+    },
+    {
+      "id": 19,
+      "en": "Voice",
+      "ask": "Is this a particular narrative voice, or a generic one?"
+    },
+    {
+      "id": 20,
+      "en": "Register drift",
+      "ask": "Does the prose slip into a different register than it started in?"
+    },
+    {
+      "id": 21,
+      "en": "Abstraction",
+      "ask": "Does it explain in the general where the concrete was available?"
+    },
+    {
+      "id": 22,
+      "en": "Cliché imagery",
+      "ask": "Does it reach for the image every story on this subject reaches for?"
+    },
+    {
+      "id": 23,
+      "en": "Sentence rhythm",
+      "ask": "Do the sentences vary in length and shape, or march?"
+    },
+    {
+      "id": 24,
+      "en": "Simile density",
+      "ask": "Is figurative language doing work, or standing in for a precise verb?"
+    },
+    {
+      "id": 25,
+      "en": "Filler",
+      "ask": "Which passages carry nothing and could be cut with nothing lost?"
+    },
+    {
+      "id": 26,
+      "en": "Over-explanation",
+      "ask": "Does it interpret for the reader what the scene already showed?"
+    },
+    {
+      "id": 27,
+      "en": "Repetition of function",
+      "ask": "Do two sections do the same job in the story?"
+    },
+    {
+      "id": 28,
+      "en": "Report vocabulary",
+      "ask": "Does analytical language — core motivation, strategic advantage — appear in the prose?"
+    },
+    {
+      "id": 29,
+      "en": "AI tells",
+      "ask": "Does it lean on delve, tapestry, testament, intricate, pivotal, or the 'it wasn't X; it was Y' shape?"
+    },
+    {
+      "id": 30,
+      "en": "Sensitivity",
+      "ask": "Is anything careless about the people, cultures or events it depicts?"
+    }
+  ]
+}

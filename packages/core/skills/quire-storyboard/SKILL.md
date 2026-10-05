@@ -1,6 +1,7 @@
 ---
 name: quire-storyboard
-description: 剧本与叙事文本到可拍、可画、可生图分镜的视觉拆解方法。Used for storyboard and image-prompt production.
+description: "Turns script and narrative text into shootable, drawable, generation-ready shots - each with a dramatic purpose, visual subject, action, spatial relation and shot size - preserving screen direction, appearance, location, props and lighting continuity. Used for storyboard and image-prompt production."
+version: 1.0.0
 ---
 # Storyboard creation
 

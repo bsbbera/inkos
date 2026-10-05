@@ -30,6 +30,21 @@ export function buildWriterSystemPrompt(
   languageOverride?: "zh" | "en",
   inputProfile: "legacy" | "governed" = "legacy",
   lengthSpec?: LengthSpec,
+  /**
+   * The Setting Card for this chapter: objects, speech, money, what not to say.
+   *
+   * The researched bible is 5–15k tokens and would crowd out the plan, so the
+   * Writer gets the slice this chapter's own plan asked for (22 §4). Sits after
+   * the voice and before the output format: how to write, then what this world
+   * actually contains, then what to hand back.
+   */
+  settingCard?: string,
+  /**
+   * Rules this person accepted from their own verdicts (18 §4): the taste
+   * engine's output, one line each. Last before the format so they are the
+   * freshest instruction the model reads about how to write.
+   */
+  houseRules?: ReadonlyArray<string>,
 ): string {
   const isEnglish = (languageOverride ?? genreProfile.language) === "en";
   const governed = inputProfile === "governed";
@@ -56,6 +71,8 @@ export function buildWriterSystemPrompt(
         buildBookRulesBody(bookRulesBody),
         buildStyleGuide(styleGuide),
         buildStyleFingerprint(styleFingerprint),
+        buildSettingCard(settingCard),
+        buildHouseRules(houseRules, isEnglish),
         fanficContext ? buildFanficCanonSection(fanficContext.fanficCanon, fanficContext.fanficMode) : "",
         fanficContext ? buildCharacterVoiceProfiles(fanficContext.fanficCanon) : "",
         fanficContext ? buildFanficModeInstructions(fanficContext.fanficMode, fanficContext.allowedDeviations) : "",
@@ -75,6 +92,8 @@ export function buildWriterSystemPrompt(
         buildBookRulesBody(bookRulesBody),
         buildStyleGuide(styleGuide),
         buildStyleFingerprint(styleFingerprint),
+        buildSettingCard(settingCard),
+        buildHouseRules(houseRules, isEnglish),
         fanficContext ? buildFanficCanonSection(fanficContext.fanficCanon, fanficContext.fanficMode) : "",
         fanficContext ? buildCharacterVoiceProfiles(fanficContext.fanficCanon) : "",
         fanficContext ? buildFanficModeInstructions(fanficContext.fanficMode, fanficContext.allowedDeviations) : "",
@@ -326,6 +345,33 @@ function buildStyleFingerprint(fingerprint?: string): string {
 以下是从参考文本中提取的写作风格特征。你的输出必须尽量贴合这些特征：
 
 ${fingerprint}`;
+}
+
+// ---------------------------------------------------------------------------
+// Setting card (22 §4)
+// ---------------------------------------------------------------------------
+
+/**
+ * The researched world, as material rather than instruction.
+ *
+ * The card is already terse and already in the language the research was done
+ * in, so it is passed through rather than rephrased — a summary of a summary
+ * is where the concrete nouns go missing, and concrete nouns are the entire
+ * reason this block exists.
+ */
+function buildSettingCard(card?: string): string {
+  if (!card || !card.trim()) return "";
+  return `## Setting — use these, do not invent around them
+
+${card.trim()}`;
+}
+
+/** The person's accepted rules, verbatim: they wrote or approved every word. */
+function buildHouseRules(rules: ReadonlyArray<string> | undefined, isEnglish: boolean): string {
+  if (!rules?.length) return "";
+  return `${isEnglish ? "## House rules — learned from your own verdicts" : "## 作者定下的规矩（来自你的取舍）"}
+
+${rules.map((r) => `- ${r}`).join("\n")}`;
 }
 
 

@@ -18,7 +18,7 @@ describe("ForecastStore", () => {
   let bookDir: string;
 
   beforeEach(async () => {
-    bookDir = await mkdtemp(join(tmpdir(), "inkos-forecast-store-"));
+    bookDir = await mkdtemp(join(tmpdir(), "quire-forecast-store-"));
   });
   afterEach(async () => {
     await rm(bookDir, { recursive: true, force: true });

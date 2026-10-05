@@ -5,9 +5,9 @@
  * - 控制台 / API key：https://ai.360.com/platform/keys
  * - API 文档：https://ai.360.com/platform/docs
  */
-import type { InkosEndpoint } from "../types.js";
+import type { QuireEndpoint } from "../types.js";
 
-export const AI360: InkosEndpoint = {
+export const AI360: QuireEndpoint = {
   id: "ai360",
   label: "360 智脑",
   group: "china",

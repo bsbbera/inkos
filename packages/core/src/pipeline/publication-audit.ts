@@ -20,7 +20,9 @@
 import { analyzeAITells } from "../agents/ai-tells.js";
 import { detectCrossChapterRepetition } from "../agents/post-write-validator.js";
 import type { PublicationDefinition } from "../publications/types.js";
-import type { PublicationPage } from "./publication-runner.js";
+import { artPolicyOf } from "../productions/registry.js";
+import { connectionFindings, readabilityFindings, surfaceMix } from "./magazine-bar.js";
+import type { PublicationIssue, PublicationPage } from "./publication-runner.js";
 
 export interface PublicationFinding {
   /** The page it is about, or 0 for a finding about the issue as a whole. */
@@ -114,12 +116,24 @@ function lengthFindings(
 export function auditPages(
   pages: ReadonlyArray<PublicationPage>,
   definition: PublicationDefinition,
+  /**
+   * The issue around the pages: its sections and reader pick the writing bar
+   * (13 §4b); its web says which promises of connection the copy must keep.
+   */
+  issue?: Pick<PublicationIssue, "sections"> & {
+    readonly audience?: string;
+    readonly web?: PublicationIssue["web"];
+  },
 ): ReadonlyArray<PublicationFinding> {
   const written = pages.filter((p) => p.body && p.body.trim());
   if (written.length === 0) return [];
 
   const language = languageOf(written);
-  const findings: PublicationFinding[] = [];
+  const findings: PublicationFinding[] = [
+    ...readabilityFindings({ pages: [...pages], sections: issue?.sections ?? [], ...(issue?.audience ? { audience: issue.audience } : {}) }, definition),
+    ...surfaceMix(pages, artPolicyOf("publication")?.mix).findings,
+    ...connectionFindings({ pages, sections: issue?.sections ?? [], ...(issue?.web ? { web: issue.web } : {}) }),
+  ];
 
   for (const page of written) {
     const body = page.body as string;

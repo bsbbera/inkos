@@ -655,7 +655,7 @@ function withSingleAttachmentFallback(
   const [path] = paths;
   const useHostAttachment = (candidate: string | undefined): boolean => {
     const value = candidate?.trim();
-    return !value || (value.startsWith(".inkos/uploads/") && value !== path);
+    return !value || (value.startsWith(".quire/uploads/") && value !== path);
   };
 
   if (params.action === "translation_create" && payload.translationCreate && useHostAttachment(payload.translationCreate.filePath)) {
@@ -1321,7 +1321,7 @@ export function createResearchWebTool(projectRoot: string): AgentTool<typeof Res
     name: "research_web",
     description:
       "Collect traceable web research for worldbuilding, era, profession, market, or fact-check questions. " +
-      "Saves a Markdown report under .inkos/research/. It is reference material only; it must not modify books, chapters, or truth files.",
+      "Saves a Markdown report under .quire/research/. It is reference material only; it must not modify books, chapters, or truth files.",
     label: "Research Web",
     parameters: ResearchWebParams,
     async execute(
@@ -1345,7 +1345,7 @@ export function createResearchWebTool(projectRoot: string): AgentTool<typeof Res
           return sweep.results.map(({ title, url, snippet }) => ({ title, url, snippet }));
         },
       });
-      const reportDir = join(projectRoot, ".inkos", "research");
+      const reportDir = join(projectRoot, ".quire", "research");
       await mkdir(reportDir, { recursive: true });
       const fileName = `${new Date().toISOString().replace(/[:.]/g, "-")}-${slugResearchTopic(params.topic)}.md`;
       const reportPath = join(reportDir, fileName);
@@ -1387,7 +1387,7 @@ const IngestMaterialParams = Type.Object({
     description: "HTTP/HTTPS URL to fetch and extract. Supports HTML/text/JSON/PDF.",
   })),
   filePath: Type.Optional(Type.String({
-    description: "Project-relative stored_path from the Uploaded Files block, e.g. .inkos/uploads/session/file.pdf.",
+    description: "Project-relative stored_path from the Uploaded Files block, e.g. .quire/uploads/session/file.pdf.",
   })),
   filename: Type.Optional(Type.String({
     description: "Original filename when known.",
@@ -1416,7 +1416,7 @@ export function createIngestMaterialTool(projectRoot: string): AgentTool<typeof 
   return {
     name: "ingest_material",
     description:
-      "Extract and archive a user-provided URL or uploaded file into .inkos/materials as traceable Markdown. " +
+      "Extract and archive a user-provided URL or uploaded file into the workspace research folder as traceable Markdown. " +
       "Supports HTML/text/JSON/Markdown/PDF. This creates reference material only; it must not mutate canon, chapters, scripts, or play state.",
     label: "Ingest Material",
     parameters: IngestMaterialParams,
@@ -1486,7 +1486,7 @@ export function createRetrieveMaterialTool(projectRoot: string): AgentTool<typeo
   return {
     name: "retrieve_material",
     description:
-      "Retrieve traceable snippets from previously ingested .inkos/materials reference cards. " +
+      "Retrieve traceable snippets from previously ingested reference cards in the workspace research folder. " +
       "The agent supplies the semantic query; Quire returns evidence pointers. This must not mutate canon, chapters, scripts, or play state.",
     label: "Retrieve Material",
     parameters: RetrieveMaterialParams,
@@ -1574,7 +1574,7 @@ export function createManageBookReferenceTool(
     name: "manage_book_reference",
     description:
       "Bind already-ingested project materials to the active book with user-defined purposes, list current bindings, or unbind them. " +
-      "The material remains stored once under .inkos/materials. Binding never copies prose into the book and never changes canon by itself.",
+      "The material remains stored once in the workspace research folder. Binding never copies prose into the book and never changes canon by itself.",
     label: "Manage Book Reference",
     parameters: ManageBookReferenceParams,
     async execute(
@@ -1659,7 +1659,7 @@ const ImportChaptersParams = Type.Object({
     description: "Target book ID to import into. In active-book sessions, omit it to use the current active book; if provided, it must match the active book. In general chat there is no active book, so it is required and must be an existing book.",
   })),
   sourcePath: Type.String({
-    description: "Local path of the chapter source: either the stored_path from the Uploaded Files block (project-relative, e.g. .inkos/uploads/<session>/novel.txt) or an absolute path on this machine that the user provided. A directory imports each .md/.txt file as one chapter in filename order; a single file is split into chapters automatically by heading lines.",
+    description: "Local path of the chapter source: either the stored_path from the Uploaded Files block (project-relative, e.g. .quire/uploads/<session>/novel.txt) or an absolute path on this machine that the user provided. A directory imports each .md/.txt file as one chapter in filename order; a single file is split into chapters automatically by heading lines.",
   }),
   splitPattern: Type.Optional(Type.String({
     description: "Single-file mode only: custom JavaScript regex source matching chapter heading lines. Omit to use the default pattern, which matches \"第X章/第X回\" and \"Chapter N\" headings.",
@@ -2022,7 +2022,7 @@ function slugResearchTopic(topic: string): string {
 
 async function readResearchSearchConfig(projectRoot: string) {
   try {
-    const raw = JSON.parse(await readFile(join(projectRoot, "inkos.json"), "utf-8")) as Record<string, unknown>;
+    const raw = JSON.parse(await readFile(join(projectRoot, "quire.json"), "utf-8")) as Record<string, unknown>;
     return ResearchSearchConfigSchema.parse(raw.researchSearch ?? {});
   } catch {
     return ResearchSearchConfigSchema.parse({});
@@ -2068,7 +2068,7 @@ const ShortFictionRunParams = Type.Object({
     description: "Optional image size, default 1024x1360.",
   })),
   coverApiKeyEnv: Type.Optional(Type.String({
-    description: "Optional env var containing the cover API key. Default INKOS_COVER_API_KEY.",
+    description: "Optional env var containing the cover API key. Default QUIRE_COVER_API_KEY.",
   })),
 });
 
@@ -2692,7 +2692,7 @@ export function createPublicationCreateTool(
     async execute(
       _toolCallId: string,
       params: PublicationCreateParamsType,
-      _signal?: AbortSignal,
+      signal?: AbortSignal,
       onUpdate?: AgentToolUpdateCallback,
     ): Promise<AgentToolResult<unknown>> {
       const definition = await findPublicationDefinition(projectRoot, params.type);
@@ -2715,6 +2715,9 @@ export function createPublicationCreateTool(
         projectRoot,
         issueId: () => issueId,
         language: lang,
+        // Checked before every stage call, so a stop lands at the next one
+        // instead of waiting for the whole issue to finish.
+        ...(signal ? { signal } : {}),
       });
       const ctx: RunnerContext = {
         projectRoot,
@@ -2724,12 +2727,20 @@ export function createPublicationCreateTool(
           // Surfaced as tool progress so a forty-page run is visible while it
           // happens rather than only in its final result.
           if (event.type === "publication:stage") {
+            // The stage's own words when it has any ("searching: kodak roll
+            // film"); "research: progress" alone told nobody anything.
+            const said = typeof event.message === "string" && event.message.trim()
+              ? ` · ${event.message.trim()}`
+              : "";
             onUpdate?.(textResult(
-              `${event.stage}${event.page ? " p" + event.page : ""}: ${event.state}`,
+              `${event.stage}${event.page ? " p" + event.page : ""}: ${event.state}${said}`,
             ));
           }
         },
         shimUrl: `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`,
+        // Handed on so Stop actually stops. It was accepted and dropped here,
+        // which is why a stopped magazine kept writing pages.
+        ...(signal ? { signal } : {}),
       };
 
       const unanswered = missingIntake(definition, params);
@@ -2762,7 +2773,15 @@ export function createPublicationCreateTool(
         await setReferenceImages(ctx, created.id, attached.images);
       }
 
-      const issue = await runPublication(ctx, created.id, { stopAt: params.stopAt ?? "audit" });
+      // Run inside the pipeline's agent context like every other production
+      // tool, so a stop reaches the model call in flight and not only the gap
+      // between two pages.
+      const issue = await runPipelineWithAgentContext(
+        pipeline,
+        signal,
+        [],
+        () => runPublication(ctx, created.id, { stopAt: params.stopAt ?? "audit" }),
+      );
       const written = issue.pages.filter((p) => p.body !== null && p.body !== undefined).length;
 
       return textResult([

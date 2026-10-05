@@ -1,5 +1,5 @@
 import { getEndpoint } from "./providers/index.js";
-import type { InkosModel } from "./providers/types.js";
+import type { QuireModel } from "./providers/types.js";
 import { probeModelsFromUpstream } from "./providers/probe.js";
 import { probeLocalContextWindows } from "./providers/local-context.js";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
@@ -76,7 +76,7 @@ export function resolveServicePreset(service: string): ServicePreset | undefined
       ? { temperatureHint: provider?.temperatureHint ?? legacy?.temperatureHint }
       : {}),
     ...(legacy?.knownModels ? { knownModels: legacy.knownModels } : {}),
-    // piProvider 字段已从 InkosEndpoint 移除（走 provider-to-pi-ai adapter），这里只保留 legacy fallback
+    // piProvider 字段已从 QuireEndpoint 移除（走 provider-to-pi-ai adapter），这里只保留 legacy fallback
     ...(legacy?.piProvider ? { piProvider: legacy.piProvider } : {}),
     ...((provider ? provider.modelsBaseUrl : legacy?.modelsBaseUrl)
       ? { modelsBaseUrl: provider ? provider.modelsBaseUrl : legacy?.modelsBaseUrl }
@@ -145,24 +145,24 @@ export interface ModelInfo {
    * the bank knows. Absent means unknown, not unsupported: callers gate on an
    * explicit false, never on a missing value.
    */
-  readonly capabilities?: InkosModel["capabilities"];
+  readonly capabilities?: QuireModel["capabilities"];
 }
 
-function toModelInfo(inkosModel: InkosModel): ModelInfo {
+function toModelInfo(quireModel: QuireModel): ModelInfo {
   return {
-    id: inkosModel.id,
-    name: inkosModel.id,
-    contextWindow: inkosModel.contextWindowTokens,
-    maxOutput: inkosModel.maxOutput,
-    ...(inkosModel.capabilities ? { capabilities: inkosModel.capabilities } : {}),
+    id: quireModel.id,
+    name: quireModel.id,
+    contextWindow: quireModel.contextWindowTokens,
+    maxOutput: quireModel.maxOutput,
+    ...(quireModel.capabilities ? { capabilities: quireModel.capabilities } : {}),
   };
 }
 
 /**
  * listModelsForService（R4 精修）：
  * - 先试 live /models probe（如果 baseUrl + apiKey 具备）
- * - probe 失败或无 apiKey：fallback 到 provider.models（inkos bank）
- * - 不再做 INKOS_LLM_MODEL env 补丁（会污染跨 service 菜单；bank 已足够全）
+ * - probe 失败或无 apiKey：fallback 到 provider.models（quire bank）
+ * - 不再做 QUIRE_LLM_MODEL env 补丁（会污染跨 service 菜单；bank 已足够全）
  *
  * custom / newapi / higress 等 baseUrl 空的 gateway provider：
  *   必须传 liveBaseUrl 才能做 probe；否则只依赖 bank。

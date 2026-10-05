@@ -12,11 +12,15 @@ import {
 } from "../skills/index.js";
 
 const BUILTIN_SKILL_IDS = [
+  "quire-editorial-design",
+  "quire-illustration",
   "quire-interactive-film",
   "quire-long-market-research",
   "quire-long-story-analysis",
   "quire-long-writing",
+  "quire-magazine-page",
   "quire-play-world",
+  "quire-research-setting",
   "quire-script-writing",
   "quire-short-market-research",
   "quire-short-story-analysis",
@@ -33,7 +37,7 @@ describe("external skill loader", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-external-skills-"));
+    root = await mkdtemp(join(tmpdir(), "quire-external-skills-"));
   });
 
   afterEach(async () => {
@@ -299,7 +303,7 @@ describe("external skill loader", () => {
   });
 
   it("does not discover the removed Quire-specific skill directory", async () => {
-    const skillDir = join(root, ".inkos", "skills", "legacy-skill");
+    const skillDir = join(root, ".quire", "skills", "legacy-skill");
     await mkdir(skillDir, { recursive: true });
     await writeFile(
       join(skillDir, "SKILL.md"),
@@ -347,7 +351,7 @@ describe("external skill loader", () => {
     expect(loaded.skills.map((skill) => skill.id)).toContain("writer-distillation");
   });
 
-  it("loads external skills from INKOS_SKILL_DIRS and reports bad paths without throwing", async () => {
+  it("loads external skills from QUIRE_SKILL_DIRS and reports bad paths without throwing", async () => {
     const externalRoot = join(root, "external-skills");
     const skillDir = join(externalRoot, "romance-play");
     await mkdir(skillDir, { recursive: true });
@@ -367,7 +371,7 @@ describe("external skill loader", () => {
       projectRoot: join(root, "project"),
       homeDir: join(root, "home"),
       env: {
-        INKOS_SKILL_DIRS: [externalRoot, join(root, "does-not-exist")].join(delimiter),
+        QUIRE_SKILL_DIRS: [externalRoot, join(root, "does-not-exist")].join(delimiter),
       },
     });
     const registry = createSkillRegistry({ skills: loaded.skills });

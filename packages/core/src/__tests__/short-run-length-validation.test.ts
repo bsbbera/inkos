@@ -104,7 +104,7 @@ describe("short_run charsPerChapter validation (tool layer, before pipeline star
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-short-length-"));
+    root = await mkdtemp(join(tmpdir(), "quire-short-length-"));
     runShortFictionProductionMock.mockClear();
   });
 

@@ -1,6 +1,7 @@
 ---
 name: quire-long-story-analysis
-description: 长篇小说拆稿、文风分析与可迁移机制提炼。Use when analyzing a full novel or long sample without copying its expression.
+description: "Deconstructs a novel or long sample into transferable craft - reader promise, conflict escalation, motivation, information release, scene function, volume rhythm, prose behaviour - with evidence pointers and no borrowed expression. Use for analysis and comparison, not for drafting."
+version: 1.0.0
 ---
 # Long-form story analysis
 

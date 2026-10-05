@@ -99,7 +99,7 @@ describe("PlayRunner", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-play-runner-"));
+    root = await mkdtemp(join(tmpdir(), "quire-play-runner-"));
   });
 
   afterEach(async () => {
