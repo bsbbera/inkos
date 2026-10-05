@@ -75,6 +75,32 @@ export const ICONS = {
   winMin:  '<path d="M5 12h14"/>',
   winMax:  '<path d="M6 6h12v12H6z"/>',
   winClose:'<path d="M6.5 6.5 17.5 17.5"/><path d="M17.5 6.5 6.5 17.5"/>',
+
+  /* Drawn for the screens that had been borrowing lucide's set. Same grid,
+     same stroke, so they sit beside the rest without announcing a second
+     source. */
+  chevU:    '<path d="m5.2 14.5 6.8-6.8 6.8 6.8"/>',
+  external: '<path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v6H4V6h6"/>',
+  eyeOff:   '<path d="M3.4 3.4 20.6 20.6"/><path d="M10.4 5.7A9.4 9.4 0 0 1 12 5.6c5.8 0 9.6 6.4 9.6 6.4a16.6 16.6 0 0 1-2.9 3.6"/><path d="M6.4 7.4A16.4 16.4 0 0 0 2.4 12s3.8 6.4 9.6 6.4a9.2 9.2 0 0 0 4.4-1.1"/><path d="M9.9 9.9a2.9 2.9 0 0 0 4.2 4.2"/>',
+  save:     '<path d="M4.4 4.4h12.2l3 3V19.6H4.4z"/><path d="M8.2 4.4v4.8h7V4.4"/><path d="M7.6 19.6v-6h8.8v6"/>',
+  bot:      '<path d="M5 9.2h14v10.4H5z"/><path d="M12 5.6v3.6"/><circle cx="12" cy="4.4" r="1.2"/><path d="M9.4 13.6v1.4"/><path d="M14.6 13.6v1.4"/>',
+  users:    '<circle cx="9" cy="8.6" r="3.4"/><path d="M3.2 19.6a5.8 5.8 0 0 1 11.6 0"/><path d="M15.4 5.4a3.4 3.4 0 0 1 0 6.4"/><path d="M17.6 14.2a5.8 5.8 0 0 1 3.2 5.4"/>',
+  target:   '<circle cx="12" cy="12" r="8.8"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3"/>',
+  tool:     '<path d="M15.2 4.4a4.6 4.6 0 0 0-4.4 6L4.2 17 7 19.8l6.6-6.6a4.6 4.6 0 0 0 6-4.4l-2.8 2.8-2.6-.6-.6-2.6z"/>',
+  chart:    '<path d="M4.4 4v16h15.6"/><path d="M8.6 16.4v-5"/><path d="M13 16.4V7.6"/><path d="M17.4 16.4v-3"/>',
+  bell:     '<path d="M6 16.4V11a6 6 0 0 1 12 0v5.4l1.6 1.6H4.4z"/><path d="M10 20.6a2 2 0 0 0 4 0"/>',
+  checkC:   '<circle cx="12" cy="12" r="8.8"/><path d="m8.2 12.2 2.6 2.6 5-5.4"/>',
+  xC:       '<circle cx="12" cy="12" r="8.8"/><path d="m9.2 9.2 5.6 5.6"/><path d="m14.8 9.2-5.6 5.6"/>',
+  dot:      '<circle cx="12" cy="12" r="3.4"/>',
+  enter:    '<path d="M19.4 5v7.6H5.8"/><path d="m9.8 8.6-4 4 4 4"/>',
+  database: '<ellipse cx="12" cy="5.8" rx="7.2" ry="2.6"/><path d="M4.8 5.8v12.4c0 1.4 3.2 2.6 7.2 2.6s7.2-1.2 7.2-2.6V5.8"/><path d="M4.8 12c0 1.4 3.2 2.6 7.2 2.6s7.2-1.2 7.2-2.6"/>',
+  branch:   '<circle cx="6.6" cy="5.4" r="2"/><circle cx="17.4" cy="5.4" r="2"/><circle cx="12" cy="18.6" r="2"/><path d="M6.6 7.4V9a3 3 0 0 0 3 3h4.8a3 3 0 0 0 3-3V7.4"/><path d="M12 12v4.6"/>',
+  monitor:  '<path d="M3.4 4.4h17.2V16H3.4z"/><path d="M8.6 20h6.8"/><path d="M12 16v4"/>',
+  panel:    '<path d="M3.4 4.4h17.2v15.2H3.4z"/><path d="M15 4.4v15.2"/>',
+  bolt:     '<path d="M13.2 2.8 5 13.4h6.2L10.6 21.2l8.4-10.6h-6.2z"/>',
+  bulb:     '<path d="M9 17.4h6"/><path d="M10 20.6h4"/><path d="M8.4 14.4a6 6 0 1 1 7.2 0c-.6.5-.6 1.2-.6 3H9c0-1.8 0-2.5-.6-3z"/>',
+  sparkle:  '<path d="M12 3.6c.6 3.9 2.5 5.8 6.4 6.4-3.9.6-5.8 2.5-6.4 6.4-.6-3.9-2.5-5.8-6.4-6.4 3.9-.6 5.8-2.5 6.4-6.4z"/><path d="M18.6 15.6c.2 1.4.9 2.1 2.2 2.3-1.3.2-2 .9-2.2 2.3-.2-1.4-.9-2.1-2.2-2.3 1.3-.2 2-.9 2.2-2.3z"/>',
+  history:  '<path d="M3.8 12a8.2 8.2 0 1 0 2.4-5.8"/><path d="M3.8 4.6v5.2H9"/><path d="M12 7.6V12l3 1.8"/>',
 } as const;
 
 export type IconName = keyof typeof ICONS;
@@ -89,7 +115,7 @@ export function IconSprite() {
   return (
     <svg
       aria-hidden="true"
-      style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }}
+      className="absolute w-0 h-0 overflow-hidden"
     >
       {Object.entries(ICONS).map(([name, d]) => (
         <symbol

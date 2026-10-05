@@ -7,7 +7,7 @@
  * of its own with a provider dropdown implying a choice nobody makes.
  */
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Search } from "../components/ui/glyphs";
 import { putApi, useApi } from "../hooks/use-api";
 
 interface Draft {
@@ -60,14 +60,14 @@ export function SearchFallback() {
   };
 
   return (
-    <section className="q-crop rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-7">
+    <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden>
+        <span className="icon-ring" aria-hidden>
           <Search size={18} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="q-title text-lg">Search fallback</h2>
-          <p className="q-note mt-1.5">
+          <h2 className="h-panel">Search fallback</h2>
+          <p className="note mt-1.5">
             Agents search with their own model first — every CLI browses. This answers
             for a model that cannot, and for nothing else.
           </p>
@@ -133,7 +133,7 @@ export function SearchFallback() {
           type="button"
           onClick={() => { void save(); }}
           disabled={saving}
-          className="q-btn q-btn-line text-sm disabled:opacity-40"
+          className="btn btn-line text-sm disabled:opacity-40"
         >
           {saving ? "Saving…" : "Save"}
         </button>

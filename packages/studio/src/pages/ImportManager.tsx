@@ -5,8 +5,9 @@ import type { TFunction } from "../hooks/use-i18n";
 import { useI18n } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { tr } from "../lib/app-language";
-import { FileInput, BookCopy, Feather, BookMarked, Upload, Wand2 } from "lucide-react";
+import { FileInput, BookCopy, Feather, BookMarked, Upload, Wand2 } from "../components/ui/glyphs";
 import { waitForStudioBookReady } from "../lib/book-ready";
+import { Failed } from "../components/ui/states";
 
 interface BookSummary {
   readonly id: string;
@@ -187,20 +188,21 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
 
   return (
     <div className="space-y-8">
-      <h1 className="q-title text-3xl flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><FileInput size={19} /></span>
+      <h1 className="h-page flex items-center gap-3">
+        <span className="icon-ring icon-ring-lg" aria-hidden="true"><FileInput size={19} /></span>
         {t("import.title")}
       </h1>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-secondary/30 rounded-lg p-1 w-fit">
+      <div className="tabs" role="tablist">
         {tabs.map((tb) => (
           <button
             key={tb.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === tb.id}
             onClick={() => { setTab(tb.id); setStatus(""); }}
-            className={`px-4 py-2 rounded-md text-sm font-medium flex items-center gap-2 transition-all ${
-              tab === tb.id ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
+            className="tab"
           >
             {tb.icon} {tb.label}
           </button>
@@ -208,25 +210,25 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
       </div>
 
       {/* Tab content */}
-      <div className={`border ${c.cardStatic} rounded-lg p-6 space-y-4`}>
+      <div className="panel space-y-4">
         {tab === "chapters" && (
           <>
             <select value={chBookId} onChange={(e) => setChBookId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+              className="input w-full">
               <option value="">{t("import.selectTarget")}</option>
               {booksData?.books.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
             </select>
             <input
               type="text" value={chSplitRegex} onChange={(e) => setChSplitRegex(e.target.value)}
               placeholder={t("import.splitRegex")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm font-mono"
+              className="input w-full font-mono"
             />
             <textarea value={chText} onChange={(e) => setChText(e.target.value)} rows={10}
               placeholder={t("import.pasteChapters")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm resize-none font-mono"
+              className="input w-full resize-none font-mono"
             />
             <button onClick={handleImportChapters} disabled={loading || !chBookId || !chText.trim()}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30`}>
+              className="btn">
               {loading ? t("import.importing") : t("import.chapters")}
             </button>
           </>
@@ -237,13 +239,13 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             <p className="text-sm text-muted-foreground">
               {tr("母本可以来自已有 Quire 书籍，也可以直接上传外部 TXT、Markdown 或 PDF 小说。", "Use an existing Quire book or upload an external TXT, Markdown, or PDF novel as canon.")}
             </p>
-            <div className="inline-flex rounded-lg border border-border bg-secondary/20 p-1">
+            <div className="seg">
               {(["book", "file"] as const).map((sourceType) => (
                 <button
                   key={sourceType}
                   type="button"
+                  aria-pressed={canonSourceType === sourceType}
                   onClick={() => setCanonSourceType(sourceType)}
-                  className={`rounded-md px-3 py-1.5 text-sm ${canonSourceType === sourceType ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"}`}
                 >
                   {sourceType === "book" ? tr("已有书籍", "Existing book") : tr("上传外部母本", "Upload external canon")}
                 </button>
@@ -251,12 +253,12 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             </div>
             {canonSourceType === "book" ? (
               <select value={canonFrom} onChange={(e) => setCanonFrom(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input w-full">
                 <option value="">{t("import.selectSource")}</option>
                 {booksData?.books.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
               </select>
             ) : (
-              <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-dashed border-border bg-secondary/20 px-4 py-4 text-sm hover:bg-secondary/30">
+              <label className="well flex cursor-pointer items-center gap-3 border-dashed">
                 <Upload size={18} className="text-primary" />
                 <span className="min-w-0 flex-1 truncate">
                   {canonFile?.name ?? tr("选择 TXT、Markdown 或 PDF 文件", "Choose a TXT, Markdown, or PDF file")}
@@ -270,12 +272,12 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
               </label>
             )}
             <select value={canonTarget} onChange={(e) => setCanonTarget(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+              className="input w-full">
               <option value="">{t("import.selectDerivative")}</option>
               {booksData?.books.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
             </select>
             <button onClick={handleImportCanon} disabled={loading || !canonTarget || (canonSourceType === "book" ? !canonFrom : !canonFile)}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30`}>
+              className="btn">
               {loading ? t("import.importing") : t("import.canon")}
             </button>
           </>
@@ -285,35 +287,35 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
           <>
             <input type="text" value={ffTitle} onChange={(e) => setFfTitle(e.target.value)}
               placeholder={t("import.fanficTitle")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm"
+              className="input w-full"
             />
             <div className="grid grid-cols-3 gap-3">
               <select value={ffMode} onChange={(e) => setFfMode(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input">
                 <option value="canon">{tr("原著向", "Canon-compliant")}</option>
                 <option value="au">{tr("架空 AU", "Alternate Universe (AU)")}</option>
                 <option value="ooc">{tr("性格偏离 OOC", "Out of Character (OOC)")}</option>
                 <option value="cp">{tr("配对 CP", "Pairing (CP)")}</option>
               </select>
               <select value={ffGenre} onChange={(e) => setFfGenre(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input">
                 <option value="other">{tr("其他", "Other")}</option>
                 <option value="xuanhuan">{tr("玄幻", "Xuanhuan Fantasy")}</option>
                 <option value="urban">{tr("都市", "Urban")}</option>
                 <option value="xianxia">{tr("仙侠", "Xianxia")}</option>
               </select>
               <select value={ffLang} onChange={(e) => setFfLang(e.target.value as "zh" | "en")}
-                className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input">
                 <option value="zh">{tr("中文", "Chinese")}</option>
                 <option value="en">English</option>
               </select>
             </div>
             <textarea value={ffText} onChange={(e) => setFfText(e.target.value)} rows={10}
               placeholder={t("import.pasteMaterial")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm resize-none font-mono"
+              className="input w-full resize-none font-mono"
             />
             <button onClick={handleFanficInit} disabled={loading || !ffTitle.trim() || !ffText.trim()}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30`}>
+              className="btn">
               {loading ? t("import.creating") : t("import.fanfic")}
             </button>
           </>
@@ -324,19 +326,19 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             <p className="text-xs text-muted-foreground">{t("import.spinoffHint")}</p>
             <input type="text" value={spTitle} onChange={(e) => setSpTitle(e.target.value)}
               placeholder={t("import.spinoffTitle")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm"
+              className="input w-full"
             />
             <select value={spParent} onChange={(e) => setSpParent(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+              className="input w-full">
               <option value="">{t("import.selectParent")}</option>
               {booksData?.books.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
             </select>
             <textarea value={spDirection} onChange={(e) => setSpDirection(e.target.value)} rows={5}
               placeholder={t("import.spinoffDirection")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm resize-none"
+              className="input w-full resize-none"
             />
             <button onClick={handleSpinoffInit} disabled={loading || !spTitle.trim() || !spParent}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30`}>
+              className="btn">
               {loading ? t("import.creating") : t("import.spinoff")}
             </button>
           </>
@@ -347,41 +349,41 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             <p className="text-xs text-muted-foreground">{t("import.imitationHint")}</p>
             <input type="text" value={imTitle} onChange={(e) => setImTitle(e.target.value)}
               placeholder={t("import.imitationTitle")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm"
+              className="input w-full"
             />
             <div className="grid grid-cols-2 gap-3">
               <select value={imGenre} onChange={(e) => setImGenre(e.target.value)}
-                className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input">
                 <option value="other">{tr("其他", "Other")}</option>
                 <option value="xuanhuan">{tr("玄幻", "Xuanhuan Fantasy")}</option>
                 <option value="urban">{tr("都市", "Urban")}</option>
                 <option value="xianxia">{tr("仙侠", "Xianxia")}</option>
               </select>
               <select value={imLang} onChange={(e) => setImLang(e.target.value as "zh" | "en")}
-                className="px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm">
+                className="input">
                 <option value="zh">{tr("中文", "Chinese")}</option>
                 <option value="en">English</option>
               </select>
             </div>
             <textarea value={imIdea} onChange={(e) => setImIdea(e.target.value)} rows={4}
               placeholder={t("import.imitationIdea")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm resize-none"
+              className="input w-full resize-none"
             />
             <textarea value={imRef} onChange={(e) => setImRef(e.target.value)} rows={8}
               placeholder={t("import.imitationRef")}
-              className="w-full px-3 py-2 rounded-lg bg-secondary/30 border border-border text-sm resize-none font-mono"
+              className="input w-full resize-none font-mono"
             />
             <button onClick={handleImitationInit} disabled={loading || !imTitle.trim() || !imRef.trim() || !imIdea.trim()}
-              className={`px-4 py-2 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30`}>
+              className="btn">
               {loading ? t("import.creating") : t("import.imitation")}
             </button>
           </>
         )}
 
         {status && (
-          <div className={`text-sm px-3 py-2 rounded-lg ${status.startsWith("Error") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
-            {status}
-          </div>
+          status.startsWith("Error")
+            ? <Failed what="The import stopped." detail={status.replace(/^Error:?\s*/, "")} />
+            : <div className="pass block">{status}</div>
         )}
       </div>
     </div>

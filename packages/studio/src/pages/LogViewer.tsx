@@ -63,15 +63,15 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
 
   return (
     <div className="stack-lg">
-      <section className="crop" style={{ paddingBottom: 0 }}>
-        <span className="disc stroke" style={{ width: 160, height: 160, left: -74, top: -80, opacity: 0.28 }} />
+      <section className="crop pb-0">
+        <span className="disc stroke w-40 h-40 -left-18.5 -top-20 opacity-28" />
         <h2 className="h-page">The machine talking to itself</h2>
-        <p className="muted" style={{ fontSize: 14, marginTop: 8, maxWidth: "60ch" }}>
+        <p className="muted text-body mt-2 max-w-measure">
           Everything the shim, the daemon and the writer said while working. {t("logs.showingRecent")}
         </p>
       </section>
 
-      <div className="rowflex" style={{ alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div className="rowflex items-center gap-2.5 flex-wrap">
         <div className="seg">
           {LEVELS.map((l) => (
             <button key={l} type="button" aria-pressed={level === l} onClick={() => setLevel(l)}>
@@ -81,7 +81,7 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
           ))}
         </div>
         <span className="grow" />
-        <label className="input" style={{ display: "flex", alignItems: "center", gap: 7, width: 230, padding: "6px 10px" }}>
+        <label className="input flex items-center gap-2 w-57.5 py-1.5 px-2.5">
           <Icon name="search" size={14} className="dim" />
           <input
             type="text"
@@ -89,7 +89,7 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by tag or text"
             aria-label="Filter the log"
-            style={{ border: 0, background: "none", outline: 0, width: "100%", font: "inherit", color: "inherit" }}
+            className="border-0 bg-none w-full text-inherit outline-none p-0"
           />
         </label>
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => refetch()}>
@@ -108,26 +108,22 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
         </Empty>
       ) : (
         <section className="panel panel-flush dark on-char">
-          <div className="panel-body scroll-y mono" style={{ maxHeight: 440, fontSize: 11, lineHeight: 1.9 }}>
+          <div className="panel-body scroll-y mono max-h-110 text-cap leading-loose">
             {shown.length === 0 ? (
               <p className="dim">Nothing in the log matches that.</p>
             ) : (
               shown.map((e, i) => (
-                <div className="rowflex" style={{ gap: 10 }} key={i}>
-                  <span className="dim tnum" style={{ width: 62, flex: "none" }}>
+                <div className="rowflex gap-2.5" key={i}>
+                  <span className="dim tnum w-15.5 flex-none">
                     {e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : ""}
                   </span>
                   <span
-                    style={{
-                      width: 46,
-                      flex: "none",
-                      color: LEVEL_COLOR[(e.level ?? "info").toLowerCase()] ?? "var(--ink-3)",
-                    }}
+                    className="w-11.5 flex-none" style={{ color: LEVEL_COLOR[(e.level ?? "info").toLowerCase()] ?? "var(--ink-3)" }}
                   >
                     {(e.level ?? "info").toUpperCase()}
                   </span>
                   {e.tag ? (
-                    <span style={{ color: "var(--vermilion-ink)", flex: "none" }}>[{e.tag}]</span>
+                    <span className="text-(--vermilion-ink) flex-none">[{e.tag}]</span>
                   ) : null}
                   <span>{e.message}</span>
                 </div>

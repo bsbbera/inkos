@@ -55,6 +55,7 @@ export const NAV: readonly NavGroup[] = [
         ],
       },
       { id: "audit", icon: "pulse", label: "Audit", route: { page: "audit" } },
+      { id: "gallery", icon: "grid", label: "Gallery", route: { page: "gallery" } },
       {
         id: "magazine",
         icon: "magazine",
@@ -68,14 +69,17 @@ export const NAV: readonly NavGroup[] = [
     label: "System",
     items: [
       { id: "genres", icon: "layers", label: "Genres", route: { page: "genres" } },
+      { id: "audit-packs", icon: "pulse", label: "Audit checks", route: { page: "audit-packs" } },
       {
         id: "setup",
         icon: "plug",
-        label: "Models & setup",
+        label: "Settings",
         route: { page: "setup" },
-        owns: ["services", "service-detail"],
+        /* Machine, models, agents, project and MCP are one page with tabs:
+           five rail entries for "how is this set up" was how a person lost
+           the model picker. */
+        owns: ["services", "service-detail", "project-settings", "mcp"],
       },
-      { id: "project", icon: "sliders", label: "Project", route: { page: "project-settings" } },
       { id: "daemon", icon: "cpu", label: "Daemon", route: { page: "daemon" } },
       { id: "logs", icon: "list", label: "Logs", route: { page: "logs" } },
     ],
@@ -85,10 +89,10 @@ export const NAV: readonly NavGroup[] = [
     items: [
       { id: "translation", icon: "type", label: "Translation", route: { page: "translation" } },
       { id: "style", icon: "drop", label: "Style", route: { page: "style" } },
+      { id: "taste", icon: "pulse", label: "Taste", route: { page: "taste" } },
       { id: "import", icon: "file", label: "Import", route: { page: "import" } },
       { id: "radar", icon: "search", label: "Radar", route: { page: "radar" } },
       { id: "doctor", icon: "heart", label: "Doctor", route: { page: "doctor" } },
-      { id: "mcp", icon: "skill", label: "MCP", route: { page: "mcp" } },
       { id: "styleguide", icon: "grid", label: "Style guide", route: { page: "styleguide" } },
     ],
   },

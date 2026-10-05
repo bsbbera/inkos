@@ -23,7 +23,7 @@ import { Icon } from "./ui/icon";
 
 /* -------------------------------------------------------------- the shapes */
 
-export type StageState = "done" | "partial" | "pending";
+export type StageState = "done" | "partial" | "pending" | "running" | "failed";
 
 export interface WorkflowStage {
   readonly stage: string;
@@ -51,8 +51,19 @@ export interface Workflow {
   readonly gates: readonly WorkflowGate[];
   readonly done: { readonly can: boolean; readonly blockers: readonly string[] };
   readonly running: boolean;
-  readonly lastError: { readonly at?: string; readonly stage?: string; readonly message: string } | null;
+  readonly lastError: { readonly at?: string; readonly stage?: string; readonly message: string; readonly stopped?: boolean } | null;
 }
+
+/*
+ * Only a stage that is being worked on right now pulses. Half-done work that
+ * nothing is touching used to share that class and so looked alive.
+ */
+export const STAGE_CLASS: Readonly<Record<string, string>> = {
+  done: "done",
+  running: "now",
+  partial: "part",
+  failed: "bad",
+};
 
 /* ------------------------------------------------------------------ 0. bar */
 
@@ -88,6 +99,12 @@ export function WorkflowBar({
 }) {
   const [open, setOpen] = useState(false);
   const held = !workflow.done.can;
+  /* Stages that finished while this bar was on screen, so only they pop. */
+  const was = useRef<Record<string, string> | null>(null);
+  const just = new Set(was.current
+    ? workflow.stages.filter((s) => s.state === "done" && was.current![s.stage] !== "done").map((s) => s.stage)
+    : []);
+  useEffect(() => { was.current = Object.fromEntries(workflow.stages.map((s) => [s.stage, s.state])); });
   const [first, ...rest] = workflow.done.blockers;
 
   return (
@@ -96,7 +113,7 @@ export function WorkflowBar({
         {workflow.stages.map((s) => (
           <span
             key={s.stage}
-            className={`st ${s.state === "done" ? "done" : s.state === "partial" ? "now" : ""}`}
+            className={`st ${STAGE_CLASS[s.state] ?? ""}${just.has(s.stage) ? " just" : ""}`}
             title={`${s.stage} — ${s.state}: ${s.detail}`}
           >
             <i />
@@ -153,8 +170,8 @@ export function GateCard({
 }) {
   const open = !gate.approved && gate.canApprove;
   return (
-    <div className={`gate ${gate.approved ? "is-done" : open ? "is-open" : ""}`} style={{ alignItems: "flex-start", flexDirection: "column" }}>
-      <div className="rowflex" style={{ gap: 10, width: "100%" }}>
+    <div className={`gate ${gate.approved ? "is-done" : open ? "is-open" : ""} items-start flex-col`}>
+      <div className="rowflex gap-2.5 w-full">
         <span className="what grow">{gate.label}</span>
         {gate.approved ? (
           <span className="pill pill-ok">
@@ -167,14 +184,13 @@ export function GateCard({
       </div>
 
       {gate.blockers.length > 0 ? (
-        <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", width: "100%" }}>
+        <ul className="m-0 pl-0 list-none w-full">
           {gate.blockers.map((b) => (
             <li
               key={b}
-              className="rowflex"
-              style={{ gap: 7, alignItems: "flex-start", fontSize: 12, color: "var(--bad)", marginTop: 5 }}
+              className="rowflex gap-2 items-start text-small text-(--bad) mt-1.5"
             >
-              <span className="sev sev-bad" style={{ marginTop: 6 }} />
+              <span className="sev sev-bad mt-1.5" />
               <span>{b}</span>
             </li>
           ))}
@@ -182,14 +198,13 @@ export function GateCard({
       ) : null}
 
       {gate.warnings.length > 0 ? (
-        <ul style={{ margin: 0, paddingLeft: 0, listStyle: "none", width: "100%" }}>
+        <ul className="m-0 pl-0 list-none w-full">
           {gate.warnings.map((w) => (
             <li
               key={w}
-              className="rowflex"
-              style={{ gap: 7, alignItems: "flex-start", fontSize: 12, color: "var(--ink-3)", marginTop: 5 }}
+              className="rowflex gap-2 items-start text-small text-(--ink-3) mt-1.5"
             >
-              <span className="sev sev-warn" style={{ marginTop: 6 }} />
+              <span className="sev sev-warn mt-1.5" />
               <span>{w}</span>
             </li>
           ))}
@@ -197,7 +212,7 @@ export function GateCard({
       ) : null}
 
       {onApprove || onRevoke ? (
-        <div className="rowflex" style={{ gap: 8, marginTop: 4 }}>
+        <div className="rowflex gap-2 mt-1">
           {gate.approved ? (
             <button type="button" className="btn btn-line btn-sm" disabled={busy} onClick={onRevoke}>
               <Icon name="x" size={14} />Revoke
@@ -249,8 +264,8 @@ export function MarkedPassage({
   const located = markStart >= 0 && markEnd > markStart && markEnd <= text.length;
   return (
     <div
-      className="read"
-      style={{ color: "var(--on-char)", "--rs": size, "--rm": "58ch" } as React.CSSProperties}
+      className="read text-(--on-char)"
+      style={{ "--rs": size, "--rm": "58ch" } as React.CSSProperties}
     >
       <p>
         {located ? (
@@ -284,17 +299,12 @@ export function Suggestion({
       <>
         <div className="label">The fix it proposes</div>
         <div
-          className="read"
-          style={{ color: "var(--on-char-2)", "--rs": "16px", "--rm": "58ch", marginTop: 8 } as React.CSSProperties}
+          className="read text-(--on-char-2) mt-2"
+          style={{ "--rs": "16px", "--rm": "58ch" } as React.CSSProperties}
         >
           <p>
             …{" "}
-            <span style={{
-              color: "var(--on-char)",
-              background: "color-mix(in oklab, var(--ok) 30%, transparent)",
-              borderRadius: 2,
-              padding: ".06em .12em",
-            }}>{fix}</span>{" "}
+            <span className="hl-ok">{fix}</span>{" "}
             …
           </p>
         </div>
@@ -304,7 +314,7 @@ export function Suggestion({
   return (
     <>
       <div className="label">What it suggests</div>
-      <p className="muted" style={{ fontSize: 14, marginTop: 8, maxWidth: "56ch" }}>
+      <p className="muted text-body mt-2 max-w-measure">
         {suggestion || "Nothing specific — this one is a note to read with."}
       </p>
     </>
@@ -631,7 +641,7 @@ export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
         aria-label="Smaller text"
         title={`Smaller text (${now})`}
       >
-        <span style={{ fontSize: 11, fontWeight: 600, lineHeight: 1 }}>A</span>
+        <span className="text-cap font-semibold leading-none">A</span>
       </button>
       <button
         type="button"
@@ -641,7 +651,7 @@ export function ReadingSize({ dark = false }: { readonly dark?: boolean }) {
         aria-label="Bigger text"
         title={`Bigger text (${now})`}
       >
-        <span style={{ fontSize: 16, fontWeight: 600, lineHeight: 1 }}>A</span>
+        <span className="text-lead font-semibold leading-none">A</span>
       </button>
     </span>
   );

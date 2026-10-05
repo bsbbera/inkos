@@ -37,9 +37,9 @@ export function TypeMark({ kind, size = 13 }: { readonly kind: string; readonly 
   // A script is ruled paper and speaker names; a circle would lie about it.
   if (kind === "script") {
     return (
-      <span aria-hidden="true" style={{ display: "inline-block", width: size + 1, flex: "none" }}>
-        <span style={{ display: "block", height: 1.5, background: "var(--vermilion)", opacity: 0.6 }} />
-        <span style={{ display: "block", height: 1.5, background: "var(--line)", marginTop: 4, width: size - 4 }} />
+      <span aria-hidden="true" className="inline-block flex-none" style={{ width: size + 1 }}>
+        <span className="block h-0.5 bg-(--vermilion) opacity-60" />
+        <span className="block h-0.5 bg-(--line) mt-1" style={{ width: size - 4 }} />
       </span>
     );
   }

@@ -1,27 +1,32 @@
 import type { Theme } from "./use-theme";
 
+/*
+ * The class names the shadcn-era pages reach for, pointed at the system's own
+ * components. Kept as a map because those pages pass these strings around;
+ * new code writes the class (`btn`, `panel`, `input`) directly.
+ */
 export function useColors(_theme: Theme) {
   return {
-    card: "border-border hover:border-primary/40 transition-all duration-200",
-    cardStatic: "border-border",
-    surface: "bg-card",
-    muted: "text-muted-foreground",
-    subtle: "text-muted-foreground",
-    link: "hover:text-primary transition-colors cursor-pointer",
-    input: "bg-input/40 border border-border text-foreground focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all duration-200",
-    btnPrimary: "bg-primary text-primary-foreground hover:opacity-90 active:opacity-80 transition-opacity",
-    btnSecondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors",
-    btnSuccess: "bg-success text-background hover:opacity-90 transition-opacity",
-    btnDanger: "bg-destructive text-destructive-foreground hover:opacity-90 transition-opacity",
-    tableHeader: "bg-muted/60 text-muted-foreground text-xs uppercase tracking-wider font-medium",
-    tableDivide: "divide-border",
-    tableHover: "hover:bg-muted/40 transition-colors",
-    error: "border-destructive/50 bg-destructive/10 text-destructive",
-    info: "border-primary/30 bg-primary/8 text-primary",
-    code: "bg-muted text-foreground/80 font-mono",
-    active: "text-emerald-500",
-    paused: "text-amber-500",
-    mono: "font-mono text-sm",
-    accent: "text-primary",
+    card: "panel",
+    cardStatic: "panel",
+    surface: "",
+    muted: "muted",
+    subtle: "dim",
+    link: "xref",
+    input: "input",
+    btnPrimary: "btn",
+    btnSecondary: "btn btn-line",
+    btnSuccess: "btn",
+    btnDanger: "btn btn-bad",
+    tableHeader: "label",
+    tableDivide: "divide-(--line)",
+    tableHover: "hover:bg-(--putty-2)",
+    error: "fail",
+    info: "pass",
+    code: "mono",
+    active: "text-(--ok)",
+    paused: "text-(--warn)",
+    mono: "mono",
+    accent: "text-(--vermilion-ink)",
   };
 }

@@ -6,7 +6,7 @@
  * answer is the bug this page exists to prevent.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Search } from "lucide-react";
+import { Check, ChevronDown, Search } from "../components/ui/glyphs";
 import { countModels, filterGroups, type SearchGroup } from "./model-search";
 
 export function ModelCombo({
@@ -63,14 +63,14 @@ export function ModelCombo({
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-64 items-center justify-between gap-2 rounded-lg border border-border/60 bg-background px-2 py-1.5 text-xs disabled:opacity-40"
+        className="btn btn-line btn-sm flex w-64 items-center justify-between gap-2"
       >
         <span className="truncate">{display || emptyLabel}</span>
         <ChevronDown size={13} className="shrink-0 opacity-60" aria-hidden />
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-1 w-80 rounded-xl border border-border/60 bg-card shadow-lg">
+        <div className="pop absolute right-0 z-50 mt-1 w-80">
           <div className="flex items-center gap-2 border-b border-border/40 px-2.5 py-2">
             <Search size={13} className="shrink-0 opacity-50" aria-hidden />
             <input
@@ -95,7 +95,7 @@ export function ModelCombo({
             </button>
             {found.map((group) => (
               <div key={group.service}>
-                <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <div className="px-3 pt-2 pb-1 text-cap font-semibold uppercase tracking-wide text-muted-foreground">
                   {group.label}
                 </div>
                 {group.models.map((model) => {

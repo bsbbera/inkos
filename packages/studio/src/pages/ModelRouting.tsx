@@ -12,7 +12,7 @@
  * is the thing a person opens this page to find out.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, RefreshCw } from "lucide-react";
+import { Bot, RefreshCw } from "../components/ui/glyphs";
 import { ModelCombo } from "./ModelCombo";
 import { fetchJson, putApi } from "../hooks/use-api";
 import { useServiceStore } from "../store/service";
@@ -27,6 +27,7 @@ import {
   type ModelPin,
   type RoutingTable,
 } from "./model-routing-state";
+import { Failed } from "../components/ui/states";
 
 const TONE: Record<"default" | "pinned" | "dropped", string> = {
   default: "text-muted-foreground italic",
@@ -139,7 +140,7 @@ export function ModelRouting({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+      <div className="well">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold">{labels.globalDefault}</div>
@@ -170,7 +171,7 @@ export function ModelRouting({
             <button
               type="button"
               onClick={onOpenModelConfig}
-              className="rounded-lg border border-border/60 px-3 py-1.5 text-sm font-semibold"
+              className="btn btn-line btn-sm"
             >
               {labels.openModelConfig}
             </button>
@@ -182,14 +183,12 @@ export function ModelRouting({
       </div>
 
       {error ? (
-        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {error}
-        </div>
+        <Failed what="The routing was not saved." detail={error} />
       ) : null}
 
       <div className="space-y-1">
-        <h3 className="q-label">By job</h3>
-        <div className="rounded-xl border border-border/60 divide-y divide-border/40">
+        <h3 className="label">By job</h3>
+        <div className="well p-0 divide-y divide-(--line)">
           {jobRows(table).map(({ job, value, summary }) => (
             <div key={job.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
               <div className="min-w-45 grow">
@@ -213,7 +212,7 @@ export function ModelRouting({
         <button
           type="button"
           onClick={() => setPerAgent((v) => !v)}
-          className="mt-1 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          className="btn btn-quiet btn-sm mt-1"
         >
           {perAgent
             ? "Hide the individual agents"
@@ -224,8 +223,8 @@ export function ModelRouting({
       {perAgent ? groups.map((group) => (
 
         <section key={group.id} className="space-y-1">
-          <h3 className="q-label">{group.label}</h3>
-          <div className="rounded-xl border border-border/60 divide-y divide-border/40">
+          <h3 className="label">{group.label}</h3>
+          <div className="well p-0 divide-y divide-(--line)">
             {group.rows.map(({ role, route, value }) => {
               const summary = routeSummary(route);
               return (
@@ -256,7 +255,7 @@ export function ModelRouting({
         <button
           type="button"
           onClick={() => { void load(); void fetchBankModels(); }}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-sm font-semibold"
+          className="btn btn-line btn-sm inline-flex items-center gap-1.5"
         >
           <RefreshCw size={14} aria-hidden />
           Refresh
@@ -266,7 +265,7 @@ export function ModelRouting({
             type="button"
             disabled={saving}
             onClick={() => { void save({}); }}
-            className="rounded-lg border border-border/60 px-3 py-1.5 text-sm font-semibold disabled:opacity-40"
+            className="btn btn-line btn-sm"
           >
             Clear every pin
           </button>

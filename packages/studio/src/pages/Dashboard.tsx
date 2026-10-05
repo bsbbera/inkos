@@ -60,10 +60,10 @@ import type { BookSummary } from "../shared/contracts";
 import type { ActiveRun, PublicationSummary } from "../hooks/use-shell-data";
 import { Icon, type IconName } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
+import { Ring } from "../components/ui/working";
 import { shimGet, type ComfyStatus, type ShimStatus } from "../lib/shim";
 import { useEffect, useState } from "react";
 
-const RING = 2 * Math.PI * 19;
 
 interface Nav {
   readonly toBook: (id: string) => void;
@@ -493,29 +493,29 @@ export function Dashboard({
           Three numerals on one line, labels inline underneath. Not three
           stat cards: the relationship between the numbers is the
           information, and cards would break it into three facts. */}
-      <section className="crop" style={{ padding: "6px 0 4px" }}>
-        <span className="disc stroke" style={{ width: 210, height: 210, left: -110, top: -96, opacity: 0.32 }} />
-        <span className="disc dots" style={{ width: 82, height: 82, left: -52, bottom: -58, opacity: 0.28 }} />
-        <div className="spread" style={{ alignItems: "flex-end", position: "relative" }}>
-          <div className="rowflex" style={{ gap: 26, alignItems: "flex-end" }}>
+      <section className="crop px-0 pt-1.5 pb-1">
+        <span className="disc stroke w-52.5 h-52.5 -left-27.5 -top-24 opacity-32" />
+        <span className="disc dots w-20.5 h-20.5 -left-13 -bottom-14.5 opacity-28" />
+        <div className="spread items-end relative">
+          <div className="rowflex gap-6.5 items-end">
             <div>
-              <div className="numeral" style={{ fontSize: 68 }}>{String(approved).padStart(2, "0")}</div>
-              <div className="label" style={{ marginTop: 9 }}>approved</div>
+              <div className="numeral text-d3">{String(approved).padStart(2, "0")}</div>
+              <div className="label mt-2.5">approved</div>
             </div>
             <div>
-              <div className="numeral ghost" style={{ fontSize: 68 }}>{String(inFlight).padStart(2, "0")}</div>
-              <div className="label" style={{ marginTop: 9 }}>in flight</div>
+              <div className="numeral ghost text-d3">{String(inFlight).padStart(2, "0")}</div>
+              <div className="label mt-2.5">in flight</div>
             </div>
             <div>
-              <div className="numeral ghost" style={{ fontSize: 68 }}>{String(thisMonth).padStart(2, "0")}</div>
-              <div className="label" style={{ marginTop: 9 }}>this month</div>
+              <div className="numeral ghost text-d3">{String(thisMonth).padStart(2, "0")}</div>
+              <div className="label mt-2.5">this month</div>
             </div>
           </div>
           {newest ? (
             <div className="rowflex">
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: 14, fontWeight: 500 }}>{newest.title}</div>
-                <div className="dim" style={{ fontSize: 11 }}>
+              <div className="text-right">
+                <div className="text-body font-medium">{newest.title}</div>
+                <div className="dim text-cap">
                   last touched {ago(newest.updatedAt)}
                 </div>
               </div>
@@ -537,7 +537,7 @@ export function Dashboard({
           named in the product's own words, action one click away. */}
       <section>
         <div className="panel panel-flush crop">
-          <span className="disc fill" style={{ width: 230, height: 230, right: -118, top: -128, opacity: 0.13 }} />
+          <span className="disc fill w-57.5 h-57.5 -right-29.5 -top-32 opacity-13" />
           <div className="panel-head">
             <h3 className="h-panel grow">Waiting on you</h3>
             {gates.length ? (
@@ -548,7 +548,7 @@ export function Dashboard({
               <span className="pill pill-ok">clear</span>
             )}
           </div>
-          <div className="panel-body" style={{ paddingTop: 4, paddingBottom: 8 }}>
+          <div className="panel-body pt-1 pb-2">
             {gates.length === 0 ? (
               <p className="hint">
                 {nothingYet
@@ -581,15 +581,15 @@ export function Dashboard({
 
       {/* ── The live run, and the machine under it ───────────────────── */}
       <section className="cols cols-a">
-        <div className="dark crop" style={{ padding: "20px 22px" }}>
-          <span className="disc dots dots-light" style={{ width: 150, height: 150, right: -54, bottom: -64 }} />
-          <div className="spread" style={{ alignItems: "flex-start", position: "relative" }}>
+        <div className="dark crop py-5 px-5.5">
+          <span className="disc dots dots-light w-37.5 h-37.5 -right-13.5 -bottom-16" />
+          <div className="spread items-start relative">
             <div>
               <div className="label">{run ? "Running now" : "Idle"}</div>
-              <h3 style={{ fontSize: 17.5, marginTop: 8 }}>
+              <h3 className="text-lead mt-2">
                 {run ? run.what : "Nothing is running"}
               </h3>
-              <p className="muted" style={{ fontSize: 14, marginTop: 3 }}>
+              <p className="muted text-body mt-1">
                 {run
                   ? [run.where, `started ${ago(new Date(run.startedAt).toISOString())}`]
                       .filter(Boolean)
@@ -600,19 +600,16 @@ export function Dashboard({
               </p>
             </div>
             {run ? (
-              <svg className="ring" viewBox="0 0 44 44" aria-hidden="true">
-                <circle className="t" cx="22" cy="22" r="19" />
-                <circle className="v" cx="22" cy="22" r="19" style={{ strokeDasharray: RING, strokeDashoffset: RING * 0.75 }} />
-              </svg>
+              <Ring />
             ) : null}
           </div>
 
           {run && lastLine ? (
-            <div className="msg" style={{ position: "relative", marginTop: 18 }}>
+            <div className="msg relative mt-4.5">
               <span className="who-av model">Q</span>
               <div className="body">
                 <div className="tag">{lastLine.tag}</div>
-                <p style={{ fontSize: 14, lineHeight: 1.55 }}>
+                <p className="text-body leading-normal">
                   {lastLine.text}
                   <span className="caret" />
                 </p>
@@ -620,7 +617,7 @@ export function Dashboard({
             </div>
           ) : null}
 
-          <div className="rowflex" style={{ marginTop: 16, position: "relative" }}>
+          <div className="rowflex mt-4 relative">
             <button type="button" className="btn btn-sm" onClick={nav.toRun}>
               {run ? "Watch it" : "Open the run view"} <Icon name="arrR" size={14} className="ico" />
             </button>
@@ -635,16 +632,16 @@ export function Dashboard({
           {workspace && workspace.totals.files > 0 ? (
             <div className="panel crop" role="link" tabIndex={0} onClick={nav.toBooks}
                  onKeyDown={(e) => { if (e.key === "Enter") nav.toBooks(); }}>
-              <span className="disc dots" style={{ width: 96, height: 96, right: -40, top: -44, opacity: 0.24 }} />
+              <span className="disc dots w-24 h-24 -right-10 -top-11 opacity-24" />
               <div className="spread">
                 <h3 className="h-panel">In this folder</h3>
-                <span className="dim" style={{ fontSize: 11 }}>
+                <span className="dim text-cap">
                   {creations.length} {creations.length === 1 ? "creation" : "creations"}
                   {" · "}{workspace.totals.words.toLocaleString()} words
                 </span>
               </div>
 
-              <div className="rowflex" style={{ marginTop: 10 }}>
+              <div className="rowflex mt-2.5">
                 <span className="pill">
                   {workspace.totals.read} of {workspace.totals.files} read
                 </span>
@@ -661,17 +658,17 @@ export function Dashboard({
                 ) : null}
               </div>
 
-              <div style={{ marginTop: 12 }}>
+              <div className="mt-3">
                 {workspace.kinds.filter((k) => k.files > 0).map((k) => (
-                  <div key={k.kind} className="spread" style={{ padding: "3px 0", fontSize: 12 }}>
+                  <div key={k.kind} className="spread py-1 px-0 text-small">
                     <span>
                       {k.label}
-                      <span className="dim" style={{ marginLeft: 7 }}>
+                      <span className="dim ml-2">
                         {k.projects} {k.projects === 1 ? "creation" : "creations"}
                         {" · "}{k.files} {k.files === 1 ? "file" : "files"}
                       </span>
                     </span>
-                    <span className="dim mono" style={{ fontSize: 11 }}>
+                    <span className="dim mono text-cap">
                       {k.read}/{k.files} read
                       {k.open > 0 ? ` · ${k.open} open` : ""}
                       {k.blocking > 0 ? ` · ${k.blocking} blocking` : ""}
@@ -684,9 +681,9 @@ export function Dashboard({
 
           <div className="panel crop" role="link" tabIndex={0} onClick={nav.toSetup}
                onKeyDown={(e) => { if (e.key === "Enter") nav.toSetup(); }}>
-            <span className="disc stroke-l" style={{ width: 120, height: 120, right: -46, bottom: -52 }} />
+            <span className="disc stroke-l w-30 h-30 -right-11.5 -bottom-13" />
             <h3 className="h-panel">The machine</h3>
-            <div className="rowflex" style={{ marginTop: 10 }}>
+            <div className="rowflex mt-2.5">
               <span className={machine.shim ? "pill pill-ok" : "pill pill-bad"}>
                 {machine.shim
                   ? `shim · ${machine.shim.agents.length} provider${machine.shim.agents.length === 1 ? "" : "s"}`
@@ -702,7 +699,7 @@ export function Dashboard({
                 {daemon?.running ? "daemon on" : "daemon off"}
               </span>
             </div>
-            <p className="hint" style={{ marginTop: 10 }}>
+            <p className="hint mt-2.5">
               Affinity only has to be open when an issue is being built.
             </p>
           </div>
@@ -710,7 +707,7 @@ export function Dashboard({
           {books.some((b) => b.status === "active") ? (
             <div className="panel">
               <h3 className="h-panel">Next in the queue</h3>
-              <div className="rows" style={{ marginTop: 8 }}>
+              <div className="rows mt-2">
                 {books
                   .filter((b) => b.status === "active")
                   .slice(0, 3)
@@ -718,8 +715,7 @@ export function Dashboard({
                     <button
                       key={b.id}
                       type="button"
-                      className="row"
-                      style={{ padding: "10px 4px" }}
+                      className="row py-2.5 px-1"
                       onClick={() => void writeNext(b, nav)}
                     >
                       <span className="num tnum">{b.chaptersWritten + 1}</span>
@@ -740,7 +736,7 @@ export function Dashboard({
           Least urgent, so it is last. The silhouette means the row is
           scannable before a title is read. */}
       <section>
-        <div className="spread" style={{ marginBottom: 14 }}>
+        <div className="spread mb-3.5">
           <h3 className="h-panel">Back to work</h3>
           <button type="button" className="link" onClick={nav.toBooks}>
             All productions →
@@ -764,7 +760,7 @@ export function Dashboard({
             <span className="arrow" aria-hidden="true">
               <Icon name="plus" size={18} />
             </span>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>Start something</span>
+            <span className="text-body font-semibold">Start something</span>
             <span className="hint">book · storybook · short · script</span>
           </button>
         </div>

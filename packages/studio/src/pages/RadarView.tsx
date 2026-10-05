@@ -3,8 +3,10 @@ import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { fetchJson } from "../hooks/use-api";
-import { TrendingUp, Loader2, Target, Clock } from "lucide-react";
+import { TrendingUp, Loader2, Target, Clock } from "../components/ui/glyphs";
 
+import { Spinner } from "../components/ui/working";
+import { Failed } from "../components/ui/states";
 interface Recommendation {
   readonly confidence: number;
   readonly platform: string;
@@ -65,39 +67,39 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between">
-        <h1 className="q-title text-3xl flex items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><TrendingUp size={19} /></span>
+        <h1 className="h-page flex items-center gap-3">
+          <span className="icon-ring icon-ring-lg" aria-hidden="true"><TrendingUp size={19} /></span>
           {t("radar.title")}
         </h1>
         <button
           onClick={handleScan}
           disabled={loading}
-          className={`px-5 py-2.5 text-sm rounded-lg ${c.btnPrimary} disabled:opacity-30 flex items-center gap-2`}
+          className="btn flex items-center gap-2"
         >
-          {loading ? <Loader2 size={14} className="animate-spin" /> : <Target size={14} />}
+          {loading ? <Spinner /> : <Target size={14} />}
           {loading ? t("radar.scanning") : t("radar.scan")}
         </button>
       </div>
 
       {error && (
-        <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg text-sm">{error}</div>
+        <Failed what="The scan stopped." detail={error} />
       )}
 
       {result && (
         <div className="space-y-6">
-          <div className={`border ${c.cardStatic} rounded-lg p-5`}>
-            <h3 className="q-label mb-3">{t("radar.summary")}</h3>
+          <div className="panel">
+            <h3 className="label mb-3">{t("radar.summary")}</h3>
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{result.marketSummary}</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {result.recommendations.map((rec, i) => (
-              <div key={i} className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`}>
+              <div key={i} className="panel space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="q-label">
+                  <span className="label">
                     {rec.platform} · {rec.genre}
                   </span>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  <span className={`pill ${
                     rec.confidence >= 0.7 ? "bg-success/10 text-success" :
                     rec.confidence >= 0.4 ? "bg-warning/10 text-warning" :
                     "bg-muted text-muted-foreground"
@@ -110,7 +112,7 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
                 {rec.benchmarkTitles.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
                     {rec.benchmarkTitles.map((bt) => (
-                      <span key={bt} className="px-2 py-0.5 text-[10px] bg-secondary rounded">{bt}</span>
+                      <span key={bt} className="pill">{bt}</span>
                     ))}
                   </div>
                 )}
@@ -121,8 +123,8 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
       )}
 
       {history.length > 0 && (
-        <div className={`border ${c.cardStatic} rounded-lg p-5 space-y-3`}>
-          <h3 className="q-label flex items-center gap-2">
+        <div className="panel space-y-3">
+          <h3 className="label flex items-center gap-2">
             <Clock size={14} />
             {t("radar.history")}
           </h3>
@@ -131,7 +133,7 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
               <button
                 key={item.file}
                 onClick={() => setResult(item.result)}
-                className="w-full rounded-md border border-border/40 px-3 py-2 text-left text-xs hover:bg-muted/30"
+                className="well w-full text-left"
               >
                 <div className="font-medium text-foreground">{new Date(item.timestamp).toLocaleString()}</div>
                 <div className="mt-1 line-clamp-2 text-muted-foreground">{item.summaryPreview || item.file}</div>
@@ -142,7 +144,7 @@ export function RadarView({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunct
       )}
 
       {!result && !loading && !error && (
-        <div className={`border border-dashed ${c.cardStatic} rounded-lg p-12 text-center text-muted-foreground text-sm italic`}>
+        <div className="panel border-dashed text-center text-muted-foreground text-sm italic">
           {t("radar.emptyHint")}
         </div>
       )}

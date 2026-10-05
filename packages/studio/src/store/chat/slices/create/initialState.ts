@@ -8,4 +8,5 @@ export const initialCreateState: CreateState = {
   projectArtifactPath: null,
   bookSummary: null,
   resolvedProposals: {},
+  proposalRuns: {},
 };

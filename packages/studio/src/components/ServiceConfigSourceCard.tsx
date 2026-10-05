@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchJson } from "../hooks/use-api";
 import { tr } from "../lib/app-language";
+import { ErrorLine, Loading } from "./ui/states";
 
 type ConfigSource = "env" | "studio";
 type EnvScope = "project" | "global" | null;
@@ -80,15 +81,13 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
 
   if (!data && !error) {
     return (
-      <div className="rounded-xl border border-border/40 bg-card/70 p-4 text-sm text-muted-foreground/70">
-        {tr("正在读取配置来源…", "Loading config source…")}
-      </div>
+      <div className="panel"><Loading what={tr("正在读取配置来源…", "Reading where this config comes from…")} rows={1} /></div>
     );
   }
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-warning/30 bg-warning/[0.04] p-4 text-sm text-warning">
+      <div className="caution text-sm">
         {error ?? tr("读取配置来源失败", "Failed to load config source")}
       </div>
     );
@@ -100,12 +99,12 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
   const envLabel = envConfig.effectiveSource === "project"
     ? tr("项目 .env", "Project .env")
     : envConfig.effectiveSource === "global"
-      ? tr("全局 ~/.inkos/.env", "Global ~/.inkos/.env")
+      ? tr("全局 ~/.quire/.env", "Global ~/.quire/.env")
       : null;
   const envDetected = envConfig.project.detected || envConfig.global.detected;
 
   return (
-    <div className="rounded-xl border border-border/40 bg-card/70 p-4 space-y-3">
+    <div className="panel space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-medium">{tr("LLM 配置来源", "LLM config source")}</div>
@@ -119,7 +118,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
             type="button"
             onClick={() => void switchSource("studio")}
             disabled={saving !== null || importing || configSource === "studio"}
-            className="rounded-lg border border-border/50 px-3 py-1.5 text-xs hover:bg-secondary/50 disabled:opacity-50"
+            className="btn btn-line btn-sm"
           >
             {saving === "studio" ? tr("切换中…", "Switching…") : tr("使用 Studio 配置", "Use Studio config")}
           </button>
@@ -128,7 +127,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
               type="button"
               onClick={() => void importEnvConfig()}
               disabled={saving !== null || importing}
-              className="rounded-lg border border-border/50 bg-secondary/40 px-3 py-1.5 text-xs hover:bg-secondary/70 disabled:opacity-50"
+              className="btn btn-line btn-sm"
             >
               {importing ? tr("导入中…", "Importing…") : tr("导入检测到的配置", "Import detected config")}
             </button>
@@ -137,7 +136,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
       </div>
 
       {storedConfigSource === "env" ? (
-        <div className="rounded-lg border border-warning/25 bg-warning/[0.04] p-3 text-xs text-muted-foreground/80">
+        <div className="caution text-xs text-muted-foreground/80">
           {tr(
             "检测到旧配置标记为 `.env` 优先。Studio 运行时不会使用它；CLI、daemon 和部署环境仍可按 env 覆盖层使用。",
             "A legacy setting marks `.env` as preferred. The Studio runtime ignores it; CLI, daemon, and deployment environments may still use the env override layer.",
@@ -146,7 +145,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
       ) : null}
 
       {envDetected ? (
-        <div className="rounded-lg border border-warning/25 bg-warning/[0.04] p-3 text-xs text-muted-foreground/80 space-y-1.5">
+        <div className="caution text-xs text-muted-foreground/80 space-y-1.5">
           <div className="text-foreground">
             {tr("检测到 LLM 环境变量覆盖：", "Detected LLM environment variable override:")}
             <span className="font-medium"> {envLabel ?? tr("已检测到但未定位来源", "detected but source not located")}</span>
@@ -163,7 +162,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
           </div>
         </div>
       ) : (
-        <div className="rounded-lg border border-border/30 bg-secondary/20 p-3 text-xs text-muted-foreground/75">
+        <div className="well text-xs text-muted-foreground/75">
           {tr(
             "未检测到目录或全局 `.env` 里的 LLM 覆盖变量。当前会直接使用项目配置和 Studio 服务配置。",
             "No LLM override variables detected in the project or global `.env`. Project config and Studio service config are used directly.",
@@ -172,7 +171,7 @@ export function ServiceConfigSourceCard({ onChange }: { onChange?: () => void })
       )}
 
       {error ? (
-        <div className="text-xs text-rose-500">{error}</div>
+        <ErrorLine>{error}</ErrorLine>
       ) : null}
     </div>
   );

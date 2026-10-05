@@ -121,7 +121,7 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     productionByDir: actual.productionByDir,
     chatCompletion: chatCompletionMock,
     loadProjectConfig: loadProjectConfigMock,
-    GLOBAL_ENV_PATH: join(tmpdir(), "inkos-global.env"),
+    GLOBAL_ENV_PATH: join(tmpdir(), "quire-global.env"),
   };
 });
 
@@ -161,7 +161,7 @@ describe("Phase 5 hotfix 1 — Studio truth file endpoints", () => {
 
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "studio-hotfix-"));
-    await writeFile(join(root, "inkos.json"), JSON.stringify(projectConfig, null, 2), "utf-8");
+    await writeFile(join(root, "quire.json"), JSON.stringify(projectConfig, null, 2), "utf-8");
     bookDir = join(root, "books", "hotfix-book");
     storyDir = join(bookDir, "story");
     await mkdir(join(storyDir, "outline"), { recursive: true });

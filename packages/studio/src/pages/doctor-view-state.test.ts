@@ -3,7 +3,7 @@ import { doctorViewState } from "./doctor-view-state";
 
 describe("doctorViewState", () => {
   it("shows the checks once they arrive", () => {
-    expect(doctorViewState({ error: null, data: { inkosJson: true } })).toBe("ready");
+    expect(doctorViewState({ error: null, data: { quireJson: true } })).toBe("ready");
   });
 
   it("spins only while nothing has come back yet", () => {
@@ -25,6 +25,6 @@ describe("doctorViewState", () => {
   // Stale data plus a fresh failure is still a failure: the checks on screen
   // no longer describe the machine.
   it("prefers a new failure over the last good result", () => {
-    expect(doctorViewState({ error: "HTTP 500", data: { inkosJson: true } })).toBe("error");
+    expect(doctorViewState({ error: "HTTP 500", data: { quireJson: true } })).toBe("error");
   });
 });

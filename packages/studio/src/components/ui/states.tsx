@@ -13,28 +13,42 @@
  */
 import type { ReactNode } from "react";
 import { Icon, type IconName } from "./icon";
+import { Spinner } from "./working";
+import { plainError } from "../../lib/error-copy";
 
 export function Empty({
   icon,
   title,
   children,
   action,
+  compact,
 }: {
   readonly icon?: IconName;
   /** What goes here - never "No data". */
   readonly title: string;
   readonly children?: ReactNode;
   readonly action?: ReactNode;
+  /** One line, for a sidebar, a menu or a column too narrow for the full card. */
+  readonly compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <div className="empty-sm">
+        {icon ? <Icon name={icon} size={15} /> : null}
+        <span className="grow">{title}{children ? <> {children}</> : null}</span>
+        {action}
+      </div>
+    );
+  }
   return (
     <div className="empty crop">
-      <span className="disc stroke" aria-hidden="true"
-            style={{ width: 190, height: 190, right: -84, top: -92, opacity: 0.32 }} />
-      <div style={{ position: "relative" }}>
+      <span className="disc stroke w-47.5 h-47.5 -right-21 -top-23 opacity-32" aria-hidden="true"
+ />
+      <div className="relative">
         {icon ? <Icon name={icon} size={22} /> : null}
         <h3 style={{ marginTop: icon ? 12 : 0 }}>{title}</h3>
         {children ? <p>{children}</p> : null}
-        {action ? <div className="rowflex" style={{ marginTop: 18 }}>{action}</div> : null}
+        {action ? <div className="rowflex mt-4.5">{action}</div> : null}
       </div>
     </div>
   );
@@ -53,18 +67,18 @@ export function Loading({
 }) {
   return (
     <div aria-busy="true" aria-live="polite">
-      <div className="rowflex" style={{ gap: 9, marginBottom: 14 }}>
-        <span className="spin" />
-        <span className="dim" style={{ fontSize: 11 }}>{what}</span>
+      <div className="rowflex gap-2.5 mb-3.5">
+        <Spinner />
+        <span className="dim text-cap">{what}</span>
       </div>
-      <div className="stack" style={{ gap: 10 }}>
+      <div className="stack gap-2.5">
         {Array.from({ length: rows }, (_, i) => (
-          <div className="rowflex" key={i} style={{ gap: 9, flexWrap: "nowrap" }}>
-            <span className="skel" style={{ width: 7, height: 7, borderRadius: "50%" }} />
+          <div className="rowflex gap-2.5 flex-nowrap" key={i}>
+            <span className="skel w-1.75 h-1.75 rounded-full" />
             <span className="grow">
-              <span className="skel skel-line" style={{ display: "block", width: `${72 - i * 7}%` }} />
-              <span className="skel skel-line"
-                    style={{ display: "block", width: `${44 - i * 5}%`, height: 8, marginTop: 6 }} />
+              <span className="skel skel-line block" style={{ width: `${72 - i * 7}%` }} />
+              <span className="skel skel-line block h-2 mt-1.5"
+                    style={{ width: `${44 - i * 5}%` }} />
             </span>
           </div>
         ))}
@@ -78,31 +92,58 @@ export function Failed({
   detail,
   kept,
   retry,
+  children,
 }: {
   /** What stopped, in the product's words. */
   readonly what: string;
-  /** The machine's words. Shown, never swallowed. */
+  /** The machine's words. Read into a sentence; the raw text folds under Details. */
   readonly detail?: string | null;
   /** What survived. The reassurance is the point. */
   readonly kept?: string;
   readonly retry?: () => void;
+  /** The way forward, when it is more than "Try again". */
+  readonly children?: ReactNode;
 }) {
+  const plain = detail ? plainError(detail) : null;
   return (
     <div className="fail" role="alert">
       <Icon name="alert" size={16} />
       <div className="grow">
         <b>{what}</b>
-        {detail ? <p className="mono" style={{ fontSize: 11 }}>{detail}</p> : null}
-        {kept ? <p className="kept" style={{ marginTop: 4 }}>{kept}</p> : null}
-        {retry ? (
-          <button type="button" className="btn btn-line btn-sm" style={{ marginTop: 10 }} onClick={retry}>
-            <Icon name="redo" size={14} />
-            Try again
-          </button>
+        {plain ? <p>{plain.text}</p> : null}
+        {plain?.rewritten ? (
+          <details className="raw">
+            <summary>Details</summary>
+            <pre>{detail}</pre>
+          </details>
+        ) : null}
+        {kept ? <p className="kept mt-1">{kept}</p> : null}
+        {retry || children || plain?.fix === "models" ? (
+          <div className="rowflex mt-2.5">
+            {retry ? (
+              <button type="button" className="btn btn-line btn-sm" onClick={retry}>
+                <Icon name="redo" size={14} />
+                Try again
+              </button>
+            ) : null}
+            {children}
+            {/* The copy names where the fix lives; this goes there. */}
+            {plain?.fix === "models" ? (
+              <a className="btn btn-line btn-sm" href="#/setup/providers">
+                <Icon name="sliders" size={14} />
+                Open model settings
+              </a>
+            ) : null}
+          </div>
         ) : null}
       </div>
     </div>
   );
+}
+
+/** A line of text that says something went wrong, under the control it is about. */
+export function ErrorLine({ children, className }: { readonly children: string; readonly className?: string }) {
+  return <p className={`hint is-bad${className ? ` ${className}` : ""}`} role="alert">{plainError(children).text}</p>;
 }
 
 /**

@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Cpu, HardDriveDownload, Image as ImageIcon, PlugZap, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { ProjectSettings } from "./ProjectSettings";
+import { McpPage } from "./McpPage";
+import { Bot, Cpu, HardDriveDownload, Image as ImageIcon, PlugZap, RefreshCw } from "../components/ui/glyphs";
 import { ModelRouting } from "./ModelRouting";
 import { AppUpdates } from "./AppUpdates";
 import { SearchFallback } from "./SearchFallback";
@@ -16,6 +18,8 @@ import {
   type ShimStatus,
 } from "../lib/shim";
 
+import { Spinner, Working } from "../components/ui/working";
+import { Failed } from "../components/ui/states";
 /**
  * Setup: the machine's own settings, which used to live in the launcher's
  * drawer — a second app in an iframe over this one, with its own stylesheet,
@@ -37,19 +41,19 @@ function Section({
   readonly children: React.ReactNode;
 }) {
   return (
-    <section className="q-crop rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-7">
-      <span className="q-disc q-disc-fill" aria-hidden="true"
-            style={{ width: 170, height: 170, right: -70, top: -76, opacity: .1 }} />
+    <section className="panel crop">
+      <span className="disc fill w-42.5 h-42.5 -right-17.5 -top-19 opacity-10" aria-hidden="true"
+ />
       <header className="relative flex items-start gap-3.5">
         <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary"
+          className="icon-ring"
           aria-hidden="true"
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="q-title text-lg">{title}</h2>
-          <p className="q-note mt-1.5">{note}</p>
+          <h2 className="h-panel">{title}</h2>
+          <p className="note mt-1.5">{note}</p>
         </div>
       </header>
       <div className="relative mt-6">{children}</div>
@@ -85,9 +89,9 @@ function Providers() {
       note="Detected from the CLIs installed on this machine. Models are chosen per project, in the workbench."
     >
       {error ? (
-        <p className="text-sm text-destructive">{error}</p>
+        <Failed what="Could not scan for model CLIs." detail={error} />
       ) : !status ? (
-        <p className="text-sm text-muted-foreground">Scanning…</p>
+        <Working kind="searching" label="Looking for model CLIs on this machine…" />
       ) : status.agents.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           No provider CLIs found. Install one (Claude Code, Codex, Gemini) and re-scan.
@@ -95,8 +99,8 @@ function Providers() {
       ) : (
         <ul className="divide-y divide-border/50 border-y border-border/50">
           {status.agents.map((a) => (
-            <li key={a.id} className="q-row group flex items-center gap-3.5 py-3">
-              <span className="q-glyph overflow-hidden !p-0">
+            <li key={a.id} className="group flex items-center gap-3.5 py-3">
+              <span className="glyph overflow-hidden !p-0">
                 <img
                   src={shimAsset(a.id)}
                   alt=""
@@ -112,8 +116,8 @@ function Providers() {
                   {a.version}
                 </div>
               </div>
-              <span className="q-numeral shrink-0 text-2xl">{a.models}</span>
-              <span className="q-label shrink-0">models</span>
+              <span className="numeral shrink-0 text-2xl">{a.models}</span>
+              <span className="label shrink-0">models</span>
             </li>
           ))}
         </ul>
@@ -124,9 +128,9 @@ function Providers() {
           type="button"
           onClick={() => void load(true)}
           disabled={busy}
-          className="q-btn q-btn-line text-sm"
+          className="btn btn-line text-sm"
         >
-          <RefreshCw size={15} className={busy ? "animate-spin" : undefined} />
+          {busy ? <Spinner /> : <RefreshCw size={15} />}
           Re-scan
         </button>
         {status ? (
@@ -189,10 +193,10 @@ function Images() {
       title="Images"
       note="ComfyUI is the one dependency Quire installs for you. It belongs to the machine, not to a book."
     >
-      {error ? <p className="mb-4 text-sm text-destructive">{error}</p> : null}
+      {error ? <div className="mb-4"><Failed what="That did not work." detail={error} /></div> : null}
 
       <div className="flex flex-wrap items-center gap-3">
-        <span className={`q-pill ${status?.up ? "q-pill-fill" : status?.installed ? "" : "q-pill-bad"}`}>
+        <span className={`pill ${status?.up ? "pill-fill" : status?.installed ? "" : "pill-bad"}`}>
           {status?.up ? "running" : status?.installed ? "installed" : "not installed"}
         </span>
         {status ? (
@@ -212,7 +216,7 @@ function Images() {
         <div className="mt-4">
           <div className="h-1.5 overflow-hidden rounded-full bg-muted">
             <div
-              className="h-full origin-left bg-primary transition-transform duration-[var(--dur-med)] ease-[var(--ease-out-quart)]"
+              className="h-full origin-left bg-primary transition-transform duration-(--med)"
               style={{ transform: `scaleX(${frac.toFixed(3)})` }}
             />
           </div>
@@ -223,12 +227,12 @@ function Images() {
           </p>
         </div>
       ) : install?.error ? (
-        <p className="mt-3 text-sm text-destructive">Install failed: {install.error}</p>
+        <div className="mt-3"><Failed what="Install failed." detail={install.error} /></div>
       ) : null}
 
       {status?.installed ? (
         <div className="mt-5">
-          <label htmlFor="comfy-workflow" className="q-label">
+          <label htmlFor="comfy-workflow" className="label">
             Workflow
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -248,7 +252,7 @@ function Images() {
             <button
               type="button"
               onClick={() => file.current?.click()}
-              className="q-btn q-btn-line text-sm"
+              className="btn btn-line text-sm"
             >
               Add…
             </button>
@@ -256,7 +260,7 @@ function Images() {
               <button
                 type="button"
                 onClick={() => void act(() => shimDelete(`/comfy/workflows/${status.workflow!.id}`))}
-                className="q-btn q-btn-line !text-destructive !border-destructive/40 hover:!bg-destructive/10 text-sm"
+                className="btn btn-bad btn-sm"
               >
                 Delete
               </button>
@@ -284,7 +288,7 @@ function Images() {
           <button
             type="button"
             onClick={() => void act(() => shimPost("/comfy/install"))}
-            className="q-btn text-sm"
+            className="btn text-sm"
           >
             <HardDriveDownload size={15} />
             Install ComfyUI
@@ -294,7 +298,7 @@ function Images() {
           <button
             type="button"
             onClick={() => void act(() => shimPost("/comfy/start"))}
-            className="q-btn text-sm"
+            className="btn text-sm"
           >
             Start
           </button>
@@ -303,7 +307,7 @@ function Images() {
           <button
             type="button"
             onClick={() => void act(() => shimPost("/comfy/benchmark"))}
-            className="q-btn q-btn-line text-sm"
+            className="btn btn-line text-sm"
           >
             Benchmark
           </button>
@@ -317,7 +321,12 @@ const TABS = [
   { id: "machine", label: "Machine", note: "What this computer can do: CLIs, images, hardware." },
   { id: "providers", label: "Models", note: "Which providers are reachable, and with what key." },
   { id: "agents", label: "Agents", note: "Which model answers for which agent. Set once." },
+  { id: "project", label: "Project", note: "This project: appearance, language, notifications, skills and prompts." },
+  { id: "mcp", label: "MCP", note: "Tool servers found on this machine, offered to every model." },
 ] as const;
+
+/* Two tabs keep the address they had as pages, so old links still land. */
+const TAB_HASH: Partial<Record<string, string>> = { project: "#/settings", mcp: "#/mcp" };
 
 type SetupTab = (typeof TABS)[number]["id"];
 
@@ -332,13 +341,17 @@ type SetupTab = (typeof TABS)[number]["id"];
 export function SetupPage({
   nav,
   tab,
+  theme,
+  t,
 }: {
-  readonly nav: {
+  readonly nav: ComponentProps<typeof ProjectSettings>["nav"] & ComponentProps<typeof McpPage>["nav"] & {
     readonly toDashboard: () => void;
     readonly toServices: () => void;
     readonly toServiceDetail: (id: string) => void;
   };
   readonly tab?: SetupTab;
+  readonly theme: ComponentProps<typeof ProjectSettings>["theme"];
+  readonly t: ComponentProps<typeof ProjectSettings>["t"];
 }) {
   const [active, setActive] = useState<SetupTab>(tab ?? "machine");
   useEffect(() => { if (tab) setActive(tab); }, [tab]);
@@ -346,25 +359,21 @@ export function SetupPage({
 
   return (
     <div className="space-y-6">
-      <header className="q-head">
-        <p className="q-label">This machine</p>
-        <h1 className="mt-3">Setup</h1>
+      <header className="head">
+        <p className="label">How this is set up</p>
+        <h1 className="h-page mt-3">Settings</h1>
         <p>{current.note}</p>
       </header>
 
-      <div role="tablist" aria-label="Setup sections" className="flex flex-wrap gap-1 rounded-xl border border-border/60 bg-secondary/20 p-1">
+      <div role="tablist" aria-label="Settings sections" className="tabs">
         {TABS.map((entry) => (
           <button
             key={entry.id}
             role="tab"
             type="button"
             aria-selected={entry.id === active}
-            onClick={() => { setActive(entry.id); window.location.hash = `#/setup/${entry.id}`; }}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
-              entry.id === active
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
+            onClick={() => { setActive(entry.id); window.location.hash = TAB_HASH[entry.id] ?? `#/setup/${entry.id}`; }}
+            className="tab"
           >
             {entry.label}
           </button>
@@ -402,6 +411,8 @@ export function SetupPage({
           />
         </Section>
       ) : null}
+      {active === "project" ? <ProjectSettings nav={nav} theme={theme} t={t} embedded /> : null}
+      {active === "mcp" ? <McpPage nav={nav} theme={theme} t={t} embedded /> : null}
     </div>
   );
 }

@@ -8,7 +8,7 @@
  * the shell had a settings drawer at all.
  */
 import { useCallback, useEffect, useState } from "react";
-import { ArrowDownToLine } from "lucide-react";
+import { ArrowDownToLine } from "../components/ui/glyphs";
 
 interface UpdateState {
   readonly status: "idle" | "checking" | "current" | "available" | "installing" | "error" | "dev" | "unavailable";
@@ -47,14 +47,14 @@ export function AppUpdates() {
     : null;
 
   return (
-    <section className="q-crop rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-7">
+    <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden>
+        <span className="icon-ring" aria-hidden>
           <ArrowDownToLine size={18} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="q-title text-lg">Updates</h2>
-          <p className="q-note mt-1.5">
+          <h2 className="h-panel">Updates</h2>
+          <p className="note mt-1.5">
             {state.version ? `Quire ${state.version}` : "Quire"}
             {checked ? ` · checked ${checked}` : ""}
           </p>
@@ -62,7 +62,7 @@ export function AppUpdates() {
       </header>
 
       <div className="relative mt-6 flex flex-wrap items-center gap-3">
-        <p className={`text-sm grow ${state.status === "error" ? "text-destructive" : ""}`}>
+        <p className={`grow ${state.status === "error" ? "hint is-bad" : ""}`}>
           {state.message || "Not checked yet"}
         </p>
 
@@ -71,7 +71,7 @@ export function AppUpdates() {
             type="button"
             disabled={state.status === "installing"}
             onClick={() => ask("update:install")}
-            className="q-btn q-btn-fill text-sm disabled:opacity-40"
+            className="btn text-sm disabled:opacity-40"
           >
             Install and restart
           </button>
@@ -92,7 +92,7 @@ export function AppUpdates() {
           type="button"
           disabled={state.status === "checking" || state.status === "installing"}
           onClick={check}
-          className="q-btn q-btn-line text-sm disabled:opacity-40"
+          className="btn btn-line text-sm disabled:opacity-40"
         >
           {state.status === "checking" ? "Checking…" : "Check now"}
         </button>

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, X } from "lucide-react";
+import { Icon } from "./ui/icon";
 
 interface ConfirmDialogProps {
   readonly open: boolean;
@@ -54,54 +54,47 @@ export function ConfirmDialog({
         cannot be overridden by a stylesheet, so this stops depending on the
         cascade to be centred. The card keeps its own entrance animation.
       */
-      style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: 0, zIndex: 200 }}
-      className="flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="flex items-center justify-center bg-(--char)/40 backdrop-blur-sm fixed top-0 right-0 bottom-0 left-0 z-200"
       onClick={(e) => { if (e.target === overlayRef.current) onCancel(); }}
       role="dialog"
       aria-modal="true"
       aria-label={title}
     >
-      <div className="bg-card border border-border rounded-2xl shadow-2xl shadow-primary/10 w-full max-w-md mx-4 overflow-hidden chat-msg-assistant">
+      <div className="panel panel-flush w-full max-w-md mx-4 overflow-hidden fade-in">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-2">
           <div className="flex items-center gap-3">
             {isDanger && (
-              <div className="w-10 h-10 rounded-xl bg-destructive/10 flex items-center justify-center">
-                <AlertTriangle size={20} className="text-destructive" />
-              </div>
+              <span className="icon-ring text-(--bad)"><Icon name="alert" size={18} /></span>
             )}
-            <h3 className="text-lg font-semibold">{title}</h3>
+            <h3 className="h-panel">{title}</h3>
           </div>
           <button
             onClick={onCancel}
             aria-label={cancelLabel}
             title={cancelLabel}
-            className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="btn btn-quiet btn-icon"
           >
-            <X size={16} />
+            <Icon name="x" size={16} />
           </button>
         </div>
 
         {/* Body */}
         <div className="px-6 py-4">
-          <p className="text-sm text-muted-foreground leading-relaxed">{message}</p>
+          <p className="dim">{message}</p>
         </div>
 
         {/* Footer */}
         <div className="flex justify-end gap-3 px-6 pb-6">
           <button
             onClick={onCancel}
-            className="px-4 py-2.5 text-sm font-medium rounded-xl bg-secondary text-foreground hover:bg-secondary/80 transition-all border border-border/50"
+            className="btn btn-line"
           >
             {cancelLabel}
           </button>
           <button
             onClick={onConfirm}
-            className={`px-4 py-2.5 text-sm font-bold rounded-xl transition-all hover:-translate-y-px active:translate-y-0 active:scale-[0.985] shadow-sm ${
-              isDanger
-                ? "bg-destructive text-white hover:shadow-destructive/20"
-                : "bg-primary text-primary-foreground hover:shadow-primary/20"
-            }`}
+            className={isDanger ? "btn btn-bad" : "btn"}
           >
             {confirmLabel}
           </button>
@@ -109,5 +102,50 @@ export function ConfirmDialog({
       </div>
     </div>,
     document.body,
+  );
+}
+
+/*
+ * ask() is window.confirm in the app's own dialog. The browser's box cannot be
+ * styled, names the page's origin as its title, and freezes every timer while
+ * it is open; this one says what will happen in the product's words.
+ */
+interface Asking {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel?: string;
+  readonly danger?: boolean;
+  readonly resolve: (ok: boolean) => void;
+}
+let asking: Asking | null = null;
+const askListeners = new Set<() => void>();
+const emitAsk = () => { for (const l of askListeners) l(); };
+
+export function ask(q: Omit<Asking, "resolve">): Promise<boolean> {
+  asking?.resolve(false);
+  return new Promise((resolve) => {
+    asking = { ...q, resolve };
+    emitAsk();
+  });
+}
+
+export function AskHost() {
+  const q = useSyncExternalStore(
+    (cb) => { askListeners.add(cb); return () => { askListeners.delete(cb); }; },
+    () => asking,
+    () => null,
+  );
+  const done = (ok: boolean) => { q?.resolve(ok); asking = null; emitAsk(); };
+  return (
+    <ConfirmDialog
+      open={q !== null}
+      title={q?.title ?? ""}
+      message={q?.message ?? ""}
+      confirmLabel={q?.confirmLabel ?? "OK"}
+      cancelLabel="Cancel"
+      variant={q?.danger ? "danger" : "default"}
+      onConfirm={() => done(true)}
+      onCancel={() => done(false)}
+    />
   );
 }

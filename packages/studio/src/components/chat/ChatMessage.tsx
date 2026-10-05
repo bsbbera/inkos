@@ -7,10 +7,11 @@
  * what the design system was set up for and what chat had never done.
  */
 import { memo } from "react";
-import { Check, File, Sparkles, XCircle } from "lucide-react";
+import { Check, File, Sparkles, XCircle } from "../ui/glyphs";
 import { parseToolMarks } from "./tool-marks";
 import type { MessageChip } from "../../store/chat/types";
 import { MessageResponse } from "../ai-elements/message";
+import { Failed } from "../ui/states";
 
 export interface ChatMessageProps {
   readonly role: "user" | "assistant";
@@ -75,19 +76,16 @@ export const ChatMessage = memo(function ChatMessage({
       <div className="body">
         <div className="tag">{tag ?? (isUser ? `You · ${whenLabel(timestamp)}` : "Quire")}</div>
         {isError ? (
-          <div className="flex items-center gap-2 text-destructive">
-            <XCircle size={14} className="shrink-0" />
-            <span>{content.replace(/^✗\s*/, "")}</span>
-          </div>
+          <Failed what="This reply did not finish." detail={content.replace(/^✗\s*/, "")} />
         ) : isUser ? (
-          <p style={{ fontSize: 14, lineHeight: 1.6, color: "var(--on-char)" }}>{content}</p>
+          <p className="text-body leading-relaxed text-(--on-char)">{content}</p>
         ) : (
           <>
             {parseToolMarks(content).map((segment, i) =>
               segment.kind === "tools" ? (
                 /* What it read before it answered. A CLI runs its own tools, so
                    this is the only account of them there is. */
-                <div key={`t${i}`} className="stack" style={{ gap: 7, marginBottom: 10 }}>
+                <div key={`t${i}`} className="stack gap-2 mb-2.5">
                   {segment.marks.map((mark, j) => (
                     <div className="tool" key={`${mark.name}-${j}`}>
                       <Check size={14} className="tick shrink-0" aria-hidden="true" />
@@ -99,16 +97,16 @@ export const ChatMessage = memo(function ChatMessage({
               ) : (
                 <div
                   key={`p${i}`}
-                  className={`read${takesLead(segment.text) ? " has-lead" : ""}`}
-                  style={{ color: "var(--on-char)", ["--rs" as string]: "15px", ["--rl" as string]: "1.7", ["--rm" as string]: "calc(100% - 5px)" }}
+                  className={`read${takesLead(segment.text) ? " has-lead" : ""} text-(--on-char)`}
+                  style={{ ["--rs" as string]: "15px", ["--rl" as string]: "1.7", ["--rm" as string]: "calc(100% - 5px)" }}
                 >
-                  {/* Streamdown hardcodes `text-[17px] leading-[1.72]` on its own
+                  {/* Streamdown hardcodes `text-lead leading-[1.72]` on its own
                      root, which is the direct child of `.read` — so every --rs/--rl
                      this element sets was overridden before it reached a word, and
                      the 60ch measure was sizing a column for 15px type that then
                      got filled with 17px type. cn() runs tailwind-merge, so naming
                      the same groups here removes them rather than fighting them. */}
-                  <MessageResponse className="text-[length:inherit] leading-[inherit] [&>p+p]:mt-[.8em]">
+                  <MessageResponse className="prose-gap text-[length:inherit] leading-[inherit]">
                     {segment.text}
                   </MessageResponse>
                 </div>
@@ -118,7 +116,7 @@ export const ChatMessage = memo(function ChatMessage({
           </>
         )}
         {chips && chips.length > 0 ? (
-          <div className="rowflex" style={{ marginTop: 9, gap: 6 }}>
+          <div className="rowflex mt-2.5 gap-1.5">
             {chips.map((chip) => (
               <span className="attach" key={`${chip.kind}:${chip.label}`}>
                 {chip.kind === "skill"
@@ -129,7 +127,7 @@ export const ChatMessage = memo(function ChatMessage({
             ))}
           </div>
         ) : null}
-        {footer ? <div className="rowflex" style={{ marginTop: 12, gap: 8 }}>{footer}</div> : null}
+        {footer ? <div className="rowflex mt-3 gap-2">{footer}</div> : null}
       </div>
     </div>
   );

@@ -73,9 +73,10 @@ describe("jobLabel and jobDetail", () => {
     expect(jobDetail(job({ status: "queued" }))).toBe("the-lamp-room · waiting its turn");
   });
 
-  it("prefers the latest progress line, falling back to what is being worked on", () => {
+  it("prefers the latest progress line, naming the work it belongs to", () => {
+    // Two runs can both be on "3 of 14"; the line has to say whose.
     expect(jobDetail(job({ message: "3 of 14: rewriting 0003.md…" })))
-      .toBe("3 of 14: rewriting 0003.md…");
+      .toBe("the-lamp-room · 3 of 14: rewriting 0003.md…");
     expect(jobDetail(job({ message: "   " }))).toBe("the-lamp-room");
   });
 });

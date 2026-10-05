@@ -52,6 +52,16 @@ export interface FileAudit {
   readonly restyles?: number;
   /** The name of the voice the last one used, as the sample was labelled. */
   readonly voice?: string;
+  /**
+   * How far this file reads from the voice it is meant to be in, 0 to ~1.
+   *
+   * The honest answer to "did the restyle work", which nothing could give
+   * before: a voice was applied and the only way to judge the result was to
+   * read it. Kept with the before-value beside it so the screen can show the
+   * move rather than a bare number (05 §3).
+   */
+  readonly voiceDistance?: number;
+  readonly voiceDistanceBefore?: number;
   /** Signed off. While this is set, the file is not edited by accident. */
   readonly approved?: { readonly at: string; readonly by: string };
 }

@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { SSEMessage } from "../../hooks/use-sse";
-import { Loader2, Check } from "lucide-react";
+import { Loader2, Check } from "../ui/glyphs";
 import { cn } from "../../lib/utils";
 import { tr } from "../../lib/app-language";
 import { SidebarCard } from "./SidebarCard";
 
+import { Spinner } from "../ui/working";
 // 每个步骤的 zh 文案同时也是与后台 SSE log 消息匹配的键（后台目前发中文消息）。
 // 展示时按当前语言取 zh/en，匹配时 zh、en 都认，后台消息以后双语化也不用改这里。
 interface ProgressStep {
@@ -121,13 +122,13 @@ function StepIndicator({ index, status }: { readonly index: number; readonly sta
   if (status === "active") {
     return (
       <div className="w-5 h-5 rounded-full border-2 border-primary flex items-center justify-center shrink-0">
-        <Loader2 size={10} className="text-primary animate-spin" />
+        <Spinner className="text-primary" />
       </div>
     );
   }
   return (
     <div className="w-5 h-5 rounded-full border border-border/60 flex items-center justify-center shrink-0">
-      <span className="text-[10px] text-muted-foreground/50">{index}</span>
+      <span className="text-cap text-muted-foreground/50">{index}</span>
     </div>
   );
 }

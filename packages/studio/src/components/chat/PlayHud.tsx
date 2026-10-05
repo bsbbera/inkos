@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Gamepad2, X, ChevronDown, ChevronLeft } from "lucide-react";
+import { Gamepad2, X, ChevronDown, ChevronLeft } from "../ui/glyphs";
 import { fetchJson } from "../../hooks/use-api";
 import {
   HOLDING_TYPES, HOLDING_GLYPH, SLOT_GLYPH, EVIDENCE_LADDER,
@@ -414,20 +414,20 @@ export function PlayHud(props: {
   if (!open) return null;
 
   return (
-    <aside className="absolute bottom-28 right-0 top-0 z-20 flex w-[380px] max-w-[calc(100vw-1rem)] flex-col border-l border-border/40 bg-card/95 backdrop-blur shadow-xl">
+    <aside className="absolute bottom-28 right-0 top-0 z-20 flex w-95 max-w-[calc(100vw-1rem)] flex-col border-l border-border/40 bg-card/95 backdrop-blur shadow-xl">
       <header className="relative flex min-w-0 items-center gap-2.5 overflow-hidden border-b border-border/40 px-4 py-3">
         <span aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-px h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent" />
         {view?.turn != null ? (
           <div className="flex shrink-0 flex-col items-center leading-none">
-            <span className="text-[24px] leading-6 font-extrabold text-primary">{view.turn}</span>
-            <span className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground/60">{isZh ? "幕" : "Turn"}</span>
+            <span className="text-h3 leading-6 font-extrabold text-primary">{view.turn}</span>
+            <span className="label">{isZh ? "幕" : "Turn"}</span>
           </div>
         ) : (
           <Gamepad2 size={16} className="shrink-0 text-primary" />
         )}
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[16px] leading-6 font-bold text-foreground">{title}</div>
-          <div className="mt-0.5 text-[14px] leading-5 text-muted-foreground">
+          <div className="truncate text-lead leading-6 font-bold text-foreground">{title}</div>
+          <div className="mt-0.5 text-body leading-5 text-muted-foreground">
             {view?.turn == null
               ? (isZh ? "尚未开始" : "Not started")
               : view?.mode
@@ -436,21 +436,21 @@ export function PlayHud(props: {
           </div>
         </div>
         {view?.time?.value ? (
-          <span className="max-w-[122px] shrink-0 truncate rounded-full bg-secondary/60 px-2.5 py-1 text-[15px] leading-6 text-muted-foreground" title={view.time.note ?? view.time.value}>
+          <span className="pill max-w-30.5 shrink-0 truncate text-body leading-6" title={view.time.note ?? view.time.value}>
             {view.time.value}
           </span>
         ) : null}
-        <button type="button" onClick={() => { onClose(); setSelectedHoldingId(null); setSelectedFacingId(null); }} className="shrink-0 text-muted-foreground hover:text-foreground" title={isZh ? "收起" : "Collapse"}>
+        <button type="button" onClick={() => { onClose(); setSelectedHoldingId(null); setSelectedFacingId(null); }} className="btn btn-quiet btn-icon shrink-0" title={isZh ? "收起" : "Collapse"}>
           <X size={15} />
         </button>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 text-[15px]">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4 text-body">
         {!view ? (
-          <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border/50 bg-secondary/10 px-4 py-8 text-center">
+          <div className="well flex flex-col items-center gap-2 text-center">
             <span className="text-3xl opacity-80">🎲</span>
-            <p className="text-[16px] leading-6 font-semibold text-foreground">{isZh ? "这个世界还在沉睡" : "This world is still asleep"}</p>
-            <p className="text-[14px] leading-6 text-muted-foreground">
+            <p className="text-lead leading-6 font-semibold text-foreground">{isZh ? "这个世界还在沉睡" : "This world is still asleep"}</p>
+            <p className="text-body leading-6 text-muted-foreground">
               {isZh
                 ? "在左边写下你的第一个动作，人物、线索、状态会在这里逐渐点亮。"
                 : "Take your first action on the left — characters, clues, and state will light up here."}
@@ -527,7 +527,7 @@ export function PlayHud(props: {
             </Zone>
 
             {view.premise && (
-              <div className="rounded-lg border border-border/30 bg-secondary/30 px-3 py-2 text-[15px] leading-7 text-muted-foreground">
+              <div className="well text-body leading-7 text-muted-foreground">
                 {view.premise}
               </div>
             )}
@@ -551,13 +551,13 @@ function Zone(props: {
   // bordered block + accent tick give the panel a game-HUD feel without leaving
   // Studio's muted theme tokens.
   return (
-    <section className="relative rounded-xl border border-border/40 bg-secondary/20 px-3 pb-3 pt-2.5">
+    <section className="well relative pb-3 pt-2.5">
       <span aria-hidden className="absolute left-3 top-0 h-0.5 w-5 -translate-y-px rounded-full bg-primary/70" />
-      <h3 className="mb-2 flex items-center gap-1.5 text-[15px] leading-6 font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
-        <span className="text-[16px]">{props.icon}</span>{props.title}
+      <h3 className="mb-2 flex items-center gap-1.5 text-body leading-6 font-semibold uppercase tracking-widest text-muted-foreground/70">
+        <span className="text-lead">{props.icon}</span>{props.title}
       </h3>
       {props.empty ? (
-        <p className="text-[15px] leading-6 text-muted-foreground/50">{props.emptyText}</p>
+        <p className="text-body leading-6 text-muted-foreground/50">{props.emptyText}</p>
       ) : (
         <div className="space-y-1.5">{props.children}</div>
       )}
@@ -573,32 +573,32 @@ function HudRowInspect(props: {
   const { row, isZh, onBack } = props;
   return (
     <div className="min-w-0 space-y-3">
-      <button type="button" onClick={onBack} className="flex items-center gap-1 text-[14px] leading-6 text-muted-foreground hover:text-foreground">
+      <button type="button" onClick={onBack} className="btn btn-quiet btn-sm">
         <ChevronLeft size={14} /> {isZh ? "返回" : "Back"}
       </button>
 
-      <div className="min-w-0 overflow-hidden rounded-xl border border-border/40 bg-secondary/30">
-        <div className="flex min-h-[220px] items-center justify-center bg-gradient-to-b from-secondary/60 to-transparent">
+      <div className="well p-0 min-w-0 overflow-hidden">
+        <div className="flex min-h-55 items-center justify-center bg-gradient-to-b from-secondary/60 to-transparent">
           {row.imageUrl ? (
-            <img src={row.imageUrl} alt="" aria-hidden="true" className="max-h-[420px] w-full object-contain" />
+            <img src={row.imageUrl} alt="" aria-hidden="true" className="max-h-105 w-full object-contain" />
           ) : (
             <span className="text-4xl">{row.glyph}</span>
           )}
         </div>
         <div className="min-w-0 space-y-3 px-3 py-3">
           <div className="flex min-w-0 items-start gap-2">
-            <span className="min-w-0 flex-1 break-words text-[18px] leading-7 font-bold text-foreground">{row.label}</span>
+            <span className="min-w-0 flex-1 break-words text-lead leading-7 font-bold text-foreground">{row.label}</span>
             {row.value ? (
-              <span className="shrink-0 rounded-full bg-secondary/60 px-2.5 py-1 text-[13px] leading-5 font-medium text-primary">
+              <span className="pill shrink-0 text-body leading-5 text-primary">
                 {row.value}
               </span>
             ) : null}
           </div>
-          {row.note ? <p className="break-words text-[14px] leading-6 text-muted-foreground">{row.note}</p> : null}
+          {row.note ? <p className="break-words text-body leading-6 text-muted-foreground">{row.note}</p> : null}
           {row.details.length > 0 ? (
             <div className="space-y-2 border-t border-border/30 pt-2">
               {row.details.map((detail, i) => (
-                <p key={i} className="break-words text-[14px] leading-6 text-muted-foreground">
+                <p key={i} className="break-words text-body leading-6 text-muted-foreground">
                   {detail.label ? <span className="text-muted-foreground/50">{detail.label} </span> : null}
                   {detail.text}
                 </p>
@@ -628,7 +628,7 @@ function Row({
   const opensVisual = hasImage && !!onOpenVisual;
   const interactive = expandable || opensVisual;
   return (
-    <div className="min-w-0 rounded-lg border border-border/30 bg-secondary/30">
+    <div className="well p-0 min-w-0">
       <div
         role={interactive ? "button" : undefined}
         aria-label={interactive ? `${row.label} ${opensVisual ? (isZh ? "查看大图" : "view image") : open ? (isZh ? "收起详情" : "collapse details") : (isZh ? "展开详情" : "show details")}` : undefined}
@@ -641,10 +641,10 @@ function Row({
           ) : (
             <span className="shrink-0 pt-1 text-base leading-6">{generating ? "⏳" : row.glyph}</span>
           )}
-          <span className="min-w-0 flex-1 break-words text-[15px] leading-6 font-medium text-foreground">{row.label}</span>
+          <span className="min-w-0 flex-1 break-words text-body leading-6 font-medium text-foreground">{row.label}</span>
           {row.value ? (
             <span
-              className="ml-auto min-w-0 max-w-[58%] truncate text-right text-[15px] leading-6 font-semibold text-primary"
+              className="ml-auto min-w-0 max-w-[58%] truncate text-right text-body leading-6 font-semibold text-primary"
               title={row.value}
             >
               {row.value}
@@ -657,12 +657,12 @@ function Row({
             />
           ) : null}
         </div>
-        {row.note ? <div className={`mt-1 break-words text-[14px] leading-6 text-muted-foreground ${hasImage ? "pl-[58px]" : "pl-6"}`}>{row.note}</div> : null}
+        {row.note ? <div className={`mt-1 break-words text-body leading-6 text-muted-foreground ${hasImage ? "pl-15" : "pl-6"}`}>{row.note}</div> : null}
       </div>
       {open && (
-        <div className={`min-w-0 space-y-1 px-2.5 pb-2 ${hasImage ? "pl-[68px]" : "pl-8"}`}>
+        <div className={`min-w-0 space-y-1 px-2.5 pb-2 ${hasImage ? "pl-17" : "pl-8"}`}>
           {row.details.map((detail, i) => (
-            <p key={i} className="break-words text-[14px] leading-6 text-muted-foreground">
+            <p key={i} className="break-words text-body leading-6 text-muted-foreground">
               {detail.label ? <span className="text-muted-foreground/50">{detail.label} </span> : null}
               {detail.text}
             </p>

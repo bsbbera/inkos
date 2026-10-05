@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { withViewTransition } from "../lib/view-transition";
 
 export type HashRoute =
   | { page: "dashboard" }
@@ -8,6 +9,7 @@ export type HashRoute =
   | { page: "new" }
   | { page: "run"; runId?: string }
   | { page: "styleguide" }
+  | { page: "audit-packs" }
   | { page: "book"; bookId: string }
   | { page: "book-settings"; bookId: string }
   | { page: "book-create" }
@@ -28,6 +30,8 @@ export type HashRoute =
   | { page: "mcp" }
   | { page: "setup"; tab?: "machine" | "providers" | "agents" }
   | { page: "audit" }
+  | { page: "gallery"; type?: string; id?: string }
+  | { page: "taste" }
   | { page: "publication"; issueId: string }
   | { page: "play"; projectId: string }
   | { page: "film"; projectId: string }
@@ -47,10 +51,17 @@ function parseHash(hash: string): HashRoute {
   const setupMatch = path.match(/^setup\/(machine|providers|agents)$/);
   if (setupMatch) return { page: "setup", tab: setupMatch[1] as "machine" | "providers" | "agents" };
   if (path === "audit") return { page: "audit" };
+  if (path === "gallery") return { page: "gallery" };
+  if (path === "taste") return { page: "taste" };
+  const galleryMatch = path.match(/^gallery\/([^/]+)\/([^/]+)$/);
+  if (galleryMatch) {
+    return { page: "gallery", type: decodeURIComponent(galleryMatch[1]), id: decodeURIComponent(galleryMatch[2]) };
+  }
   if (path === "books") return { page: "books" };
   if (path === "magazines") return { page: "magazines" };
   if (path === "new") return { page: "new" };
   if (path === "styleguide") return { page: "styleguide" };
+  if (path === "audit-packs") return { page: "audit-packs" };
   if (path === "run") return { page: "run" };
   if (path === "daemon") return { page: "daemon" };
   if (path === "logs") return { page: "logs" };
@@ -120,8 +131,14 @@ function routeToHash(route: HashRoute): string {
     case "magazines": return "#/magazines";
     case "new": return "#/new";
     case "styleguide": return "#/styleguide";
+    case "audit-packs": return "#/audit-packs";
     case "run": return route.runId ? `#/run/${encodeURIComponent(route.runId)}` : "#/run";
     case "audit": return "#/audit";
+    case "taste": return "#/taste";
+    case "gallery":
+      return route.type && route.id
+        ? `#/gallery/${encodeURIComponent(route.type)}/${encodeURIComponent(route.id)}`
+        : "#/gallery";
     case "daemon": return "#/daemon";
     case "logs": return "#/logs";
     case "genres": return "#/genres";
@@ -155,9 +172,18 @@ export { parseHash, routeToHash }; // for testing
 
 export function useHashRoute() {
   const [route, setRouteState] = useState<HashRoute>(() => parseHash(window.location.hash));
+  /* The hash the state already shows, so the hashchange that follows our own
+     write does not run the same transition a second time. */
+  const shown = useRef(routeToHash(route));
 
   useEffect(() => {
-    const onHashChange = () => setRouteState(parseHash(window.location.hash));
+    const onHashChange = () => {
+      const next = parseHash(window.location.hash);
+      const hash = routeToHash(next);
+      if (hash && hash === shown.current) return;
+      shown.current = hash;
+      withViewTransition(() => setRouteState(next));
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -168,7 +194,8 @@ export function useHashRoute() {
     // 但当 URL 没有实际变化时（比如从 services → logs → services，中间的 logs
     // 不写 URL，URL 一直停在 #/services），再次赋值同一个 hash 不会触发 hashchange，
     // React state 就永远停留在 logs，表现为"点不动"。
-    setRouteState(newRoute);
+    shown.current = routeToHash(newRoute);
+    withViewTransition(() => setRouteState(newRoute));
     // Every route writes its hash. An allowlist used to decide which pages
     // were worth a URL, so the rest were unreachable by link, unrestorable on
     // reload, and invisible to anything that navigates by address - which is

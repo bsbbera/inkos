@@ -2,9 +2,9 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
-import { locate, type Finding } from "@actalk/quire-core";
+import { locate, rewriteDrops, type Finding } from "@actalk/quire-core";
 import {
-  blockersFor, readFindings, readPassage, recordRun, settleFinding, writeFindings,
+  blockersFor, readFindings, readPassage, recordRun, rewriteFinding, settleFinding, writeFindings,
 } from "./findings-store.js";
 
 const CHAPTER = [
@@ -39,6 +39,44 @@ function limpFinding(): Finding {
     suggestion: "Match chapter 3.",
   }, CHAPTER);
 }
+
+describe("rewriting one finding", () => {
+  const other = () => locate({
+    path: PATH,
+    severity: "note",
+    category: "voice",
+    quote: "stood a while in the lamp room",
+    description: "Flat.",
+    suggestion: "Sharpen.",
+  }, CHAPTER);
+
+  it("changes only the marked words and keeps every other finding pinned", async () => {
+    await recordRun(root, [limpFinding(), other()], [PATH]);
+    const out = await rewriteFinding(root, limpFinding().id, {
+      ask: async () => ({ text: "leaned on his left leg, the good one," }),
+    });
+    expect(out.ok).toBe(true);
+
+    const text = await readFile(join(root, PATH), "utf-8");
+    expect(text).toBe(CHAPTER.replace("favoured his right leg", "leaned on his left leg, the good one,"));
+    const back = await readFindings(root);
+    const moved = back.find((f) => f.id === other().id)!;
+    expect(text.slice(moved.start, moved.end)).toBe(other().quote);
+    const fixed = back.find((f) => f.id === limpFinding().id)!;
+    expect(fixed.state).toBe("fixed");
+    expect(fixed.replaced).toBe("favoured his right leg");
+  });
+
+  it("refuses a rewrite that drops a name, and writes nothing", async () => {
+    expect(rewriteDrops('He told Mara "Not tonight."', "He told her no.", "He told")).toMatch(/Mara/);
+    await recordRun(root, [limpFinding()], [PATH]);
+    const out = await rewriteFinding(root, limpFinding().id, {
+      ask: async () => ({ text: "x".repeat(200) }),
+    });
+    expect(out).toMatchObject({ ok: false, reason: "unsafe" });
+    expect(await readFile(join(root, PATH), "utf-8")).toBe(CHAPTER);
+  });
+});
 
 describe("the record", () => {
   it("survives a run and comes back", async () => {

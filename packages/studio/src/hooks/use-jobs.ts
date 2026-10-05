@@ -78,6 +78,28 @@ const STAGE_LABELS: Readonly<Record<string, string>> = {
   artplan: "Planning the art",
   generate: "Generating art",
   review: "Reviewing",
+  print: "Typesetting for print",
+  research: "Researching",
+  gather: "Gathering research",
+  "fact-check": "Checking facts",
+  art: "Drawing the art",
+  // Runs confirmed in chat are listed under the action that started them.
+  create_book: "Starting a book",
+  write_next: "Writing the next chapter",
+  short_run: "Writing a short",
+  generate_cover: "Drawing a cover",
+  script_create: "Writing a script",
+  storyboard_create: "Drawing a storyboard",
+  interactive_film_create: "Making an interactive film",
+  translation_create: "Translating",
+  fanfic_init: "Starting a fan fiction",
+  continuation_import: "Importing to continue",
+  spinoff_create: "Starting a spin-off",
+  style_imitation: "Learning a style",
+  play_start: "Opening a world",
+  draft_structure: "Drafting the structure",
+  connect_choice: "Connecting a choice",
+  remove_node: "Removing a scene",
   layout: "Laying out",
   export: "Exporting",
   build: "Building",
@@ -90,7 +112,11 @@ export function jobLabel(job: Job): string {
 /** The line under the label: what it is working on, and how far in. */
 export function jobDetail(job: Job): string {
   if (job.status === "queued") return `${job.ref.id} · waiting its turn`;
-  return job.message?.trim() || job.ref.id;
+  const said = job.message?.trim();
+  // Which work it is, always: a message alone ("page 4, 4 of 50") does not
+  // say whose page, and two runs can be on page 4 at once.
+  if (!said) return job.ref.id;
+  return said.includes(job.ref.id) || job.ref.type === "publication" ? said : `${job.ref.id} · ${said}`;
 }
 
 export interface JobsView {

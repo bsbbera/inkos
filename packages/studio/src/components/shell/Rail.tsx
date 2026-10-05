@@ -12,7 +12,20 @@
  */
 import type { HashRoute } from "../../hooks/use-hash-route";
 import { Icon } from "../ui/icon";
+import { Ring } from "../ui/working";
 import { NAV, activeNavId } from "./nav";
+import { useEffect, useState } from "react";
+
+/** "4m", "1h 12m": how long the run has been going. Ticks twice a minute. */
+function Elapsed({ since }: { readonly since: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const m = Math.max(0, Math.floor((now - since) / 60_000));
+  return <span className="tnum">{m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`}</span>;
+}
 
 export interface RailRun {
   readonly what: string;
@@ -27,22 +40,33 @@ export interface RailRun {
    * enough here; the run screen is one click away and lists them.
    */
   readonly more?: number;
+  /**
+   * Everything else running at the same time, each with what it is working on.
+   *
+   * A number said that more was happening and not what. Runs started from chat
+   * and from an issue page go side by side with the queue, so "+1" could be a
+   * whole magazine; it is named here instead.
+   */
+  readonly others?: ReadonlyArray<{ readonly what: string; readonly where: string }>;
+  /** Epoch ms the running stage began, so the card can say how long. */
+  readonly startedAt?: number;
 }
 
 /** The ring's circumference at r=19, so a fraction can be written as an offset. */
-const RING = 2 * Math.PI * 19;
 
 export function Rail({
   route,
   setRoute,
   tails,
   run,
+  onOpenPalette,
 }: {
   readonly route: HashRoute;
   readonly setRoute: (r: HashRoute) => void;
   /** Live counts by nav id. A zero is not drawn: an empty badge is noise. */
   readonly tails?: Readonly<Record<string, string | number | undefined>>;
   readonly run?: RailRun | null;
+  readonly onOpenPalette?: () => void;
 }) {
   const active = activeNavId(route);
 
@@ -66,6 +90,17 @@ export function Rail({
         <span>Start something</span>
       </button>
 
+      {/* The palette was only announced in the topbar, which the chat screens
+          do not draw - so on the screen people spend most time in, nothing
+          said it existed. */}
+      {onOpenPalette ? (
+        <button type="button" className="nav railfind" onClick={onOpenPalette}>
+          <Icon name="search" size={16} />
+          <span>Search</span>
+          <span className="kbd">Ctrl K</span>
+        </button>
+      ) : null}
+
       <div className="rail-scroll">
         {NAV.map((group) => (
           <div key={group.label}>
@@ -85,7 +120,7 @@ export function Rail({
                   <Icon name={item.icon} size={17} />
                   <span>{item.label}</span>
                   {tail === undefined || tail === 0 || tail === "" ? null : (
-                    <em className="tail" style={{ fontStyle: "normal" }}>
+                    <em className="tail not-italic">
                       {tail}
                     </em>
                   )}
@@ -98,34 +133,35 @@ export function Rail({
 
       {run ? (
         <button type="button" className="railrun" onClick={() => setRoute({ page: "run" })}>
-          <svg className="ring ring-sm" viewBox="0 0 44 44" aria-hidden="true">
-            <circle className="t" cx="22" cy="22" r="19" />
-            <circle
-              className="v"
-              cx="22"
-              cy="22"
-              r="19"
-              style={{
-                strokeDasharray: RING,
-                // An unknown fraction draws a quarter arc rather than a full
-                // ring: a complete circle reads as finished, which is the one
-                // thing a run in flight is not.
-                strokeDashoffset: RING * (1 - (run.progress ?? 0.25)),
-              }}
-            />
-          </svg>
+          <Ring value={run.progress} size="sm" />
           <span className="grow">
             <span className="what">{run.what}</span>
-            <span className="where">{run.where}</span>
+            <span className="where">
+              {run.where}
+              {run.startedAt ? <> · <Elapsed since={run.startedAt} /></> : null}
+            </span>
           </span>
-          {run.more && run.more > 0 ? (
-            <em className="tail" style={{ fontStyle: "normal" }}>+{run.more}</em>
+          {run.more && run.more > 0 && !run.others?.length ? (
+            <em className="tail not-italic">+{run.more}</em>
           ) : null}
         </button>
       ) : null}
+      {run?.others?.map((o, i) => (
+        <button
+          key={`${o.what}-${o.where}-${i}`}
+          type="button"
+          className="railrun railrun-more"
+          onClick={() => setRoute({ page: "run" })}
+        >
+          <span className="grow">
+            <span className="what">{o.what}</span>
+            <span className="where">{o.where}</span>
+          </span>
+        </button>
+      ))}
 
-      <p className="attrib dim" style={{ marginTop: 10, fontSize: 10, lineHeight: 1.35 }}>
-        Workbench forked from <b style={{ fontWeight: 600 }}>InkOS Studio</b>, AGPL-3.0.
+      <p className="attrib dim mt-2.5 text-micro leading-snug">
+        Workbench forked from <b className="font-semibold">InkOS Studio</b>, AGPL-3.0.
       </p>
     </div>
   );

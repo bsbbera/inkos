@@ -34,7 +34,10 @@ export function crumbsFor(
     case "books": return [home, { label: "Books" }];
     case "magazines": return [home, { label: "Magazine" }];
     case "audit": return [home, { label: "Audit" }];
+    case "gallery": return [home, { label: "Gallery" }];
+    case "taste": return [home, { label: "Taste" }];
     case "styleguide": return [home, { label: "Style guide" }];
+    case "audit-packs": return [home, { label: "Audit checks" }];
 
     case "book": return [books, { label: names.book?.(route.bookId) ?? route.bookId }];
     case "book-settings": return [book(route.bookId), { label: "Settings" }];
@@ -50,9 +53,9 @@ export function crumbsFor(
     case "publication":
       return [magazines, { label: names.publication?.(route.issueId) ?? route.issueId }];
 
-    case "services": return [home, { label: "Model config" }];
-    case "service-detail": return [{ label: "Model config", route: { page: "services" } }, { label: route.serviceId }];
-    case "project-settings": return [home, { label: "Project" }];
+    case "services": return [{ label: "Settings", route: { page: "setup" } }, { label: "Models" }];
+    case "service-detail": return [{ label: "Settings", route: { page: "setup", tab: "providers" } }, { label: route.serviceId }];
+    case "project-settings": return [{ label: "Settings", route: { page: "setup" } }, { label: "Project" }];
     case "daemon": return [home, { label: "Daemon" }];
     case "logs": return [home, { label: "Logs" }];
     case "genres": return [home, { label: "Genres" }];
@@ -61,7 +64,7 @@ export function crumbsFor(
     case "import": return [home, { label: "Import" }];
     case "radar": return [home, { label: "Radar" }];
     case "doctor": return [home, { label: "Doctor" }];
-    case "mcp": return [home, { label: "MCP" }];
-    case "setup": return [home, { label: "Setup" }];
+    case "mcp": return [{ label: "Settings", route: { page: "setup" } }, { label: "MCP" }];
+    case "setup": return [home, { label: "Settings" }];
   }
 }

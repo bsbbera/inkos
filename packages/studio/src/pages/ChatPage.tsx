@@ -33,6 +33,7 @@ import {
 } from "../components/chat/NarrativeForecastPreview";
 import { ProjectArtifactDrawer } from "../components/chat/ProjectArtifactDrawer";
 import { PlayHud } from "../components/chat/PlayHud";
+import { Working } from "../components/ui/working";
 import { PlayChoicePanel } from "../components/chat/PlayChoicePanel";
 import { latestPlayChoiceSet } from "../components/chat/play-choices";
 import {
@@ -52,7 +53,7 @@ import {
   Cpu,
   Plus,
   Layers,
-} from "lucide-react";
+} from "../components/ui/glyphs";
 import {
   Message,
   MessageContent,
@@ -79,6 +80,7 @@ import {
   toggleSelectedSkillIds,
   type StudioSkill,
 } from "./skill-ui-state";
+import { Failed, ErrorLine, Loading, Empty } from "../components/ui/states";
 
 // -- Types --
 
@@ -221,12 +223,12 @@ function SkillPickerPanel({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="absolute bottom-[calc(100%+10px)] left-0 z-40 w-full overflow-hidden rounded-2xl border border-border/60 bg-card/95 shadow-2xl backdrop-blur">
+    <div className="pop absolute bottom-[calc(100%+10px)] left-0 z-40 w-full overflow-hidden">
       <div className="border-b border-border/40 px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-[14px] font-bold">{isZh ? "选择 Agent Skill" : "Select Agent Skills"}</div>
-            <p className="mt-0.5 text-[11px] leading-5 text-muted-foreground">
+            <div className="text-body font-bold">{isZh ? "选择 Agent Skill" : "Select Agent Skills"}</div>
+            <p className="mt-0.5 text-small leading-5 text-muted-foreground">
               {isZh
                 ? "Agent 会按当前意图自主调用；点选 Skill 可强制它随下一条消息启用。"
                 : "The agent can choose a skill from your intent; selecting one forces it for the next message."}
@@ -237,7 +239,7 @@ function SkillPickerPanel({
               type="button"
               onClick={() => folderInputRef.current?.click()}
               disabled={saving}
-              className="flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              className="btn btn-line btn-sm flex items-center gap-1.5"
             >
               <FolderUp size={13} />
               {isZh ? "导入" : "Import"}
@@ -256,10 +258,10 @@ function SkillPickerPanel({
           </div>
         </div>
       </div>
-      <div className="max-h-[380px] overflow-y-auto p-3">
-        {createError ? <div className="mb-3 rounded-xl bg-destructive/10 px-3 py-2 text-[11px] text-destructive">{createError}</div> : null}
+      <div className="max-h-95 overflow-y-auto p-3">
+        {createError ? <div className="mb-3"><Failed what={isZh ? "没能创建。" : "Not created."} detail={createError} /></div> : null}
         {diagnostics?.length ? (
-          <div className="mb-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-[11px] text-amber-700 dark:text-amber-300">
+          <div className="caution mb-3 text-small">
             <div className="font-semibold">{isZh ? "部分外部 Skill 未加载" : "Some external skills were not loaded"}</div>
             {diagnostics.slice(0, 4).map((item, index) => (
               <div key={`${item.path ?? "skill"}-${index}`} className="mt-1 break-all">
@@ -269,11 +271,16 @@ function SkillPickerPanel({
           </div>
         ) : null}
         {loading ? (
-          <div className="px-2 py-6 text-center text-[14px] text-muted-foreground">{isZh ? "加载 Skill..." : "Loading skills..."}</div>
+          <Loading what={isZh ? "加载 Skill…" : "Reading the skills…"} rows={2} />
         ) : error ? (
-          <div className="rounded-xl bg-destructive/10 px-3 py-2 text-[14px] text-destructive">{error}</div>
+          <Failed what={isZh ? "Skill 加载失败。" : "Could not load the skills."} detail={error} />
         ) : skills.length === 0 ? (
-          <div className="px-2 py-6 text-center text-[14px] text-muted-foreground">{isZh ? "还没有可用 Skill。" : "No skills available yet."}</div>
+          <Empty
+            compact
+            icon="skill"
+            title={isZh ? "Skill 在“设置 → 项目”中导入后出现在这里。" : "Skills appear here once imported in Settings → Project."}
+            action={<a className="btn btn-line btn-sm" href="#/settings">{isZh ? "打开" : "Open"}</a>}
+          />
         ) : (
           <div className="grid gap-2 md:grid-cols-2">
             {skills.map((skill) => {
@@ -283,7 +290,8 @@ function SkillPickerPanel({
                   key={skill.id}
                   type="button"
                   onClick={() => onToggleSkill(skill.id)}
-                  className={`rounded-xl border p-3 text-left transition-all ${checked ? "border-primary/60 bg-primary/10" : "border-border/50 bg-secondary/20 hover:border-primary/30 hover:bg-secondary/35"}`}
+                  aria-pressed={checked}
+                  className="well text-left"
                 >
                   <div className="flex items-start gap-2">
                     <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent"}`}>
@@ -291,13 +299,13 @@ function SkillPickerPanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <div className="truncate text-[14px] font-semibold">{skill.name}</div>
-                        <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <div className="truncate text-body font-semibold">{skill.name}</div>
+                        <span className="pill shrink-0">
                           {skill.source ?? "skill"}
                         </span>
                       </div>
-                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">@{skill.id}</div>
-                      <p className="mt-1 line-clamp-2 text-[11px] leading-5 text-muted-foreground">{skill.description}</p>
+                      <div className="mt-0.5 font-mono text-small text-muted-foreground/70">@{skill.id}</div>
+                      <p className="mt-1 line-clamp-2 text-small leading-5 text-muted-foreground">{skill.description}</p>
                     </div>
                   </div>
                 </button>
@@ -345,6 +353,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   const setSelectedModel = useChatStore((s) => s.setSelectedModel);
   const loadSessionList = useChatStore((s) => s.loadSessionList);
   const createSession = useChatStore((s) => s.createSession);
+  const renameSession = useChatStore((s) => s.renameSession);
   const createDraftSession = useChatStore((s) => s.createDraftSession);
   const markProposalResolved = useChatStore((s) => s.markProposalResolved);
   const loadSessionDetail = useChatStore((s) => s.loadSessionDetail);
@@ -410,7 +419,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const { data: skillsData, loading: skillsLoading, error: skillsError, refetch: refetchSkills } = useApi<SkillsResponse>("/skills");
-  const worldPanelInsetClass = currentSessionKind === "play" && worldPanelOpen ? "lg:pr-[380px]" : "";
+  const worldPanelInsetClass = currentSessionKind === "play" && worldPanelOpen ? "lg:pr-95" : "";
   const availableSkills = skillsData?.skills ?? [];
   /* `/` in the composer opens the skills it could mean. Anchored to the head
      of a line by `slashToken`, so the paths this app prints constantly —
@@ -808,6 +817,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       : undefined;
     if (details.sameSession && activeSessionId) {
       autoScrollPinnedRef.current = true;
+      markProposalResolved(details.execId, "confirmed", activeSessionId);
       await sendMessage(activeSessionId, details.instruction ?? "", {
         activeBookId,
         sessionKind: details.targetSessionKind,
@@ -821,6 +831,13 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
     }
     const targetSessionId = await createSession(null, details.targetSessionKind, targetPlayMode);
     autoScrollPinnedRef.current = true;
+    // The card now points at the run it started, so it can report what that run
+    // is doing rather than only that a button was pressed.
+    markProposalResolved(details.execId, "confirmed", targetSessionId);
+    // Name the run after the action that started it. Without this the sidebar
+    // shows "Untitled" until the round ends, which is exactly when a person is
+    // looking for where their work went.
+    if (details.title) void renameSession(targetSessionId, details.title);
     await sendMessage(targetSessionId, details.instruction ?? "", {
       sessionKind: details.targetSessionKind,
       playMode: targetPlayMode,
@@ -963,7 +980,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => setArtifactsOpen((open) => !open)}>
           <Layers size={15} aria-hidden="true" />
           {isZh ? "产出" : "Artifacts"}
-          <span className="pill" style={{ marginLeft: 4, fontSize: 11 }}>{artifactCount}</span>
+          <span className="pill ml-1 text-cap">{artifactCount}</span>
         </button>
         <button
           type="button"
@@ -977,8 +994,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
 
       <div className="dark crop">
         <span
-          className="disc dots dots-light"
-          style={{ width: 260, height: 260, right: -120, top: -130 }}
+          className="disc dots dots-light w-65 h-65 -right-30 -top-32.5"
           aria-hidden="true"
         />
       {/* Message scroll area */}
@@ -996,21 +1012,21 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       >
         {needsPlayModeChoice ? (
           <div className="flex h-full items-center justify-center px-4 select-none">
-            <div className="q-crop w-full max-w-lg rounded-3xl border border-border/60 bg-card p-8 shadow-md">
-              <span className="q-disc q-disc-fill" aria-hidden="true"
-                    style={{ width: 210, height: 210, right: -78, top: -84, opacity: .13 }} />
-              <span className="q-disc q-disc-dots text-primary" aria-hidden="true"
-                    style={{ width: 92, height: 92, left: -28, bottom: -34, opacity: .45 }} />
+            <div className="panel crop w-full max-w-lg">
+              <span className="disc fill w-52.5 h-52.5 -right-19.5 -top-21 opacity-13" aria-hidden="true"
+ />
+              <span className="disc dots text-primary w-23 h-23 -left-7 -bottom-8.5 opacity-45" aria-hidden="true"
+ />
 
               <div className="relative">
-                <p className="q-label flex items-center gap-2">
+                <p className="label flex items-center gap-2">
                   <Gamepad2 size={13} aria-hidden="true" />
                   {isZh ? "玩法" : "Playstyle"}
                 </p>
-                <h2 className="q-title mt-3 text-2xl">
+                <h2 className="title mt-3 text-2xl">
                   {isZh ? "选个玩法" : "Pick how you want to play"}
                 </h2>
-                <p className="q-note mt-2">
+                <p className="note mt-2">
                   {isZh ? "选个玩法，进去再聊你想玩的世界。" : "Then describe the world you want, in chat."}
                 </p>
 
@@ -1026,14 +1042,14 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       key={opt.mode}
                       type="button"
                       onClick={() => { if (activeSessionId) setSessionPlayMode(activeSessionId, opt.mode); }}
-                      className="q-row group flex w-full items-center gap-3.5 rounded-xl border border-transparent px-3 py-3 text-left transition-colors duration-[var(--dur-fast)] hover:border-border/60 hover:bg-secondary/40"
+                      className="row group flex w-full items-center gap-3.5 text-left"
                     >
-                      <span className="q-glyph" aria-hidden="true">{opt.glyph}</span>
+                      <span className="glyph" aria-hidden="true">{opt.glyph}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[14px] font-semibold text-foreground">{opt.title}</span>
-                        <span className="mt-0.5 block text-[11px] leading-5 text-muted-foreground">{opt.note}</span>
+                        <span className="block text-body font-semibold text-foreground">{opt.title}</span>
+                        <span className="mt-0.5 block text-small leading-5 text-muted-foreground">{opt.note}</span>
                       </span>
-                      <ChevronRight size={16} className="q-row-act shrink-0 text-primary" aria-hidden="true" />
+                      <ChevronRight size={16} className="row-act shrink-0 text-primary" aria-hidden="true" />
                     </button>
                   ))}
                 </div>
@@ -1042,19 +1058,19 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           </div>
         ) : messages.length === 0 && !loading ? (
           <div className="flex h-full items-center justify-center px-4 select-none">
-            <div className="q-crop w-full max-w-md rounded-3xl border border-border/60 bg-card px-8 py-10 text-center shadow-md">
-              <span className="q-disc q-disc-stroke" aria-hidden="true"
-                    style={{ width: 220, height: 220, left: "50%", top: -150, marginLeft: -110, opacity: .35 }} />
-              <span className="q-disc q-disc-fill" aria-hidden="true"
-                    style={{ width: 120, height: 120, right: -46, bottom: -52, opacity: .12 }} />
+            <div className="panel crop w-full max-w-md text-center">
+              <span className="disc stroke w-55 h-55 -top-37.5 -ml-28 opacity-35 left-1/2" aria-hidden="true"
+ />
+              <span className="disc fill w-30 h-30 -right-11.5 -bottom-13 opacity-12" aria-hidden="true"
+ />
               <div className="relative">
                 <span
-                  className="mx-auto grid h-12 w-12 place-items-center rounded-full border-[1.5px] border-primary text-primary"
+                  className="mx-auto icon-ring icon-ring-lg"
                   aria-hidden="true"
                 >
                   <BotMessageSquare size={20} />
                 </span>
-                <p className="mt-5 text-[14px] leading-7 text-muted-foreground">{emptyGuidance}</p>
+                <p className="mt-5 text-body leading-7 text-muted-foreground">{emptyGuidance}</p>
               </div>
             </div>
           </div>
@@ -1062,7 +1078,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           /* `.thread`, the mock's own grid, at its own measure. This was a
              stack of Tailwind utilities that happened to look similar and drifted
              from the system the rest of the app renders with. */
-          <div className="thread" style={{ maxWidth: 820, margin: "0 auto" }}>
+          <div className="thread max-w-205 my-0 mx-auto">
             {messages.map((msg, i) => (
               <div key={`${msg.timestamp}-${i}`}>
                 {msg.role === "user" ? (
@@ -1157,7 +1173,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                                         >
                                           {isZh ? "停止" : "Stop"}
                                         </button>
-                                        <span className="dim" style={{ fontSize: 11 }}>
+                                        <span className="dim text-cap">
                                           {isZh ? "正在写入" : "Streaming into"}{" "}
                                           <span className="mono">{streamTarget ?? (isZh ? "本次会话" : "this session")}</span>
                                         </span>
@@ -1187,8 +1203,8 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             {loading && !isStreaming && (
               <Message from="assistant">
                 <MessageContent>
-                  <span className="flex items-center gap-2.5 text-[14px] text-muted-foreground">
-                    <span className="q-thinking" aria-hidden="true"><i /><i /><i /></span>
+                  <span className="flex items-center gap-2.5 text-body text-muted-foreground">
+                    <span className="thinking" aria-hidden="true"><i /><i /><i /></span>
                     {isZh ? "思考中" : "Thinking"}
                   </span>
                 </MessageContent>
@@ -1202,7 +1218,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       {/* Quick actions (only when a book is active) */}
       {!showChoicePanel && (
         <div className={`shrink-0 px-[clamp(16px,3vw,32px)] transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-          <div style={{ maxWidth: 820, margin: "0 auto" }} className="w-full">
+          <div className="w-full max-w-205 my-0 mx-auto">
             <QuickActions
               onAction={handleQuickAction}
               disabled={loading || !activeSessionId}
@@ -1234,14 +1250,14 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           后台生产任务的失败由任务卡自己展示，不在这里出现。 */}
       {lastFailedSend && !chatStreaming && activeSessionId ? (
         <div className={`shrink-0 px-[clamp(16px,3vw,32px)] transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-          <div style={{ maxWidth: 820, margin: "0 auto" }} className="w-full pb-2">
+          <div className="w-full pb-2 max-w-205 my-0 mx-auto">
             <button
               type="button"
               onClick={() => {
                 autoScrollPinnedRef.current = true;
                 void retryLastSend(activeSessionId);
               }}
-              className="flex items-center gap-1.5 rounded-lg border border-border/50 bg-secondary/30 px-3 py-1.5 text-[14px] font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"
+              className="btn btn-line btn-sm flex items-center gap-1.5"
             >
               <RotateCcw size={14} />
               {isZh ? "重试上一条消息" : "Retry last message"}
@@ -1251,12 +1267,14 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
       ) : null}
       {needsPlayModeChoice ? null : (
       <div className={`composer shrink-0 transition-[padding] duration-200 ${worldPanelInsetClass}`}>
-        <div style={{ maxWidth: 820, margin: "0 auto" }}>
+        <div className="max-w-205 my-0 mx-auto">
           {modelSaveError ? (
-            <div role="status" className="fail" style={{ marginBottom: 10, fontSize: 12 }}>
-              {isZh
-                ? `没能把模型选择写进项目配置，生产任务仍会用上一个模型：${modelSaveError}`
-                : `Could not save that model to the project, so runs will still use the previous one: ${modelSaveError}`}
+            <div className="mb-2.5">
+              <Failed
+                what={isZh ? "没能把模型选择写进项目配置。" : "Could not save that model to the project."}
+                kept={isZh ? "生产任务仍会用上一个模型。" : "Runs will still use the previous one."}
+                detail={modelSaveError}
+              />
             </div>
           ) : null}
           <div className="flex items-start gap-2">
@@ -1300,13 +1318,13 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   {selectedSkills.map((skill) => (
                     <span
                       key={skill.id}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary"
+                      className="pill inline-flex items-center gap-1.5 text-primary"
                     >
                       {skill.name}
                       <button
                         type="button"
                         onClick={() => setSelectedSkillIds((prev) => prev.filter((id) => id !== skill.id))}
-                        className="rounded-full p-0.5 hover:bg-primary/20"
+                        className="btn btn-quiet btn-icon"
                         aria-label={isZh ? `移除 ${skill.name}` : `Remove ${skill.name}`}
                       >
                         <X size={12} />
@@ -1322,7 +1340,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       {attachedFiles.map((file) => (
                         <span
                           key={`${file.name}-${file.size}-${file.lastModified}`}
-                          className="inline-flex max-w-[220px] items-center gap-1.5 rounded-full border border-border/50 bg-secondary/60 px-2.5 py-1 text-[11px] text-muted-foreground"
+                          className="pill inline-flex max-w-55 items-center gap-1.5"
                           title={`${file.name} · ${file.type || "application/octet-stream"} · ${formatFileSize(file.size)}`}
                         >
                           <Paperclip size={12} />
@@ -1330,7 +1348,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                           <button
                             type="button"
                             onClick={() => setAttachedFiles((prev) => prev.filter((item) => item !== file))}
-                            className="rounded-full p-0.5 hover:bg-muted"
+                            className="btn btn-quiet btn-icon"
                             aria-label={isZh ? `移除 ${file.name}` : `Remove ${file.name}`}
                           >
                             <X size={12} />
@@ -1340,7 +1358,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     </div>
                   ) : null}
                   {attachmentError ? (
-                    <div className="mt-1 text-[11px] leading-5 text-destructive">{attachmentError}</div>
+                    <ErrorLine className="mt-1">{attachmentError}</ErrorLine>
                   ) : null}
                 </div>
               ) : null}
@@ -1386,8 +1404,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     : "Ask for a scene, a revision, a fact check. Attach a chapter or a skill with the buttons below."}
                   disabled={!activeSessionId}
                   rows={1}
-                  className="flex-1 bg-transparent outline-none! border-none! ring-0! shadow-none focus:outline-none! focus:ring-0! focus:border-none! resize-none disabled:opacity-50 max-h-[200px] overflow-y-auto"
-                  style={{ fontSize: 14, lineHeight: 1.55, minHeight: 46 }}
+                  className="flex-1 bg-transparent outline-none! border-none! ring-0! shadow-none focus:outline-none! focus:ring-0! focus:border-none! resize-none disabled:opacity-50 max-h-50 overflow-y-auto text-body leading-normal min-h-11.5"
                 />
                 {/*
                   * Stop is its own control, and it stays put.
@@ -1404,9 +1421,9 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     onClick={() => void abortSession(activeSessionId)}
                     aria-label={isZh ? "停止当前回复" : "Stop generating"}
                     title={isZh ? "停止当前回复" : "Stop generating"}
-                    className="w-8 h-8 rounded-full bg-secondary text-foreground border border-border/60 flex items-center justify-center shrink-0 hover:-translate-y-px hover:border-primary/50 hover:text-primary active:translate-y-0 active:scale-[0.985] transition-[transform,border-color,color] duration-[var(--dur-fast)] ease-[var(--ease-out-quart)]"
+                    className="btn btn-quiet btn-icon w-8 h-8 flex items-center justify-center shrink-0"
                   >
-                    <Square size={13} fill="currentColor" />
+                    <Square size={13} />
                   </button>
                 ) : null}
                 </div>
@@ -1429,11 +1446,11 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   <Sparkles size={15} aria-hidden="true" />
                   {isZh ? "技能" : "Skills"}
                   {selectedSkillIds.length > 0 ? (
-                    <span className="pill" style={{ marginLeft: 4, fontSize: 11 }}>{selectedSkillIds.length}</span>
+                    <span className="pill ml-1 text-cap">{selectedSkillIds.length}</span>
                   ) : null}
                 </button>
                 {modelPickerStatus === "loading" ? (
-                  <span className="dim animate-pulse" style={{ fontSize: 11 }}>{isZh ? "加载模型..." : "Loading models..."}</span>
+                  <Working kind="searching" label={isZh ? "加载模型…" : "Loading models…"} />
                 ) : modelPickerStatus === "ready" ? (
                   /*
                    * Which model is answering, not which model to pick.
@@ -1447,15 +1464,15 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   <button
                     type="button"
                     onClick={() => nav.toAgents()}
-                    title={isZh ? "在“模型与设置 → 智能体”中更改" : "Change in Models & setup → Agents"}
+                    title={isZh ? "在“设置 → 智能体”中更改" : "Change in Settings → Agents"}
                     className="btn btn-quiet btn-sm"
                   >
                     <Cpu size={15} aria-hidden="true" />
-                    <span className="mono trunc" style={{ fontSize: 11, maxWidth: 260 }}>
+                    <span className="mono trunc text-cap max-w-65">
                       {runningBar.text}
                     </span>
                     {runningBar.agent ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" aria-hidden />
+                      <Working kind="thinking" />
                     ) : null}
                   </button>
                 ) : (
@@ -1500,20 +1517,20 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                   onClick={() => setPlayImageMenuOpen((value) => !value)}
                   disabled={loading || !activeSessionId}
                   title={isZh ? "自动配图" : "Auto illustration"}
-                  className={`flex h-10 w-10 items-center justify-center rounded-xl border border-border/50 bg-secondary/40 shadow-sm transition-all hover:border-primary/50 hover:bg-primary/10 hover:text-primary active:translate-y-0 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-30 ${playImageMenuOpen || playImageSettings.actors || playImageSettings.moments || playImageSettings.inventory ? "text-primary" : "text-muted-foreground"}`}
+                  className={`btn btn-quiet btn-icon flex h-10 w-10 items-center justify-center ${playImageMenuOpen || playImageSettings.actors || playImageSettings.moments || playImageSettings.inventory ? "text-primary" : "text-muted-foreground"}`}
                   aria-label={isZh ? "自动配图" : "Auto illustration"}
                 >
                   <Palette size={17} />
                 </button>
                 {playImageMenuOpen ? (
-                  <div className="absolute bottom-12 right-0 z-30 w-44 rounded-xl border border-border/50 bg-card/95 p-2 shadow-xl backdrop-blur">
-                    <div className="mb-1.5 px-1 text-[12px] leading-5 font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  <div className="pop absolute bottom-12 right-0 z-30 w-44">
+                    <div className="mb-1.5 px-1 text-small leading-5 font-semibold uppercase tracking-wider text-muted-foreground/60">
                       {isZh ? "自动配图" : "Auto illustration"}
                     </div>
                     {(["actors", "moments", "inventory"] as const).map((key) => (
                       <label
                         key={key}
-                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-[14px] leading-6 ${playImageCoverReady ? "cursor-pointer text-foreground hover:bg-secondary/50" : "cursor-not-allowed text-muted-foreground/40"}`}
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-body leading-6 ${playImageCoverReady ? "cursor-pointer text-foreground hover:bg-secondary/50" : "cursor-not-allowed text-muted-foreground/40"}`}
                         title={playImageCoverReady ? undefined : (isZh ? "先在「模型配置」里配好生图 API 才能开启" : "Configure an image API in Model Settings first")}
                       >
                         <input
@@ -1531,7 +1548,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                       </label>
                     ))}
                     {!playImageCoverReady ? (
-                      <p className="mt-1 px-1 text-[12px] leading-5 text-muted-foreground/50">
+                      <p className="mt-1 px-1 text-small leading-5 text-muted-foreground/50">
                         {isZh ? "未检测到生图 API。" : "No image API configured."}
                       </p>
                     ) : null}
@@ -1541,9 +1558,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             ) : null}
           </div>
           {playImageError ? (
-            <p className="mt-2 text-right text-[13px] leading-5 text-destructive/80">
-              {isZh ? `配图失败：${playImageError}` : `Image failed: ${playImageError}`}
-            </p>
+            <ErrorLine className="mt-2 text-right">{isZh ? `配图失败：${playImageError}` : `Image failed: ${playImageError}`}</ErrorLine>
           ) : null}
         </div>
       </div>
@@ -1581,7 +1596,7 @@ function VendorMark({ modelId }: { modelId: string }) {
   if (!vendor) return <span className="h-5 w-5 shrink-0" aria-hidden="true" />;
   return (
     <span
-      className="grid h-5 w-5 shrink-0 place-items-center rounded text-[9px] font-bold leading-none tracking-tight"
+      className="grid h-5 w-5 shrink-0 place-items-center rounded text-micro font-bold leading-none tracking-tight"
       style={{ background: vendor.bg, color: vendor.fg }}
       title={vendor.label}
       aria-label={vendor.label}
@@ -1621,7 +1636,7 @@ function ModelPickerContent({
   const shown = search.trim() ? filtered : (scoped.current ? [scoped.current] : []);
 
   return (
-    <DropdownMenuContent side="top" align="start" className="w-[26rem] max-h-[28rem] flex flex-col">
+    <DropdownMenuContent side="top" align="start" className="w-104 max-h-112 flex flex-col">
       <div className="px-2 py-1.5 border-b border-border/30">
         <input
           type="text"
@@ -1629,7 +1644,7 @@ function ModelPickerContent({
           onChange={(e) => setSearch(e.target.value)}
           placeholder={isZh ? "搜索模型…" : "Search models…"}
           aria-label={isZh ? "搜索模型" : "Search models"}
-          className="w-full bg-transparent text-[14px] outline-none placeholder:text-muted-foreground/40"
+          className="w-full bg-transparent text-body outline-none placeholder:text-muted-foreground/40"
           onClick={(e) => e.stopPropagation()}
           // Typing must not reach the menu, or every letter jumps the
           // selection to whatever item starts with it. Arrows, Enter and
@@ -1656,7 +1671,7 @@ function ModelPickerContent({
                 type="button"
                 onClick={(e) => { e.preventDefault(); setViewService(p.service); }}
                 aria-pressed={active}
-                className={`shrink-0 px-2.5 py-1 rounded-md text-[12px] font-medium border transition-colors ${
+                className={`btn btn-line btn-sm shrink-0 ${
                   active
                     ? "bg-primary text-primary-foreground border-primary"
                     : "border-border/50 text-muted-foreground hover:bg-muted"
@@ -1674,7 +1689,7 @@ function ModelPickerContent({
             {/* The header only earns its place when the list is mixed, which is
                 now only while searching. */}
             {search.trim() ? (
-              <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+              <div className="px-2 py-1.5 text-small font-medium text-muted-foreground uppercase tracking-wider">
                 {group.label}
               </div>
             ) : null}
@@ -1698,13 +1713,13 @@ function ModelPickerContent({
                   >
                     <span className="flex min-w-0 items-center gap-2">
                       <VendorMark modelId={v.id} />
-                      <span className="text-[14px] truncate">
+                      <span className="text-body truncate">
                         {modelLabel(v, family.base)}
                       </span>
                     </span>
                     <span className="flex items-center gap-2 shrink-0">
                       {context ? (
-                        <span className="text-[11px] text-muted-foreground">
+                        <span className="text-small text-muted-foreground">
                           {Math.round(context / 1000)}k
                         </span>
                       ) : null}
@@ -1717,7 +1732,7 @@ function ModelPickerContent({
           </div>
         ))}
         {shown.length === 0 && (
-          <div className="px-3 py-4 text-[11px] text-muted-foreground/50 text-center italic">
+          <div className="px-3 py-4 text-small text-muted-foreground/50 text-center italic">
             {isZh ? "无匹配模型" : "No model matches that"}
           </div>
         )}

@@ -12,7 +12,7 @@ import { Icon } from "../components/ui/icon";
 import { Failed, Loading } from "../components/ui/states";
 
 interface DoctorChecks {
-  readonly inkosJson: boolean;
+  readonly quireJson: boolean;
   readonly projectEnv: boolean;
   readonly globalEnv: boolean;
   readonly booksDir: boolean;
@@ -28,13 +28,13 @@ interface Check {
 
 function Row({ check }: { readonly check: Check }) {
   return (
-    <div className="row" style={{ alignItems: "flex-start", padding: "14px 4px" }}>
-      <span className={check.ok ? "st done" : "st"} style={{ marginTop: 3 }}>
+    <div className="row items-start py-3.5 px-1">
+      <span className={`${check.ok ? "st done" : "st"} mt-1`}>
         <i />
       </span>
       <span className="grow">
         <span className="name">{check.label}</span>
-        <span className="meta mono" style={{ fontSize: 11 }}>{check.detail}</span>
+        <span className="meta mono text-cap">{check.detail}</span>
       </span>
       <span className={check.ok ? "pill pill-ok" : "pill pill-warn"}>{check.ok ? "ok" : "wants you"}</span>
     </div>
@@ -47,7 +47,7 @@ export function DoctorView({ t }: { readonly t: TFunction }) {
 
   const checks: Check[] = data
     ? [
-        { label: t("doctor.inkosJson"), ok: data.inkosJson, detail: "inkos.json in the workspace root" },
+        { label: t("doctor.quireJson"), ok: data.quireJson, detail: "quire.json in the workspace root" },
         { label: t("doctor.projectEnv"), ok: data.projectEnv, detail: "project .env" },
         { label: t("doctor.globalEnv"), ok: data.globalEnv, detail: "global .env" },
         {
@@ -67,13 +67,13 @@ export function DoctorView({ t }: { readonly t: TFunction }) {
 
   return (
     <div className="wrap-read stack-lg">
-      <section className="crop" style={{ paddingBottom: 0 }}>
-        <span className="disc fill" style={{ width: 210, height: 210, right: -104, top: -112, opacity: 0.13 }} />
-        <span className="disc stroke" style={{ width: 104, height: 104, right: -34, top: -30, opacity: 0.4 }} />
-        <div className="spread" style={{ alignItems: "flex-end" }}>
+      <section className="crop pb-0">
+        <span className="disc fill w-52.5 h-52.5 -right-26 -top-28 opacity-13" />
+        <span className="disc stroke w-26 h-26 -right-8.5 -top-7.5 opacity-40" />
+        <div className="spread items-end">
           <div>
             <h2 className="h-page">Let us see what you have</h2>
-            <p className="muted" style={{ fontSize: 14, marginTop: 10, maxWidth: "52ch" }}>
+            <p className="muted text-body mt-2.5 max-w-measure">
               {checks.length === 0
                 ? "Checking the workspace, the providers and the files Quire needs."
                 : passing === checks.length
@@ -82,12 +82,12 @@ export function DoctorView({ t }: { readonly t: TFunction }) {
             </p>
           </div>
           {checks.length > 0 ? (
-            <div style={{ textAlign: "right" }}>
-              <div className="rowflex" style={{ gap: 2, justifyContent: "flex-end", alignItems: "baseline" }}>
-                <span className="numeral" style={{ fontSize: 68 }}>{passing}</span>
-                <span className="numeral ghost" style={{ fontSize: 34 }}>/{checks.length}</span>
+            <div className="text-right">
+              <div className="rowflex gap-0.5 justify-end items-baseline">
+                <span className="numeral text-d3">{passing}</span>
+                <span className="numeral ghost text-h1">/{checks.length}</span>
               </div>
-              <div className="label" style={{ marginTop: 6 }}>passing</div>
+              <div className="label mt-1.5">passing</div>
             </div>
           ) : null}
         </div>
@@ -112,7 +112,7 @@ export function DoctorView({ t }: { readonly t: TFunction }) {
       ) : (
         <>
           <section className="panel panel-flush">
-            <div className="panel-body" style={{ paddingTop: 14, paddingBottom: 14 }}>
+            <div className="panel-body pt-3.5 pb-3.5">
               <div className="rows">
                 {checks.map((c) => (
                   <Row key={c.label} check={c} />

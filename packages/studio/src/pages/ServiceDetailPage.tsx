@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { fetchJson } from "../hooks/use-api";
 import { useServiceStore } from "../store/service";
-import { Eye, EyeOff, Loader2, ArrowLeft, Plus, Trash2, X } from "lucide-react";
+import { Eye, EyeOff, Loader2, ArrowLeft, Plus, Trash2, X } from "../components/ui/glyphs";
 import { ServiceQuickLinks } from "../components/ServiceQuickLinks";
 import { tr } from "../lib/app-language";
 import {
@@ -16,18 +16,21 @@ import {
   type ServiceDetailModelInfo as ModelInfo,
   type ServiceDetailVerifiedProbe as VerifiedProbe,
 } from "./service-detail-state";
+import { ask } from "../components/ConfirmDialog";
 
+import { Spinner } from "../components/ui/working";
+import { ErrorLine } from "../components/ui/states";
 interface Nav {
   toServices: () => void;
 }
 
 function DetailSkeleton() {
   return (
-    <div className="max-w-xl mx-auto space-y-6 animate-pulse">
-      <div className="h-4 w-16 bg-muted rounded" />
-      <div className="h-7 w-40 bg-muted rounded" />
-      <div className="space-y-2"><div className="h-3 w-16 bg-muted/60 rounded" /><div className="h-10 w-full bg-muted/40 rounded-lg" /></div>
-      <div className="h-9 w-24 bg-muted/40 rounded-lg" />
+    <div className="max-w-xl mx-auto space-y-6" aria-busy="true">
+      <div className="skel h-4 w-16" />
+      <div className="skel h-7 w-40" />
+      <div className="space-y-2"><div className="skel h-3 w-16" /><div className="skel h-10 w-full" /></div>
+      <div className="skel h-9 w-24" />
     </div>
   );
 }
@@ -194,7 +197,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
   };
 
   const handleDelete = async () => {
-    if (!window.confirm(tr(`删除“${label}”的配置和密钥？`, `Delete the config and key for “${label}”?`))) return;
+    if (!(await ask({ title: tr(`删除“${label}”？`, `Delete ${label}?`), message: tr("配置和密钥都会删除。", "Its config and key are both removed."), confirmLabel: tr("删除", "Delete"), danger: true }))) return;
     setStatus({ state: "saving" });
     try {
       await deleteServiceConfig(effectiveServiceId);
@@ -270,7 +273,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
       {/* Back */}
       <button
         onClick={nav.toServices}
-        className="inline-flex items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-2 text-sm font-medium text-foreground hover:bg-secondary/50 transition-colors"
+        className="btn btn-line inline-flex items-center gap-2"
       >
         <ArrowLeft size={14} />
         {tr("返回服务商管理", "Back to providers")}
@@ -278,9 +281,9 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
 
       {/* Title + status */}
       <div className="flex items-center gap-3">
-        <h1 className="q-title text-2xl">{label}</h1>
+        <h1 className="h-page">{label}</h1>
         {isConnected && (
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-success/10 text-success font-medium">
+          <span className="pill text-success">
             {tr("已连接", "Connected")}
           </span>
         )}
@@ -293,11 +296,11 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
         <div className="grid grid-cols-2 gap-4">
             <Field label={tr("服务名称", "Service name")}>
               <input type="text" value={customName} onChange={(e) => setCustomName(e.target.value)}
-                placeholder={tr("例如：本地 Ollama", "e.g. local Ollama")} className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm" />
+                placeholder={tr("例如：本地 Ollama", "e.g. local Ollama")} className="input w-full" />
             </Field>
             <Field label="Base URL">
               <input type="text" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder="https://api.example.com/v1" className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-mono" />
+                placeholder="https://api.example.com/v1" className="input w-full font-mono" />
             </Field>
           </div>
         )}
@@ -308,7 +311,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
             <input
               type={showKey ? "text" : "password"} value={apiKey}
               onChange={(e) => setApiKey(e.target.value)} placeholder={apiKeyOptional ? tr("本地服务可留空", "Optional for local service") : "sk-..."}
-              className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 pr-10 text-sm font-mono"
+              className="input w-full pr-10 font-mono"
             />
             <button type="button" onClick={() => setShowKey((v) => !v)}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors">
@@ -320,18 +323,18 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
         {/* Actions + feedback */}
         <div className="flex items-center gap-2">
           <button onClick={handleTest} disabled={isBusy}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-lg border border-border/60 hover:bg-secondary/50 transition-colors disabled:opacity-50">
-            {status.state === "testing" && <Loader2 size={12} className="animate-spin" />}
+            className="btn btn-line btn-sm flex items-center gap-1.5">
+            {status.state === "testing" && <Spinner />}
             {tr("测试连接", "Test connection")}
           </button>
           <button onClick={handleSave} disabled={isBusy}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50">
-            {status.state === "saving" && <Loader2 size={12} className="animate-spin" />}
+            className="btn btn-sm flex items-center gap-1.5">
+            {status.state === "saving" && <Spinner />}
             {tr("保存", "Save")}
           </button>
           {(isConnected || isCustom) && (
             <button onClick={handleDelete} disabled={isBusy}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50">
+              className="btn btn-bad btn-sm flex items-center gap-1.5">
               <Trash2 size={12} />
               {tr("删除配置", "Delete config")}
             </button>
@@ -349,7 +352,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
             </span>
           )}
           {status.state === "error" && (
-            <span className="text-xs text-destructive">{status.message}</span>
+            <ErrorLine>{status.message}</ErrorLine>
           )}
           {status.state === "saved" && (
             <span className="text-xs text-success">{tr("已保存", "Saved")}</span>
@@ -361,7 +364,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
             <select
               value={apiFormat}
               onChange={(e) => setApiFormat(e.target.value as "chat" | "responses")}
-              className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm"
+              className="input w-full"
             >
               <option value="chat">Chat / Completions</option>
               <option value="responses">Responses</option>
@@ -369,7 +372,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
           </Field>
 
           <Field label={tr("流式响应", "Streaming")}>
-            <label className="flex h-10 items-center gap-2 rounded-lg border border-border/60 bg-background px-3 text-sm">
+            <label className="input flex h-10 items-center gap-2">
               <input
                 type="checkbox"
                 checked={stream}
@@ -382,7 +385,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
 
         {/* Models */}
         <div className="space-y-2">
-          <p className="text-xs text-muted-foreground/70 font-medium uppercase tracking-wider">
+          <p className="label">
             {tr(`模型目录（${models.length}）`, `Model catalog (${models.length})`)}
           </p>
           <div className="flex gap-2">
@@ -397,13 +400,13 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
                 }
               }}
               placeholder={tr("输入模型 ID，例如 gemini-3.1-pro", "Enter a model ID, e.g. gemini-3.1-pro")}
-              className="min-w-0 flex-1 rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-mono"
+              className="input min-w-0 flex-1 font-mono"
             />
             <button
               type="button"
               onClick={handleAddModel}
               disabled={!modelIdInput.trim()}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-2 text-xs hover:bg-secondary/50 disabled:opacity-40"
+              className="btn btn-line btn-sm inline-flex items-center gap-1.5"
             >
               <Plus size={13} />
               {tr("添加", "Add")}
@@ -417,7 +420,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
             {models.length > 0 ? (
               <div className="flex gap-1.5 flex-wrap">
                 {models.map((m) => (
-                  <span key={m.id} className="inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-md bg-success/[0.06] text-success text-success border border-success/15">
+                  <span key={m.id} className="pill inline-flex items-center gap-1">
                     {m.name ?? m.id}
                     <button
                       type="button"
@@ -448,7 +451,7 @@ export function ServiceDetailPage({ serviceId, nav }: { serviceId: string; nav: 
                 <input type="range" min="0" max="2" step="0.05" value={temperature}
                   onChange={(e) => setTemperature(e.target.value)} className="flex-1 accent-primary h-1" />
                 <input type="number" value={temperature} onChange={(e) => setTemperature(e.target.value)}
-                  min="0" max="2" step="0.05" className="w-16 rounded-md border border-border/60 bg-background px-2 py-1 text-xs text-right font-mono" />
+                  min="0" max="2" step="0.05" className="input w-auto py-1.5 px-2.5 text-small w-16 text-right font-mono" />
               </div>
             </Field>
           </div>

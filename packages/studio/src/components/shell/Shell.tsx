@@ -21,8 +21,10 @@ import { Rail, type RailRun } from "./Rail";
 import { Topbar, type Crumb } from "./Topbar";
 import { Palette, type PaletteEntry, usePaletteHotkey } from "./Palette";
 import { Icon, IconSprite } from "../ui/icon";
-import { ToastHost } from "../ui/vermilion";
+import { ToastHost, useListKeys } from "../ui/vermilion";
+import { AskHost } from "../ConfirmDialog";
 import { useCallback, useState } from "react";
+import { useResumeTimer } from "../../lib/resume-later";
 
 export type ShellVariant = "stage" | "flush" | "chat";
 
@@ -55,6 +57,8 @@ export function Shell({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   usePaletteHotkey(openPalette);
+  useResumeTimer();
+  useListKeys();
 
   /* Whether the rail is open. A preference about this monitor, so it is kept
      here rather than on the server: 196px matters on a laptop and does not on
@@ -72,7 +76,7 @@ export function Shell({
   return (
     <div className={railOpen ? "screen embedded" : "screen embedded rail-off"}>
       <IconSprite />
-      <Rail route={route} setRoute={setRoute} tails={tails} run={run} />
+      <Rail route={route} setRoute={setRoute} tails={tails} run={run} onOpenPalette={openPalette} />
 
       <div className={variant === "chat" ? "main chat" : "main"}>
         {variant === "chat" ? (
@@ -83,10 +87,9 @@ export function Shell({
             {railOpen ? null : (
               <button
                 type="button"
-                className="btn btn-quiet btn-sm"
+                className="btn btn-quiet btn-sm absolute top-2 left-2 z-12"
                 aria-label="Open the rail"
                 title="Open the rail"
-                style={{ position: "absolute", top: 8, left: 8, zIndex: 12 }}
                 onClick={toggleRail}
               >
                 <Icon name="list" size={15} />
@@ -129,6 +132,7 @@ export function Shell({
         extra={paletteExtra}
       />
       <ToastHost />
+      <AskHost />
     </div>
   );
 }

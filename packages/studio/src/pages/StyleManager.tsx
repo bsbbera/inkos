@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
-import { Empty } from "../components/ui/states";
+import { Empty, Failed } from "../components/ui/states";
 import { Icon } from "../components/ui/icon";
 import { isLive, type Job, type JobsView } from "../hooks/use-jobs";
 
@@ -109,6 +109,15 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
   const [styleName, setStyleName] = useState("");
   const [saving, setSaving] = useState(false);
   const [picked, setPicked] = useState("");
+  /*
+   * The other voices in the mix, and how much of the work the chosen one keeps.
+   *
+   * A blend is "mostly X, some Y for description" — so the dominant voice is
+   * the one already picked above and this holds only the additions, each with
+   * the facets it owns outright (05 §4).
+   */
+  const [mix, setMix] = useState<Array<{ id: string; weight: number; facets: string[] }>>([]);
+  const dominantWeight = Math.max(0.1, 1 - mix.reduce((n, m) => n + m.weight, 0));
   const { data: styleData, refetch: refetchStyles } =
     useApi<{ styles: ReadonlyArray<SavedStyle> }>("/styles");
   const styles = styleData?.styles ?? [];
@@ -175,12 +184,22 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
     setImporting(true);
     setImportStatus("");
     try {
-      const result = await postApi<{ style: SavedStyle }>(
+      const result = await postApi<{
+        style: SavedStyle;
+        blend?: ReadonlyArray<{ id: string; weight: number; facets: string[] }>;
+        dropped?: ReadonlyArray<{ id: string; facet: string; wonBy: string }>;
+      }>(
         `/productions/${type}/${encodeURIComponent(id)}/style/apply`,
-        { styleId: picked },
+        { styleId: picked, ...(mix.length ? { blend: [{ id: picked, weight: dominantWeight, facets: [] }, ...mix] } : {}) },
       );
+      const mixed = result.blend?.length
+        ? ` Mixed with ${result.blend.filter((b) => b.id !== picked).map((b) => `${b.id} ${Math.round(b.weight * 100)}%`).join(", ")}.`
+        : "";
+      const lost = result.dropped?.length
+        ? ` ${result.dropped.map((d) => `${d.facet} went to ${d.wonBy}`).join("; ")}.`
+        : "";
       setImportStatus(
-        `${id} is now written in ${result.style.name}'s voice. New writing and revisions use it; `
+        `${id} is now written in ${result.style.name}'s voice.${mixed}${lost} New writing and revisions use it; `
         + "the draft already written does not change until you rewrite it.",
       );
       void refetchTargets();
@@ -259,8 +278,8 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
 
   return (
     <div className="stack-lg">
-      <section className="crop" style={{ paddingBottom: 0 }}>
-        <span className="disc stroke" style={{ width: 190, height: 190, left: -88, top: -92, opacity: 0.3 }} />
+      <section className="crop pb-0">
+        <span className="disc stroke w-47.5 h-47.5 -left-22 -top-23 opacity-30" />
         <div className="head">
           <h2 className="h-page">Write it in somebody else&rsquo;s hand</h2>
           <p>
@@ -272,12 +291,12 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
         </div>
       </section>
 
-      <section className="cols" style={{ gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)" }}>
+      <section className="cols grid-cols-2">
         <div className="panel">
           <div className="panel-head">
             <span className="grow">
               <h3 className="h-panel">The sample</h3>
-              <span className="dim" style={{ fontSize: 11 }}>
+              <span className="dim text-cap">
                 A page or two reads better than a paragraph. Under 500 characters and only the
                 measurements are taken.
               </span>
@@ -294,7 +313,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                 onChange={(e) => setStyleName(e.target.value)}
                 placeholder="Cold Coastal, Mercer, House Voice…"
               />
-              <span className="dim" style={{ fontSize: 11 }}>
+              <span className="dim text-cap">
                 The name every screen will use for it. Saving under a name you have already used
                 replaces that voice.
               </span>
@@ -314,12 +333,11 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
               <label htmlFor="style-sample">The writing</label>
               <textarea
                 id="style-sample"
-                className="input"
+                className="input min-h-65 font-mono text-small"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={14}
                 placeholder="Paste the passage here."
-                style={{ minHeight: 260, fontFamily: "var(--font-mono)", fontSize: 13 }}
               />
             </div>
             <div className="rowflex">
@@ -342,7 +360,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                 <Icon name="send" className="ico" />
                 {saving ? "Studying…" : "Save this voice"}
               </button>
-              <span className="dim tnum" style={{ fontSize: 11 }}>
+              <span className="dim tnum text-cap">
                 {text.trim().length.toLocaleString()} characters
               </span>
             </div>
@@ -363,34 +381,34 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                 <div className="panel-head">
                   <span className="grow">
                     <h3 className="h-panel">{profile.sourceName}</h3>
-                    <span className="dim" style={{ fontSize: 11 }}>
+                    <span className="dim text-cap">
                       Read as {profile.language === "en" ? "English" : "Chinese"}, measured in {unit}
                     </span>
                   </span>
                 </div>
                 <div className="panel-body stack">
-                  <div className="cols" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
+                  <div className="cols gap-3.5 grid-cols-2">
                     <div>
                       <span className="label">Sentence length</span>
                       <div className="numeral tnum">{profile.avgSentenceLength.toFixed(1)}</div>
-                      <p className="dim" style={{ fontSize: 11 }}>{unit} per sentence, on average</p>
+                      <p className="dim text-cap">{unit} per sentence, on average</p>
                     </div>
                     <div>
                       <span className="label">Sentence variety</span>
                       <div className="numeral tnum">{profile.sentenceLengthStdDev.toFixed(1)}</div>
-                      <p className="dim" style={{ fontSize: 11 }}>
+                      <p className="dim text-cap">
                         how far length swings. Low is even, high alternates long and short
                       </p>
                     </div>
                     <div>
                       <span className="label">Paragraph length</span>
                       <div className="numeral tnum">{profile.avgParagraphLength.toFixed(0)}</div>
-                      <p className="dim" style={{ fontSize: 11 }}>{unit} per paragraph</p>
+                      <p className="dim text-cap">{unit} per paragraph</p>
                     </div>
                     <div>
                       <span className="label">Vocabulary range</span>
                       <div className="numeral tnum">{(profile.vocabularyDiversity * 100).toFixed(0)}%</div>
-                      <p className="dim" style={{ fontSize: 11 }}>
+                      <p className="dim text-cap">
                         share of {unit} used only once. Higher means less repetition
                       </p>
                     </div>
@@ -432,7 +450,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
             <div className="panel-head">
               <span className="grow">
                 <h3 className="h-panel">Your voices</h3>
-                <span className="dim" style={{ fontSize: 11 }}>
+                <span className="dim text-cap">
                   Studied once, kept under the name you gave, given to as many pieces of work as
                   you like
                 </span>
@@ -440,14 +458,14 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
             </div>
             <div className="panel-body stack">
               {styles.length === 0 ? (
-                <p className="dim" style={{ fontSize: 11 }}>
+                <p className="dim text-cap">
                   None yet. Paste a passage, name it, and press Save this voice.
                 </p>
               ) : (
                 <div className="rows">
                   {styles.map((v) => (
-                    <div className="row" style={{ padding: "9px 4px", gap: 9 }} key={v.id}>
-                      <label className="rowflex" style={{ gap: 9, cursor: "pointer" }}>
+                    <div className="row py-2.5 px-1 gap-2.5" key={v.id}>
+                      <label className="rowflex gap-2.5 cursor-pointer">
                         <input
                           type="radio"
                           name="voice"
@@ -480,7 +498,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                 <div className="panel-head">
                   <span className="grow">
                     <h3 className="h-panel">Give this voice to</h3>
-                    <span className="dim" style={{ fontSize: 11 }}>
+                    <span className="dim text-cap">
                       Every kind of work except magazines, which take their voice from their
                       series house style
                     </span>
@@ -506,17 +524,81 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                   </div>
 
                   {targets.length === 0 && (
-                    <p className="dim" style={{ fontSize: 11 }}>
+                    <p className="dim text-cap">
                       Nothing to give it to yet. Start a book, a short or a script first and it
                       will appear here.
                     </p>
                   )}
 
                   {chosen?.hasStyle && (
-                    <p className="muted" style={{ fontSize: 11 }}>
+                    <p className="muted text-cap">
                       {chosen.id} is already in {chosen.voice ? `${chosen.voice}'s` : "a"} voice.
                       Giving it another replaces that — a guide holds one voice, not two.
                     </p>
+                  )}
+
+                  {/* Mostly one voice, some of another for the parts it does
+                      better. One voice owns each part, so a mix stays specific
+                      instead of averaging into nobody (05 §4). */}
+                  {picked && styles.length > 1 && (
+                    <div className="field">
+                      <label>Mix in another voice</label>
+                      {mix.map((row, i) => (
+                        <div className="rowflex gap-2 mb-1.5" key={row.id}>
+                          <span className="grow text-small">{row.id}</span>
+                          <input
+                            type="range"
+                            min={5}
+                            max={60}
+                            value={Math.round(row.weight * 100)}
+                            onChange={(e) => setMix(mix.map((m, j) =>
+                              (j === i ? { ...m, weight: Number(e.target.value) / 100 } : m)))}
+                          />
+                          <span className="dim text-cap w-8.5">
+                            {Math.round(row.weight * 100)}%
+                          </span>
+                          <select
+                            className="input"
+                            value={row.facets[0] ?? ""}
+                            onChange={(e) => setMix(mix.map((m, j) =>
+                              (j === i ? { ...m, facets: e.target.value ? [e.target.value] : [] } : m)))}
+                          >
+                            <option value="">everything it wins on weight</option>
+                            {["dialogue", "description", "imagery", "sentence", "rhythm", "punctuation", "humour", "pacing", "openers"].map((f) => (
+                              <option key={f} value={f}>{f}</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            className="btn btn-line"
+                            onClick={() => setMix(mix.filter((_, j) => j !== i))}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                      {mix.length < 4 && (
+                        <select
+                          className="input"
+                          value=""
+                          onChange={(e) => {
+                            if (!e.target.value) return;
+                            setMix([...mix, { id: e.target.value, weight: 0.25, facets: [] }]);
+                          }}
+                        >
+                          <option value="">Add a voice to the mix…</option>
+                          {styles
+                            .filter((s) => s.id !== picked && !mix.some((m) => m.id === s.id))
+                            .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      )}
+                      {mix.length > 0 && pickedVoice && (
+                        <p className="dim text-cap">
+                          {pickedVoice.name} keeps {Math.round(dominantWeight * 100)}% and owns
+                          anything nobody else claimed.
+                        </p>
+                      )}
+                    </div>
                   )}
 
                   <div className="rowflex">
@@ -543,19 +625,19 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                   <div className="panel-head">
                     <span className="grow">
                       <h3 className="h-panel">Rewrite what is already written</h3>
-                      <span className="dim" style={{ fontSize: 11 }}>
+                      <span className="dim text-cap">
                         Every page of {chosen.id}, put through
                         {chosen.voice ? ` ${chosen.voice}'s voice` : " the voice it now has"}
                       </span>
                     </span>
                   </div>
                   <div className="panel-body stack">
-                    <p className="muted" style={{ fontSize: 14, maxWidth: "56ch" }}>
+                    <p className="muted text-body max-w-measure">
                       Events, names, numbers and what every line of dialogue means stay exactly as
                       they are. Only the prose changes. Each file is copied first, so the audit
                       screen&rsquo;s Restore puts any of it back.
                     </p>
-                    <p className="dim" style={{ fontSize: 11, maxWidth: "56ch" }}>
+                    <p className="dim text-cap max-w-measure">
                       Files you have signed off are left alone. A rewrite that comes back much
                       shorter than the original is refused rather than saved.
                     </p>
@@ -583,8 +665,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                     {restyleStatus && (
                       <p
                         role="status"
-                        className={restyleStatus.startsWith("Error:") ? "fail" : "muted"}
-                        style={{ fontSize: 14 }}
+                        className={`${restyleStatus.startsWith("Error:") ? "fail" : "muted"} text-body`}
                       >
                         {restyleStatus}
                       </p>
@@ -596,13 +677,9 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
       </section>
 
       {statusNotice && (
-        <div
-          role="status"
-          className={statusNotice.tone === "error" ? "fail" : "note"}
-          style={{ fontSize: 14 }}
-        >
-          {statusNotice.message}
-        </div>
+        statusNotice.tone === "error"
+          ? <Failed what="That did not work." detail={statusNotice.message} />
+          : <div role="status" className="pass block">{statusNotice.message}</div>
       )}
     </div>
   );

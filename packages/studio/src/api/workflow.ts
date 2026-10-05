@@ -24,7 +24,13 @@
 
 import { blocksApproval, type ChapterMeta, type Finding } from "@actalk/quire-core";
 
-export type StageState = "done" | "partial" | "pending";
+/*
+ * `running` is work in flight now; `partial` is work half done and idle.
+ * They were one word, so a book stopped at chapter 3 pulsed on screen as
+ * though it were still being written. `failed` is a stage that threw,
+ * which used to read as `pending` - "not started" - after it had run.
+ */
+export type StageState = "done" | "partial" | "pending" | "running" | "failed";
 
 export interface WorkflowStage {
   readonly stage: string;
@@ -56,7 +62,7 @@ export interface Workflow {
   /** The terminal gate every kind has: can this thing ship, and if not, why. */
   readonly done: { readonly can: boolean; readonly blockers: readonly string[] };
   readonly running: boolean;
-  readonly lastError: { readonly at?: string; readonly stage?: string; readonly message: string } | null;
+  readonly lastError: { readonly at?: string; readonly stage?: string; readonly message: string; readonly stopped?: boolean } | null;
 }
 
 /** A gate, with the blocker/warning split made explicit at the call site. */
@@ -261,7 +267,7 @@ export interface ProjectWorkflowInput {
   /** Whatever the production's own runner last recorded, if it records one. */
   readonly runStage?: { readonly stage: string; readonly state: string; readonly detail: string };
   readonly running?: boolean;
-  readonly lastError?: { readonly stage?: string; readonly message: string } | null;
+  readonly lastError?: { readonly stage?: string; readonly message: string; readonly stopped?: boolean } | null;
 }
 
 /**
@@ -276,8 +282,8 @@ function runState(status: string): { state: StageState; detail: string } {
   switch (status) {
     case "complete": return { state: "done", detail: "finished" };
     case "needs-review": return { state: "done", detail: "finished, waiting for a read" };
-    case "running": return { state: "partial", detail: "running now" };
-    case "failed": return { state: "pending", detail: "stopped on an error" };
+    case "running": return { state: "running", detail: "running now" };
+    case "failed": return { state: "failed", detail: "stopped on an error" };
     case "cancelled": return { state: "pending", detail: "cancelled" };
     case "pending": return { state: "pending", detail: "not started" };
     /* An unknown status is reported rather than mapped to a guess. */

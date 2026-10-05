@@ -224,6 +224,10 @@ export interface CreateState {
   // rejected, the card locks so the user can't re-fire the production action.
   // Keyed by the proposal's ToolExecution id.
   resolvedProposals: Record<string, "confirmed" | "rejected">;
+  // Where a confirmed proposal actually runs, keyed by the proposal's
+  // ToolExecution id. The card reads the run's own state from here instead of
+  // claiming "Executed" the moment the button was pressed.
+  proposalRuns: Record<string, string>;
 }
 
 export type ChatState = MessageState & CreateState;
@@ -263,7 +267,11 @@ export interface CreateActions {
   openProjectArtifact: (path: string) => void;
   closeProjectArtifact: () => void;
   setBookSummary: (summary: BookSummary | null) => void;
-  markProposalResolved: (execId: string, resolution: "confirmed" | "rejected") => void;
+  markProposalResolved: (
+    execId: string,
+    resolution: "confirmed" | "rejected",
+    runSessionId?: string,
+  ) => void;
 }
 
 // -- Composed store type --

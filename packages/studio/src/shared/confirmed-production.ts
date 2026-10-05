@@ -14,6 +14,12 @@ const CONFIRMED_PRODUCTION_INTENTS: ReadonlySet<RequestedIntent> = new Set([
   "storyboard_create",
   "interactive_film_create",
   "translation_create",
+  // A magazine issue is a long production run like the rest. Left out of this
+  // set it ran as an ordinary chat round, which the app used to cancel the
+  // moment another conversation was opened, so a confirmed magazine died a few
+  // seconds in and wrote nothing. (storyboard_art is deliberately absent: the
+  // confirmed executor has no branch for it, so it stays a chat-run tool.)
+  "publication_create",
   "draft_structure",
   "connect_choice",
   "remove_node",

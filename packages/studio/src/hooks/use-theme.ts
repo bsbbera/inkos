@@ -13,7 +13,7 @@ export type ThemeMode = "system" | "light" | "dark";
 
 const MODE_STORAGE_KEY = "quire:studio:theme";
 /** What the two-state hook wrote. Read once so an upgrade keeps the choice. */
-const LEGACY_STORAGE_KEY = "inkos:studio:theme";
+const LEGACY_STORAGE_KEY = "quire:studio:theme";
 
 interface StorageLike {
   getItem(key: string): string | null;

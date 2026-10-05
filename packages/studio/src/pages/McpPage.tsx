@@ -16,8 +16,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
-import { Plug, Loader2, ChevronRight, AlertTriangle } from "lucide-react";
+import { Plug, Loader2, ChevronRight, AlertTriangle } from "../components/ui/glyphs";
 
+import { Spinner } from "../components/ui/working";
+import { Failed } from "../components/ui/states";
 interface McpServer {
   readonly command?: string;
   readonly args?: readonly string[];
@@ -52,7 +54,7 @@ const SOURCE_LABELS: Record<string, string> = {
   override: "Added here",
 };
 
-export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
+export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t: TFunction; embedded?: boolean }) {
   const c = useColors(theme);
   const [servers, setServers] = useState<Record<string, McpServer> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -117,9 +119,10 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-4">
+        {embedded ? <span className="grow" /> : (
         <div>
-          <h1 className="q-title text-3xl flex items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Plug size={19} /></span>
+          <h1 className="h-page flex items-center gap-3">
+            <span className="icon-ring icon-ring-lg" aria-hidden="true"><Plug size={19} /></span>
             MCP servers
           </h1>
           <p className={`mt-2 text-sm ${c.muted}`}>
@@ -127,27 +130,22 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
             model in the workbench, whichever provider it runs on.
           </p>
         </div>
-        <button onClick={() => void load()} className={`px-4 py-2 text-sm rounded-lg shrink-0 ${c.btnSecondary}`}>
+        )}
+        <button onClick={() => void load()} className="btn btn-line shrink-0">
           Rescan
         </button>
       </div>
 
       {error && (
-        <div className={`flex items-start gap-3 border rounded-lg p-4 text-sm ${c.error}`}>
-          <AlertTriangle size={18} className="shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium">Could not read the server list.</p>
-            <p className="mt-1 opacity-80 font-mono text-xs">{error}</p>
-          </div>
-        </div>
+        <Failed what="Could not read the server list." detail={error} />
       )}
 
       {!servers ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 size={24} className="animate-spin text-primary" />
+          <Spinner className="text-primary" />
         </div>
       ) : entries.length === 0 ? (
-        <div className={`border ${c.cardStatic} rounded-lg p-8 text-center ${c.muted}`}>
+        <div className={`panel  text-center ${c.muted}`}>
           <p className="text-sm">No MCP servers found.</p>
           <p className="mt-2 text-xs">
             Quire's own server ships with the app. Servers configured in Claude
@@ -159,7 +157,7 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
       ) : (
         <>
           <p className={`text-xs ${c.muted}`}>{onCount} of {entries.length} enabled</p>
-          <div className={`border ${c.cardStatic} rounded-lg divide-y ${c.tableDivide} overflow-hidden`}>
+          <div className={`panel panel-flush  divide-y ${c.tableDivide} overflow-hidden`}>
             {entries.map(([name, s]) => {
               const list = tools[name];
               const expanded = open === name;
@@ -184,7 +182,7 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
                           edit now — the source tag above it is history, not a
                           live dependency. */}
                       {s.bundled || s.imported ? (
-                        <span className={`text-xs px-2 py-0.5 rounded border ${c.tableDivide} ${c.muted} shrink-0`}>
+                        <span className="pill shrink-0">
                           {s.bundled ? "bundled" : "imported"}
                         </span>
                       ) : null}
@@ -217,11 +215,11 @@ export function McpPage({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunctio
                       )}
                       {list === "loading" && (
                         <p className={`text-xs flex items-center gap-2 ${c.muted}`}>
-                          <Loader2 size={12} className="animate-spin" /> starting server…
+                          <Spinner /> starting server…
                         </p>
                       )}
                       {list === "error" && (
-                        <p className="text-xs text-destructive">
+                        <p className="hint is-bad">
                           Could not start this server or read its tools.
                         </p>
                       )}

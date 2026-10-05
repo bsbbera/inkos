@@ -235,8 +235,9 @@ describe("projectWorkflow", () => {
       runStage: { stage: "render", state: "failed", detail: "ffmpeg exited 1" },
     });
     expect(w.stages[0]!.stage).toBe("render");
-    // Failed is not partial progress; it is not done.
-    expect(w.stages[0]!.state).toBe("pending");
+    // Failed is its own state: not progress, not done, and not "never ran"
+    // either, which is what reading it as pending used to say.
+    expect(w.stages[0]!.state).toBe("failed");
     // The reason beats the status word, which says less.
     expect(w.stages[0]!.detail).toBe("ffmpeg exited 1");
   });

@@ -6,6 +6,7 @@ import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import type { StoryGraph, StoryNode } from "@actalk/quire-core/interactive-film/graph-schema";
 import { AnalysisPanel } from "../components/film/AnalysisPanel";
+import { Failed, Loading } from "../components/ui/states";
 
 interface Nav {
   toDashboard: () => void;
@@ -37,8 +38,8 @@ export function StoryGraphTree({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [generatingId, setGeneratingId] = useState<string | null>(null);
 
-  if (loading) return <div className={c.muted}>{t("common.loading")}</div>;
-  if (error) return <div className="text-destructive">{t("common.error")}: {error}</div>;
+  if (loading) return <Loading what="Reading the story…" />;
+  if (error) return <Failed what="Could not open the story." detail={error} />;
   if (!graph) return null;
   const exportUrl = buildProjectExportDownloadUrl(projectId);
 
@@ -83,21 +84,21 @@ export function StoryGraphTree({
           <span data-testid="film-title">{graph.title || projectId}</span>
           <button
             onClick={() => nav.toPlay(projectId)}
-            className={`ml-auto px-3 py-1 rounded ${c.btnPrimary}`}
+            className="btn btn-sm ml-auto"
             data-testid="film-play"
           >
             {tr("试玩", "Play")} →
           </button>
           <button
             onClick={() => nav.toFlow(projectId)}
-            className={`px-3 py-1 rounded ${c.btnSecondary}`}
+            className="btn btn-line btn-sm"
             data-testid="open-flow"
           >
             {tr("流程图", "Flow")} →
           </button>
           <button
             onClick={() => nav.toFilmAuthor(projectId)}
-            className={`px-3 py-1 rounded ${c.btnSecondary}`}
+            className="btn btn-line btn-sm"
             data-testid="open-authoring"
           >
             {tr("AI 对话创作", "AI chat authoring")} →
@@ -106,7 +107,7 @@ export function StoryGraphTree({
             <a
               href={exportUrl}
               download
-              className={`px-3 py-1 rounded ${c.btnSecondary}`}
+              className="btn btn-line btn-sm no-underline"
               data-testid="film-export-package"
             >
               {tr("导出整包", "Export package")}
@@ -118,13 +119,11 @@ export function StoryGraphTree({
       <AnalysisPanel projectId={projectId} theme={theme} />
 
       {saveError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" data-testid="film-save-error">
-          {tr("保存失败：", "Save failed: ")}{saveError}
-        </div>
+        <div data-testid="film-save-error"><Failed what={tr("保存失败。", "Not saved.")} detail={saveError} /></div>
       )}
 
       {graph.worldAnchor && (
-        <div className="border rounded p-3 text-sm" data-testid="film-world">
+        <div className="well" data-testid="film-world">
           <div className={c.muted}>{tr("世界锚点", "World anchor")}</div>
           <div>{tr("核心：", "Core: ")}{graph.worldAnchor.storyCore}</div>
           <div>{tr("主题：", "Theme: ")}{graph.worldAnchor.theme} · {tr("题材：", "Genre: ")}{graph.worldAnchor.genre}</div>
@@ -167,9 +166,9 @@ function NodeEditor({
   const dirty = scene !== node.sceneDesc;
 
   return (
-    <div className="border rounded p-3" data-testid={`film-node-${node.id}`}>
+    <div className="well" data-testid={`film-node-${node.id}`}>
       <div className="flex items-center gap-2 text-sm font-medium">
-        <span className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground text-xs">{node.type}</span>
+        <span className="pill">{node.type}</span>
         <span>{node.title || node.id}</span>
       </div>
       {node.imageSlot?.assetRef && (
@@ -183,7 +182,7 @@ function NodeEditor({
       )}
       <textarea
         data-testid={`film-scene-${node.id}`}
-        className="mt-2 w-full text-sm border rounded p-2"
+        className="input mt-2 w-full"
         value={scene}
         onChange={(e) => setScene(e.target.value)}
       />
@@ -202,7 +201,7 @@ function NodeEditor({
           data-testid={`film-save-${node.id}`}
           disabled={!dirty || saving}
           onClick={() => onSave({ ...node, sceneDesc: scene })}
-          className={`px-3 py-1 text-xs rounded ${colors.btnPrimary} disabled:opacity-40`}
+          className="btn btn-sm"
         >
           {saving ? tr("保存中…", "Saving…") : tr("保存", "Save")}
         </button>
@@ -210,7 +209,7 @@ function NodeEditor({
           data-testid={`gen-image-${node.id}`}
           disabled={generating}
           onClick={() => onGenerateImage(node.id)}
-          className={`px-3 py-1 text-xs rounded ${colors.btnSecondary} disabled:opacity-40`}
+          className="btn btn-line btn-sm"
         >
           {generating ? tr("生成中…", "Generating…") : tr("生成配图", "Generate image")}
         </button>

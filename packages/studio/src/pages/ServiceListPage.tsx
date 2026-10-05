@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Check, Eye, EyeOff, Loader2, Plus, Search, X } from "lucide-react";
+import { Check, Eye, EyeOff, Loader2, Plus, Search, X } from "../components/ui/glyphs";
 import { GROUP_ORDER, getGroupDescription, getGroupLabel, getGroupShortLabel } from "../constants/service-groups";
 import { tr } from "../lib/app-language";
 import { fetchJson } from "../hooks/use-api";
@@ -8,6 +8,8 @@ import type { EndpointGroup, ServiceInfo } from "../store/service";
 import { ServiceQuickLinks, getServiceQuickLinks } from "../components/ServiceQuickLinks";
 import { ServiceConfigSourceCard } from "../components/ServiceConfigSourceCard";
 
+import { Spinner } from "../components/ui/working";
+import { ErrorLine } from "../components/ui/states";
 interface Nav {
   toDashboard: () => void;
   toServiceDetail: (id: string) => void;
@@ -15,12 +17,12 @@ interface Nav {
 
 function SkeletonCard() {
   return (
-    <div className="rounded-lg border border-border/30 p-5 animate-pulse">
+    <div className="panel" aria-busy="true">
       <div className="flex items-center justify-between mb-3">
-        <div className="h-4 w-24 bg-muted rounded" />
-        <div className="w-2 h-2 rounded-full bg-muted" />
+        <div className="skel h-4 w-24" />
+        <div className="skel w-2 h-2" />
       </div>
-      <div className="h-3 w-16 bg-muted/60 rounded" />
+      <div className="skel h-3 w-16" />
     </div>
   );
 }
@@ -30,8 +32,8 @@ function ServiceCard({ svc, onClick }: { svc: ServiceInfo; onClick: () => void }
   return (
     <div
       className={[
-        "q-crop group flex min-h-[92px] flex-col gap-2 rounded-xl border bg-card p-5 text-left",
-        "transition-[transform,box-shadow,border-color] duration-[var(--dur-med)] ease-[var(--ease-out-quart)]",
+        "panel crop group flex min-h-23 flex-col gap-2 text-left",
+        "transition-[transform,box-shadow,border-color] duration-(--med)",
         "hover:-translate-y-0.5 hover:shadow-md",
         svc.connected
           ? "border-border/60 hover:border-primary/45"
@@ -40,19 +42,18 @@ function ServiceCard({ svc, onClick }: { svc: ServiceInfo; onClick: () => void }
     >
       {svc.connected && (
         <span
-          className="q-disc q-disc-fill transition-transform duration-[var(--dur-med)] ease-[var(--ease-out-quart)] group-hover:scale-125"
+          className="disc fill transition-transform duration-(--med) group-hover:scale-125 w-21 h-21 -right-8 -top-9 opacity-13"
           aria-hidden="true"
-          style={{ width: 84, height: 84, right: -32, top: -36, opacity: .13 }}
         />
       )}
       <button onClick={onClick} className="relative flex flex-1 flex-col gap-2.5 text-left">
         <div className="flex items-start justify-between gap-3">
           <span className="truncate text-sm font-semibold">{svc.label}</span>
-          <span className="q-glyph !h-7 !w-7 shrink-0 !text-[11px]" aria-hidden="true">
+          <span className="glyph !h-7 !w-7 shrink-0 !text-cap" aria-hidden="true">
             {svc.label.slice(0, 1).toUpperCase()}
           </span>
         </div>
-        <span className={`q-pill ${svc.connected ? "q-pill-ok" : ""}`}>
+        <span className={`pill ${svc.connected ? "pill-ok" : ""}`}>
           {svc.connected ? tr("已连接", "Connected") : tr("未配置", "Not configured")}
         </span>
       </button>
@@ -172,10 +173,10 @@ function CoverConfigCard() {
   if (providers.length === 0 && status !== "error") return null;
 
   return (
-    <section className="rounded-xl border border-border/50 bg-card/50 p-4 space-y-3">
+    <section className="panel space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-medium text-foreground">{tr("封面生成", "Cover generation")}</h2>
+          <h2 className="h-panel">{tr("封面生成", "Cover generation")}</h2>
           <p className="mt-1 text-xs text-muted-foreground/70">
             {tr(
               "只配置封面通道和模型；封面尺寸由短篇封面提示词和内部默认处理。",
@@ -184,7 +185,7 @@ function CoverConfigCard() {
           </p>
         </div>
         {selected?.connected && (
-          <span className="rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success">
+          <span className="pill text-success">
             {needsKey ? tr("已有密钥", "Key saved") : tr("本机渲染", "Runs on this machine")}
           </span>
         )}
@@ -196,7 +197,7 @@ function CoverConfigCard() {
           <select
             value={service}
             onChange={(event) => handleServiceChange(event.target.value)}
-            className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm"
+            className="input w-full"
           >
             {providers.map((provider) => (
               <option key={provider.service} value={provider.service}>{provider.label}</option>
@@ -208,7 +209,7 @@ function CoverConfigCard() {
           <select
             value={model}
             onChange={(event) => setModel(event.target.value)}
-            className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm"
+            className="input w-full"
           >
             {(selected?.models ?? [model]).map((item) => (
               <option key={item} value={item}>{item}</option>
@@ -225,9 +226,9 @@ function CoverConfigCard() {
           value={baseUrl}
           onChange={(event) => setBaseUrl(event.target.value)}
           placeholder={selected?.baseUrl ?? "https://example.com/v1"}
-          className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-mono"
+          className="input w-full font-mono"
         />
-        <span className="block text-[11px] leading-5 text-muted-foreground/55">
+        <span className="block text-small leading-5 text-muted-foreground/55">
           {tr(
             "留空使用该服务的默认地址；自定义地址会作为封面生成 API 根路径。",
             "Leave blank to use the provider default; a custom value becomes the cover generation API root.",
@@ -245,7 +246,7 @@ function CoverConfigCard() {
             value={apiKey}
             onChange={(event) => setApiKey(event.target.value)}
             placeholder="sk-..."
-            className="w-full rounded-lg border border-border/60 bg-background px-3 py-2 pr-10 text-sm font-mono"
+            className="input w-full pr-10 font-mono"
           />
           <button
             type="button"
@@ -257,7 +258,7 @@ function CoverConfigCard() {
         </div>
       </label>
       ) : (
-        <p className="text-[11px] leading-5 text-muted-foreground/55">
+        <p className="text-small leading-5 text-muted-foreground/55">
           {tr(
             "图像在本机的 ComfyUI 中生成：无需密钥，离线可用。工作流与硬件设置在 Quire 的设置面板中。",
             "Images render locally in ComfyUI: no key, works offline. The workflow and hardware settings live in Quire's settings panel.",
@@ -269,16 +270,239 @@ function CoverConfigCard() {
         <button
           onClick={handleSave}
           disabled={status === "saving" || !selected}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+          className="btn btn-sm inline-flex items-center gap-1.5"
         >
-          {status === "saving" && <Loader2 size={12} className="animate-spin" />}
+          {status === "saving" && <Spinner />}
           {tr("保存封面配置", "Save cover config")}
         </button>
         {message && (
-          <span className={`text-xs ${status === "error" ? "text-destructive" : "text-success"}`}>
+          <span className={`hint ${status === "error" ? "is-bad" : "is-good"}`}>
             {message}
           </span>
         )}
+      </div>
+    </section>
+  );
+}
+
+interface EnginesPayload {
+  readonly engines: ReadonlyArray<{ readonly id: string; readonly label: string; readonly surfaces: ReadonlyArray<string> }>;
+  readonly prefs: { readonly plan?: string; readonly bySurface?: Record<string, string> };
+  readonly canva: {
+    readonly connected: boolean; readonly plan: string; readonly used: number; readonly limit: number;
+    readonly exhausted: boolean; readonly lastError: string | null; readonly note: string;
+  };
+}
+
+/** The surfaces a person actually chooses between; the rest follow the default. */
+const ENGINE_SURFACES = ["illustration", "typographic", "photo"] as const;
+
+/**
+ * Which engine draws, and what happens when the paid one runs out.
+ *
+ * The fallback is the part worth stating plainly on screen: a hosted engine
+ * that stops mid-book would otherwise look like a broken pipeline rather than
+ * a spent allowance (23 §8).
+ */
+/**
+ * What you have read, as a research source (13 §Sources): a notes folder
+ * (an Obsidian vault works) and a Zotero library. The count comes back with
+ * the save, so a wrong folder or tag reads as zero here rather than as an
+ * issue that quietly ignored your notes.
+ */
+function PersonalSourcesCard() {
+  const [dir, setDir] = useState("");
+  const [tag, setTag] = useState("");
+  const [since, setSince] = useState("");
+  const [zotero, setZotero] = useState(false);
+  const [state, setState] = useState<{ items: number; bySource?: { markdown: number; zotero: number } } | null>(null);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    void fetch("/api/v1/sources/personal").then((r) => r.json()).then((out: {
+      config?: { markdown?: Array<{ dir: string; tag?: string; since?: string }>; zotero?: unknown };
+      items?: number; bySource?: { markdown: number; zotero: number };
+    }) => {
+      const first = out.config?.markdown?.[0];
+      setDir(first?.dir ?? "");
+      setTag(first?.tag ?? "");
+      setSince(first?.since ?? "");
+      setZotero(Boolean(out.config?.zotero));
+      setState({ items: out.items ?? 0, ...(out.bySource ? { bySource: out.bySource } : {}) });
+    }).catch(() => undefined);
+  }, []);
+
+  const save = async () => {
+    setNote("");
+    const res = await fetch("/api/v1/sources/personal", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        markdown: dir.trim() ? [{ dir: dir.trim(), ...(tag.trim() ? { tag: tag.trim() } : {}), ...(since ? { since } : {}) }] : [],
+        zotero: zotero ? {} : null,
+      }),
+    });
+    const out = await res.json().catch(() => ({})) as { items?: number; config?: { markdown?: unknown[] } };
+    if (dir.trim() && !out.config?.markdown?.length) setNote("The folder must be a full path, like C:\\Users\\you\\Notes.");
+    setState({ items: out.items ?? 0 });
+  };
+
+  return (
+    <div className="panel mt-4">
+      <h3 className="h-panel">Your reading</h3>
+      <p className="hint mt-1">
+        Magazine research reads these before the web, so an issue can be made from what you read.
+        Nothing leaves this machine except as text to your own model.
+      </p>
+      <div className="rowflex flex-wrap gap-2 mt-3">
+        <input value={dir} onChange={(e) => setDir(e.target.value)} placeholder="Notes folder (full path)" aria-label="Notes folder" className="min-w-70" />
+        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Only notes tagged…" aria-label="Tag" />
+        <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label="Since" />
+        <label className="rowflex gap-1.5">
+          <input type="checkbox" checked={zotero} onChange={(e) => setZotero(e.target.checked)} /> Zotero library
+        </label>
+        <button type="button" className="btn btn-sm" onClick={() => void save()}>Save</button>
+      </div>
+      {state ? (
+        <p className="hint mt-2">
+          {state.items} item{state.items === 1 ? "" : "s"} found
+          {state.bySource ? ` (${state.bySource.markdown} notes, ${state.bySource.zotero} from Zotero)` : ""}.
+        </p>
+      ) : null}
+      {note ? <p className="hint mt-1">{note}</p> : null}
+    </div>
+  );
+}
+
+function PictureEngineCard() {
+  const [payload, setPayload] = useState<EnginesPayload | null>(null);
+  const [token, setToken] = useState("");
+  const [showToken, setShowToken] = useState(false);
+  const [status, setStatus] = useState<"idle" | "loading" | "saving" | "error">("loading");
+  const [message, setMessage] = useState("");
+
+  const load = () => fetchJson<EnginesPayload>("/engines")
+    .then((next) => { setPayload(next); setStatus("idle"); })
+    .catch(() => { setStatus("error"); });
+
+  useEffect(() => { void load(); }, []);
+
+  if (!payload) return null;
+  const { canva, prefs } = payload;
+
+  const save = async (patch: Record<string, unknown>) => {
+    setStatus("saving");
+    try {
+      await fetchJson("/engines", { method: "POST", body: JSON.stringify(patch) });
+      await load();
+      setMessage(tr("已保存", "Saved"));
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : tr("保存失败", "Save failed"));
+    }
+  };
+
+  const saveToken = async () => {
+    setStatus("saving");
+    try {
+      await fetchJson("/services/canva/secret", { method: "PUT", body: JSON.stringify({ apiKey: token.trim() }) });
+      setToken("");
+      await load();
+      setMessage(tr("Canva 令牌已保存", "Canva token saved"));
+    } catch (error) {
+      setStatus("error");
+      setMessage(error instanceof Error ? error.message : tr("保存失败", "Save failed"));
+    }
+  };
+
+  return (
+    <section className="panel space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="h-panel">{tr("配图引擎", "Picture engine")}</h2>
+          <p className="mt-1 text-xs text-muted-foreground/70">
+            {tr(
+              "ComfyUI 在本机渲染，没有用量上限。Canva 额度用完时，同一个任务会自动转回 ComfyUI。",
+              "ComfyUI renders on this machine with no limit. When Canva's allowance runs out, the same job falls back to ComfyUI on its own.",
+            )}
+          </p>
+        </div>
+        <span className={`pill ${canva.connected ? "bg-success/10 text-success" : "bg-muted text-muted-foreground"}`}>
+          {canva.connected ? tr("Canva 已连接", "Canva connected") : tr("Canva 未连接", "Canva not connected")}
+        </span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {ENGINE_SURFACES.map((surface) => (
+          <label key={surface} className="space-y-1.5">
+            <span className="block text-xs font-medium text-muted-foreground/70 capitalize">{surface}</span>
+            <select
+              value={prefs?.bySurface?.[surface] ?? "comfy"}
+              onChange={(event) => void save({ bySurface: { ...(prefs?.bySurface ?? {}), [surface]: event.target.value } })}
+              className="input w-full"
+            >
+              <option value="comfy">{tr("ComfyUI（本机）", "ComfyUI (this machine)")}</option>
+              <option value="canva">{tr("先用 Canva，用完转 ComfyUI", "Canva first, ComfyUI when it runs out")}</option>
+            </select>
+          </label>
+        ))}
+        <label className="space-y-1.5">
+          <span className="block text-xs font-medium text-muted-foreground/70">{tr("Canva 套餐", "Canva plan")}</span>
+          <select
+            value={canva.plan}
+            onChange={(event) => void save({ plan: event.target.value })}
+            className="input w-full"
+          >
+            <option value="free">Free</option>
+            <option value="pro">Pro</option>
+            <option value="business">Business</option>
+          </select>
+        </label>
+      </div>
+
+      <label className="space-y-1.5">
+        <span className="block text-xs font-medium text-muted-foreground/70">{tr("Canva 访问令牌", "Canva access token")}</span>
+        <div className="relative">
+          <input
+            type={showToken ? "text" : "password"}
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder={canva.connected ? "••••••••" : "eyJ..."}
+            className="input w-full pr-10 font-mono"
+          />
+          <button
+            type="button"
+            onClick={() => setShowToken((value) => !value)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground"
+          >
+            {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      </label>
+
+      <div className="well">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-xs text-muted-foreground/70">{tr("本月 Canva AI 用量", "Canva AI this month")}</span>
+          <span className={`text-small tnum ${canva.exhausted ? "hint is-bad" : ""}`}>
+            {canva.used} / ~{canva.limit}
+          </span>
+        </div>
+        <p className="mt-1 text-small leading-5 text-muted-foreground/55">{canva.note}</p>
+        {canva.lastError && (
+          <ErrorLine className="mt-1">{canva.lastError}</ErrorLine>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => void saveToken()}
+          disabled={status === "saving" || !token.trim()}
+          className="btn btn-sm inline-flex items-center gap-1.5"
+        >
+          {status === "saving" && <Spinner />}
+          {tr("保存令牌", "Save token")}
+        </button>
+        {message && <span className={`hint ${status === "error" ? "is-bad" : "is-good"}`}>{message}</span>}
       </div>
     </section>
   );
@@ -361,14 +585,17 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <header className="q-head">
-        <p className="q-label">{tr("模型", "Models")}</p>
-        <h1 className="mt-3">{tr("服务商管理", "Providers")}</h1>
+      <header className="head">
+        <p className="label">{tr("模型", "Models")}</p>
+        <h1 className="h-page mt-3">{tr("服务商管理", "Providers")}</h1>
       </header>
 
       <ServiceConfigSourceCard onChange={() => { void refreshServices(); }} />
 
       <CoverConfigCard />
+
+      <PictureEngineCard />
+      <PersonalSourcesCard />
 
       <div className="relative">
         <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40" />
@@ -394,9 +621,9 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         <button
           onClick={() => setSelectedGroups(new Set())}
           className={[
-            "q-pill cursor-pointer transition-colors duration-[var(--dur-fast)]",
+            "pill cursor-pointer transition-colors duration-(--fast)",
             selectedGroups.size === 0
-              ? "q-pill-fill"
+              ? "pill-fill"
               : "hover:border-primary/40 hover:text-primary",
           ].join(" ")}
         >
@@ -409,9 +636,9 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
               key={group}
               onClick={() => toggleGroup(group)}
               className={[
-                "q-pill cursor-pointer transition-colors duration-[var(--dur-fast)]",
+                "pill cursor-pointer transition-colors duration-(--fast)",
                 selected
-                  ? "q-pill-fill"
+                  ? "pill-fill"
                   : "hover:border-primary/40 hover:text-primary",
               ].join(" ")}
             >
@@ -423,7 +650,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         {selectedGroups.size > 0 && (
           <button
             onClick={() => setSelectedGroups(new Set())}
-            className="inline-flex items-center rounded-full px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            className="btn btn-quiet btn-sm"
           >
             {tr("清除筛选", "Clear filters")}
           </button>
@@ -453,7 +680,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
         return (
           <section key={group} className="space-y-3">
             <div className="space-y-1">
-              <h2 className="q-label">
+              <h2 className="label">
                 {getGroupLabel(group)}
               </h2>
               {getGroupDescription(group) && (
@@ -477,7 +704,7 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
 
       {showCustomSection && (
         <section className="space-y-3">
-          <h2 className="q-label">
+          <h2 className="label">
             {tr("自定义服务", "Custom services")}
           </h2>
           <div className="grid grid-cols-2 gap-3">
@@ -491,9 +718,9 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
             {canCreateCustom && (
               <button
                 onClick={() => nav.toServiceDetail("custom")}
-                className="group flex min-h-[92px] flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-border/60 p-5 text-muted-foreground transition-colors duration-[var(--dur-fast)] hover:border-primary/50 hover:text-primary"
+                className="well group flex min-h-23 flex-col items-center justify-center gap-2.5 border-dashed dim"
               >
-                <span className="q-glyph !h-9 !w-9 group-hover:!border-primary group-hover:!bg-primary group-hover:!text-primary-foreground">
+                <span className="glyph !h-9 !w-9 group-hover:!border-primary group-hover:!bg-primary group-hover:!text-primary-foreground">
                   <Plus size={16} />
                 </span>
                 <span className="text-xs">{tr("自定义服务", "Custom service")}</span>
@@ -504,9 +731,9 @@ export function ServiceListPage({ nav }: { nav: Nav }) {
       )}
 
       {!loading && filtered.length === 0 && filteredCustom.length === 0 && !canCreateCustom && (
-        <div className="q-crop rounded-2xl border border-border/60 bg-card p-10 text-center">
-          <span className="q-disc q-disc-dots text-primary" aria-hidden="true"
-                style={{ width: 96, height: 96, left: -30, bottom: -36, opacity: .4 }} />
+        <div className="panel crop text-center">
+          <span className="disc dots text-primary w-24 h-24 -left-7.5 -bottom-9 opacity-40" aria-hidden="true"
+ />
           <p className="relative text-sm text-muted-foreground">
             {tr("没有匹配的服务商", "No matching providers")}
           </p>

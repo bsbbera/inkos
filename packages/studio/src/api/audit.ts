@@ -21,6 +21,8 @@ import {
   type PublicationIssue,
   auditableRoots,
   createStoryAsk,
+  readerFindings,
+  runReaderMap,
   runStoryAudit,
   runStoryDeslop,
   reviseStoryFile,
@@ -32,7 +34,8 @@ import {
   type StoryAudit,
 } from "@actalk/quire-core";
 import {
-  loadPipeline, pipelineFor, refFromPath, reportUnitDone,
+  blendTarget, loadPipeline, pipelineFor, readLexicon, readSetting, refFromPath, reportUnitDone,
+  type StyleProfileV2,
 } from "@actalk/quire-core";
 import { gateState, publicationWorkflow, stageStates } from "./publications.js";
 import { projectWorkflow, type Workflow } from "./workflow.js";
@@ -40,8 +43,62 @@ import {
   isApproved, passCounts, readAuditState, updateFileAudit, type FileAudit,
 } from "./audit-state.js";
 import {
-  blockersFor, countBySeverity, readFindings, readPassage, recordRun, settleFinding,
+  blockersFor, countBySeverity, readFindings, readPassage, readReaderRuns, recordRun,
+  rewriteAccepted, rewriteFinding, saveReaderRun, settleFinding,
 } from "./findings-store.js";
+import { appendFeedback } from "./taste.js";
+
+/**
+ * The world and the voice one file is measured against.
+ *
+ * Both are per-work and the audit is given a path, so they are resolved from
+ * the path rather than threaded through every caller. A file belonging to no
+ * production — and most of these checks are for prose inside one — simply
+ * gets neither, and the deterministic passes that need them do nothing.
+ */
+async function checksFor(root: string, path: string): Promise<{
+  world?: { lexicon: Awaited<ReturnType<typeof readLexicon>>; fidelity?: string };
+  voice?: { target?: StyleProfileV2; name?: string };
+}> {
+  const ref = refFromPath(path);
+  if (!ref) return {};
+  const out: {
+    world?: { lexicon: Awaited<ReturnType<typeof readLexicon>>; fidelity?: string };
+    voice?: { target?: StyleProfileV2; name?: string };
+  } = {};
+
+  const setting = await readSetting(root, ref.type, ref.id);
+  if (setting?.enabled) {
+    out.world = {
+      lexicon: await readLexicon(root, ref.type, ref.id),
+      ...(setting.fidelity ? { fidelity: setting.fidelity } : {}),
+    };
+  }
+
+  const spec = PRODUCTIONS.find((p) => p.id === ref.type);
+  const workDir = join(root, spec?.outDir ?? ref.type, ref.id, ref.type === "book" ? "story" : "");
+  const readJson = async <T>(file: string): Promise<T | null> => {
+    try { return JSON.parse(await readFile(file, "utf-8")) as T; } catch { return null; }
+  };
+  const mark = await readJson<{ id?: string; name?: string; blend?: ReadonlyArray<{ id: string; weight: number; facets?: string[] }> }>(
+    join(workDir, "style.json"),
+  );
+  if (mark) {
+    const entries = mark.blend?.length ? mark.blend : mark.id ? [{ id: mark.id, weight: 1 }] : [];
+    const parts: Array<{ profile: StyleProfileV2 | undefined; weight: number; facets?: ReadonlyArray<string> }> = [];
+    for (const entry of entries) {
+      const profile = await readJson<{ v2?: StyleProfileV2 }>(join(root, "styles", entry.id, "style_profile.json"));
+      parts.push({ profile: profile?.v2, weight: entry.weight, ...("facets" in entry && entry.facets ? { facets: entry.facets } : {}) });
+    }
+    if (!parts.length) {
+      const own = await readJson<{ v2?: StyleProfileV2 }>(join(workDir, "style_profile.json"));
+      if (own?.v2) parts.push({ profile: own.v2, weight: 1 });
+    }
+    const target = blendTarget(parts);
+    if (target) out.voice = { target, ...(mark.name ? { name: mark.name } : {}) };
+  }
+  return out;
+}
 
 export interface AuditRouteDeps {
   readonly root: string;
@@ -90,7 +147,10 @@ const ROOTS = auditableRoots();
  */
 const SKIP = new Set([
   "node_modules", "assets", "source", "generated", "selected", "_trash",
-  ".inkos", ".quire", "truth", "chapters-raw", "cache", "drafts",
+  ".quire", "research", "truth", "chapters-raw", "cache", "drafts",
+  // The person's own final (04 §6) is what the drafts are compared against,
+  // not another draft to audit.
+  "my-final",
 ]);
 
 /** Files that are scaffolding for a run rather than the thing it produced. */
@@ -177,7 +237,17 @@ async function exists(absolute: string): Promise<boolean> {
   try { await stat(absolute); return true; } catch { return false; }
 }
 
-export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
+/** Read, or de-slop, one unit of a run — what the pipeline's content stages call. */
+export type UnitAuditor = (input: {
+  readonly type: string;
+  readonly id: string;
+  readonly unit: number;
+  readonly mode: "audit" | "deslop";
+  readonly signal?: AbortSignal;
+  readonly onProgress?: (message: string) => void;
+}) => Promise<{ readonly paths: ReadonlyArray<string>; readonly findings: number }>;
+
+export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): { readonly auditUnit: UnitAuditor } {
   const { root, broadcast } = deps;
 
   /*
@@ -206,6 +276,119 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
       broadcast("audit:state", { path: written });
     }
   }
+
+  /**
+   * One file through the audit, with its counts and copies kept in step.
+   *
+   * Shared by the button and by the pipeline stage, so a chapter read by a run
+   * and a chapter read by a person leave the same record behind.
+   */
+  async function auditOne(path: string, run: {
+    readonly deslop: boolean;
+    readonly revise: boolean;
+    readonly ask: ReturnType<typeof createStoryAsk>;
+    readonly signal: AbortSignal | undefined;
+    readonly onProgress?: (message: string) => void;
+  }): Promise<StoryAudit> {
+    const options = {
+      projectRoot: root,
+      path,
+      ...(run.signal ? { signal: run.signal } : {}),
+      ask: run.ask,
+      onProgress: (message: string) => {
+        broadcast("audit:progress", { path, message });
+        run.onProgress?.(message);
+      },
+      // The rewrite is minutes long and the editor beside it was showing
+      // the text being replaced. Each finished section goes out as it lands.
+      onText: (markdown: string) => broadcast("audit:text", { path, markdown }),
+      // The heading of each section as it lands. `audit:text` carries the
+      // whole document, which is what the editor needs and useless as a
+      // progress signal.
+      onSection: (heading: string) => broadcast("audit:section", { path, heading }),
+      // The two things this file is measured against beyond itself: the
+      // world it is set in, and the voice it is meant to be in. Both are
+      // per-work, so they are looked up from the path (22 §4, 05 §5).
+      ...(await checksFor(root, path)),
+    };
+    const audit = run.deslop
+      ? await runStoryDeslop(options)
+      : await runStoryAudit({ ...options, revise: run.revise });
+
+    /*
+     * Every count here is a count of passes over the prose, so the three
+     * numbers can be read against each other.
+     *
+     * `reads` used to be `+ 1` - one per request, whatever happened inside
+     * it. A revise goes round the loop up to `MAX_ROUNDS` times and audits
+     * once more before it stops, so a single press that rewrote twice
+     * recorded one read and two rewrites. A run audits `rounds + 1` times.
+     *
+     * The counts go up rather than being overwritten - "rewritten on
+     * Tuesday" and "rewritten four times" are different facts and only the
+     * second one tells you a file is fighting back.
+     */
+    const before = (await readAuditState(root)).files[path] ?? {};
+    const added = passCounts(audit.rounds, run.deslop);
+    await updateFileAudit(root, path, {
+      checked: new Date().toISOString(),
+      findings: audit.findings.length,
+      warnings: audit.findings.filter((f) => f.severity !== "note").length,
+      rewritten: audit.rounds > 0 ? new Date().toISOString() : undefined,
+      reads: (before.reads ?? 0) + added.reads,
+      revisions: (before.revisions ?? 0) + added.revisions,
+      // A de-AI pass you asked for and that found nothing still ran.
+      deslops: (before.deslops ?? 0) + added.deslops,
+    });
+    if (audit.rounds > 0) await recomposeAround(path);
+    broadcast("audit:state", { path });
+    return audit;
+  }
+
+  /**
+   * The content stage's reader (14 §5): the unit's own files, read or
+   * de-slopped, findings kept exactly as a person's audit keeps them.
+   *
+   * A short is on disk four times over; its chapter files are the text and the
+   * rest are copies `recomposeAround` rebuilds, so only the chapters are read.
+   * A de-slop never rewrites a signed-off file, same as the button.
+   */
+  const auditUnit: UnitAuditor = async (input) => {
+    const all = (await listAuditTargets(root)).filter((t) => {
+      const ref = refFromPath(t.path);
+      return ref?.type === input.type && ref.id === input.id && ref.unit === input.unit;
+    });
+    if (!all.length) {
+      throw new Error(`no text for ${input.type}/${input.id} unit ${input.unit} to ${input.mode === "deslop" ? "de-slop" : "read"}`);
+    }
+    const chapters = all.filter((t) => composedDirOf(t.path));
+    let paths = (chapters.length ? chapters : all).map((t) => t.path);
+    if (input.mode === "deslop") {
+      const state = await readAuditState(root);
+      const locked = paths.filter((p) => isApproved(state, p));
+      if (locked.length) input.onProgress?.(`Left ${locked.length} signed-off file${locked.length === 1 ? "" : "s"} alone`);
+      paths = paths.filter((p) => !isApproved(state, p));
+    }
+    const ask = createStoryAsk(await deps.pipeline(), input.signal);
+    const located: Finding[] = [];
+    let findings = 0;
+    for (const path of paths) {
+      input.signal?.throwIfAborted();
+      broadcast("audit:run", { path, state: "start" });
+      const audit = await auditOne(path, {
+        deslop: input.mode === "deslop", revise: false, ask, signal: input.signal,
+        ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+      });
+      located.push(...audit.located);
+      findings += audit.findings.length;
+      broadcast("audit:run", { path, state: "done" });
+    }
+    if (paths.length) {
+      await recordRun(root, located, paths);
+      broadcast("findings:changed", { paths });
+    }
+    return { paths, findings };
+  };
 
   app.get("/api/v1/audit/targets", async (c) => {
     return c.json({ targets: await listAuditTargets(root) });
@@ -395,61 +578,15 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
       for (const path of requested) {
         control.signal.throwIfAborted();
         broadcast("audit:run", { path, state: "start" });
-        const options = {
-          projectRoot: root,
-          path,
-          signal: control.signal,
-          ask,
-          onProgress: (message: string) => broadcast("audit:progress", { path, message }),
-          // The rewrite is minutes long and the editor beside it was showing
-          // the text being replaced. Each finished section goes out as it lands.
-          onText: (markdown: string) => broadcast("audit:text", { path, markdown }),
-          // The heading of each section as it lands. `audit:text` carries the
-          // whole document, which is what the editor needs and useless as a
-          // progress signal.
-          onSection: (heading: string) => broadcast("audit:section", { path, heading }),
-        };
-
         try {
-          const audit = body.deslop
-            ? await runStoryDeslop(options)
-            : await runStoryAudit({ ...options, revise: body.revise === true });
+          const audit = await auditOne(path, {
+            deslop: body.deslop === true, revise: body.revise === true, ask, signal: control.signal,
+          });
           last = audit;
           located.push(...audit.located);
           read.push(path);
           ran.push({ path, findings: audit.findings.length, rounds: audit.rounds });
           broadcast("audit:run", { path, state: "done" });
-
-          /*
-           * Every count here is a count of passes over the prose, so the three
-           * numbers can be read against each other.
-           *
-           * `reads` used to be `+ 1` - one per request, whatever happened
-           * inside it. A revise goes round the loop up to `MAX_ROUNDS` times
-           * and audits once more before it stops, so a single press that
-           * rewrote twice recorded one read and two rewrites, and the file
-           * claimed to have been rewritten more often than it had been read.
-           * A run audits `rounds + 1` times: once per round, plus the pass
-           * that found nothing left to act on and ended the loop.
-           *
-           * The counts go up rather than being overwritten - "rewritten on
-           * Tuesday" and "rewritten four times" are different facts and only
-           * the second one tells you a file is fighting back.
-           */
-          const before = (await readAuditState(root)).files[path] ?? {};
-          const added = passCounts(audit.rounds, body.deslop === true);
-          await updateFileAudit(root, path, {
-            checked: new Date().toISOString(),
-            findings: audit.findings.length,
-            warnings: audit.findings.filter((f) => f.severity !== "note").length,
-            rewritten: audit.rounds > 0 ? new Date().toISOString() : undefined,
-            reads: (before.reads ?? 0) + added.reads,
-            revisions: (before.revisions ?? 0) + added.revisions,
-            // A de-AI pass you asked for and that found nothing still ran.
-            deslops: (before.deslops ?? 0) + added.deslops,
-          });
-          if (audit.rounds > 0) await recomposeAround(path);
-          broadcast("audit:state", { path });
         } catch (error) {
           if (control.signal.aborted) throw error;
           /*
@@ -635,6 +772,55 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
     }
   });
 
+  /**
+   * The reader map: where simulated readers would stop (19 §5c).
+   *
+   * Beside the audit rather than inside it: it asks whether anyone keeps
+   * reading, which no dimension does, and it never blocks — every cold
+   * paragraph is a note. Each run replaces its own findings; the audit's are
+   * left exactly as they were.
+   */
+  app.get("/api/v1/audit/reader", async (c) => {
+    const path = String(c.req.query("path") ?? "");
+    return c.json((await readReaderRuns(root))[path] ?? { at: null, maps: [] });
+  });
+
+  app.post("/api/v1/audit/reader", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { path?: string };
+    const path = String(body.path ?? "").trim();
+    if (!path) return c.json({ error: "an artifact path is required" }, 400);
+    if (running.has(path)) return c.json({ error: "this file is already being worked on" }, 409);
+
+    const control = new AbortController();
+    running.set(path, control);
+    try {
+      const markdown = await readFile(safeChildPath(root, path), "utf-8");
+      const type = ROOTS.find((r) => path.startsWith(`${r.dir}/`))?.kind ?? "book";
+      broadcast("audit:run", { path, state: "start" });
+      const maps = await runReaderMap({
+        markdown,
+        type,
+        ask: createStoryAsk(await deps.pipeline(), control.signal),
+        signal: control.signal,
+        onProgress: (message: string) => broadcast("audit:progress", { path, message }),
+      });
+      const fresh = readerFindings(path, markdown, maps);
+      const at = new Date().toISOString();
+      await saveReaderRun(root, path, { at, maps }, fresh);
+      broadcast("audit:run", { path, state: "done" });
+      broadcast("findings:changed", { path });
+      return c.json({ at, maps, cold: fresh.length });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const stopped = control.signal.aborted;
+      broadcast("audit:run", { path, state: stopped ? "cancelled" : "error", message });
+      if (stopped) return c.json({ cancelled: true, path }, 200);
+      return c.json({ error: message }, 500);
+    } finally {
+      running.delete(path);
+    }
+  });
+
   app.post("/api/v1/audit/cancel", async (c) => {
     const body = await c.req.json().catch(() => ({})) as { path?: string };
     const path = String(body.path ?? "").trim();
@@ -791,8 +977,114 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): void {
       broadcast("audit:text", { path: outcome.finding.path, markdown });
     }
     broadcast("findings:changed", { path: outcome.finding.path });
+    // Taking or leaving a finding is a verdict on the checker (18 §1).
+    if (state !== "open") {
+      const ref = refFromPath(outcome.finding.path);
+      await appendFeedback(root, {
+        ref: ref ? { type: ref.type, id: ref.id, unit: ref.unit } : { type: "unknown", id: outcome.finding.path },
+        surface: "content",
+        verdict: state === "accepted" ? "keep" : "reject",
+        target: outcome.finding.path,
+        source: "audit",
+        note: outcome.finding.title,
+        scope: { audit: outcome.finding.category },
+      }).catch(() => undefined);
+    }
     return c.json({ ok: true, finding: outcome.finding, wrote: outcome.wrote });
   });
+
+  /**
+   * The writer rewrites the words one finding is about, and nothing else.
+   *
+   * The third hand beside Accept (the checker's wording) and writing it
+   * yourself. Same locks as every other pass that writes: a signed-off file is
+   * not rewritten, and one pass at a time per file.
+   */
+  app.post("/api/v1/findings/:id/rewrite", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { scope?: string; note?: string };
+    const finding = (await readFindings(root)).find((f) => f.id === c.req.param("id"));
+    if (!finding) return c.json({ error: REWRITE_ERRORS["no-such-finding"] }, 404);
+    if (isApproved(await readAuditState(root), finding.path)) {
+      return c.json({
+        error: "this file has been signed off — withdraw the sign-off before changing it",
+      }, 409);
+    }
+    if (running.has(finding.path)) return c.json({ error: "this file is already being worked on" }, 409);
+
+    const control = new AbortController();
+    running.set(finding.path, control);
+    try {
+      const out = await rewriteFinding(root, finding.id, {
+        scope: body.scope === "paragraph" || body.scope === "beat" ? body.scope : "quote",
+        note: String(body.note ?? "").trim(),
+        voice: await voiceGuideOf(root, finding.path),
+        ask: createStoryAsk(await deps.pipeline(), control.signal),
+      });
+      if (!out.ok) {
+        const status = out.reason === "no-such-finding" ? 404 : out.reason === "drifted" ? 409 : 422;
+        const error = REWRITE_ERRORS[out.reason] + (out.detail ? ` (${out.detail})` : "");
+        return c.json({ error, reason: out.reason }, status);
+      }
+      // The same backup every other writing pass leaves, so the same Restore undoes it.
+      await writeFile(join(root, backupPathOf(finding.path)), out.original, "utf-8");
+      await updateFileAudit(root, finding.path, { rewritten: new Date().toISOString() });
+      await recomposeAround(finding.path);
+      broadcast("audit:text", { path: finding.path, markdown: out.markdown });
+      broadcast("audit:state", { path: finding.path });
+      broadcast("findings:changed", { path: finding.path });
+      return c.json({ ok: true, finding: out.finding });
+    } catch (error) {
+      if (control.signal.aborted) return c.json({ cancelled: true }, 200);
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    } finally {
+      running.delete(finding.path);
+    }
+  });
+
+  /**
+   * Rewrite everything accepted on one file, a paragraph at a time (19 §5b).
+   *
+   * Accepting fourteen findings and then pressing Rewrite fourteen times is the
+   * work this replaces. One call per paragraph, each seeing all of that
+   * paragraph's complaints, so the second fix cannot undo the first.
+   */
+  app.post("/api/v1/audit/file/rewrite-accepted", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { path?: string; note?: string; scope?: string };
+    const path = String(body.path ?? "").trim();
+    if (!path) return c.json({ error: "path is required" }, 400);
+    if (isApproved(await readAuditState(root), path)) {
+      return c.json({
+        error: "this file has been signed off — withdraw the sign-off before changing it",
+      }, 409);
+    }
+    if (running.has(path)) return c.json({ error: "this file is already being worked on" }, 409);
+
+    const control = new AbortController();
+    running.set(path, control);
+    try {
+      const out = await rewriteAccepted(root, path, {
+        ask: createStoryAsk(await deps.pipeline(), control.signal),
+        scope: body.scope === "beat" ? "beat" : "paragraph",
+        note: String(body.note ?? "").trim(),
+        voice: await voiceGuideOf(root, path),
+      });
+      if (out.rewritten > 0) {
+        await updateFileAudit(root, path, { rewritten: new Date().toISOString() });
+        await recomposeAround(path);
+        broadcast("audit:text", { path, markdown: await readFile(safeChildPath(root, path), "utf-8") });
+        broadcast("audit:state", { path });
+        broadcast("findings:changed", { path });
+      }
+      return c.json(out);
+    } catch (error) {
+      if (control.signal.aborted) return c.json({ cancelled: true }, 200);
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    } finally {
+      running.delete(path);
+    }
+  });
+
+  return { auditUnit };
 }
 
 /** Why a settle could not happen, said to the person who asked for it. */
@@ -802,6 +1094,28 @@ const SETTLE_ERRORS: Readonly<Record<string, string>> = {
   drifted: "the words this was about have changed since the check ran",
   empty: "a replacement cannot be empty",
 };
+
+const REWRITE_ERRORS: Readonly<Record<string, string>> = {
+  "no-such-finding": "that finding is not on record any more",
+  "no-span": "this finding is about the whole page — use the note box to rewrite the page",
+  drifted: "the words this was about have changed since the check ran",
+  empty: "the writer came back with nothing — the text is unchanged",
+  unsafe: "the rewrite changed more than the sentence, so it was not written",
+};
+
+/**
+ * The work's style guide, for a pass that writes inside it.
+ *
+ * Found where `styleDirFor` in server.ts puts it: the production's folder, the
+ * project, then `story/` for a book.
+ */
+async function voiceGuideOf(root: string, path: string): Promise<string | undefined> {
+  const at = ROOTS.find((r) => path.startsWith(`${r.dir}/`));
+  const project = at ? projectOf(path, at.dir) : "";
+  if (!at || !project) return undefined;
+  const dir = join(root, at.dir, project, at.kind === "book" ? "story" : "");
+  return readFile(join(dir, "style_guide.md"), "utf-8").catch(() => undefined);
+}
 
 /** Worst first, then in reading order, which is the order a queue is worked. */
 const SEVERITY_ORDER = { blocking: 0, warning: 1, note: 2 } as const;

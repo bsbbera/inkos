@@ -51,15 +51,15 @@ export function DaemonControl({
 
   return (
     <div className="stack-lg">
-      <section className="panel crop" style={{ overflow: "hidden" }}>
-        <span className="disc fill" style={{ width: 230, height: 230, right: -70, top: -96, opacity: 0.1 }} />
-        <span className="disc stroke" style={{ width: 150, height: 150, right: 34, top: 22, opacity: 0.28 }} />
-        <div className="rowflex" style={{ alignItems: "center", gap: 20, flexWrap: "wrap", position: "relative" }}>
-          <span className="grow" style={{ minWidth: 250 }}>
-            <h2 className="h-page" style={{ margin: 0 }}>
+      <section className="panel crop overflow-hidden">
+        <span className="disc fill w-57.5 h-57.5 -right-17.5 -top-24 opacity-10" />
+        <span className="disc stroke w-37.5 h-37.5 right-8.5 top-5.5 opacity-28" />
+        <div className="rowflex items-center gap-5 flex-wrap relative">
+          <span className="grow min-w-62.5">
+            <h2 className="h-page m-0">
               {running ? "The daemon is running" : "The daemon is stopped"}
             </h2>
-            <p className="muted" style={{ fontSize: 14, marginTop: 9, maxWidth: "52ch" }}>
+            <p className="muted text-body mt-2.5 max-w-measure">
               {running
                 ? "It picks up whatever the plan says is next and stops at anything that needs you. Stopping is safe and takes effect after the current chapter — everything already written stays on disk."
                 : "Nothing is being written automatically. Start it and it works through the plan on its own, stopping at every gate that needs a person."}
@@ -67,8 +67,7 @@ export function DaemonControl({
           </span>
           <button
             type="button"
-            className={running ? "btn btn-line" : "btn"}
-            style={{ padding: "13px 22px", fontSize: 17.5 }}
+            className={`${running ? "btn btn-line" : "btn"} py-3.5 px-5.5 text-lead`}
             disabled={busy}
             onClick={() => void toggle()}
           >
@@ -87,7 +86,7 @@ export function DaemonControl({
               {running ? t("daemon.running") : t("daemon.stopped")}
             </span>
           </div>
-          <div className="panel-body scroll-y" style={{ maxHeight: 500 }}>
+          <div className="panel-body scroll-y max-h-125">
             {events.length === 0 ? (
               <Empty icon="cpu" title={running ? "Nothing has happened yet." : "The daemon is off."}>
                 {running ? t("daemon.waitingEvents") : t("daemon.startHint")}
@@ -99,11 +98,11 @@ export function DaemonControl({
                   const text = String(d.message ?? d.title ?? d.bookId ?? JSON.stringify(d));
                   const bad = m.event.endsWith(":error");
                   return (
-                    <div className="row" key={`${m.seq}-${i}`} style={{ padding: "8px 4px" }}>
-                      <span className={bad ? "pill pill-bad mono" : "pill mono"} style={{ fontSize: 11 }}>
+                    <div className="row py-2 px-1" key={`${m.seq}-${i}`}>
+                      <span className={`${bad ? "pill pill-bad mono" : "pill mono"} text-cap`}>
                         {m.event}
                       </span>
-                      <span className="grow trunc mono" style={{ fontSize: 11 }}>{text}</span>
+                      <span className="grow trunc mono text-cap">{text}</span>
                       <span className="meta tnum">
                         {new Date(m.timestamp).toLocaleTimeString()}
                       </span>

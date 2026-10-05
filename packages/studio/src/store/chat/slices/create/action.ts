@@ -9,6 +9,11 @@ export const createCreateSlice: StateCreator<ChatStore, [], [], CreateActions> =
   openProjectArtifact: (path) => set({ projectArtifactPath: path }),
   closeProjectArtifact: () => set({ projectArtifactPath: null }),
   setBookSummary: (summary) => set({ bookSummary: summary }),
-  markProposalResolved: (execId, resolution) =>
-    set((s) => ({ resolvedProposals: { ...s.resolvedProposals, [execId]: resolution } })),
+  markProposalResolved: (execId, resolution, runSessionId) =>
+    set((s) => ({
+      resolvedProposals: { ...s.resolvedProposals, [execId]: resolution },
+      proposalRuns: runSessionId
+        ? { ...s.proposalRuns, [execId]: runSessionId }
+        : s.proposalRuns,
+    })),
 });

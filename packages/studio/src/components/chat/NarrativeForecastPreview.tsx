@@ -7,7 +7,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Sparkles,
-} from "lucide-react";
+} from "../ui/glyphs";
 import {
   NarrativeForecastSchema,
   type ForecastBranch,
@@ -17,6 +17,7 @@ import {
 import type { ToolExecution } from "../../store/chat/types";
 import { tr } from "../../lib/app-language";
 
+import { Spinner } from "../ui/working";
 export type NarrativeForecastPreviewDetails =
   | {
       readonly kind: "forecast";
@@ -105,7 +106,7 @@ function label(zh: boolean, values: readonly [string, string]): string {
 function RiskPills({ risks, zh }: { risks: readonly ForecastRisk[]; zh: boolean }) {
   if (risks.length === 0) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full border border-success/20 bg-success/5 px-2 py-0.5 text-[11px] text-emerald-700 dark:text-emerald-300">
+      <span className="pill pill-ok">
         <ShieldCheck size={11} />
         {zh ? "未发现硬风险" : "No hard risks"}
       </span>
@@ -117,7 +118,7 @@ function RiskPills({ risks, zh }: { risks: readonly ForecastRisk[]; zh: boolean 
         <span
           key={`${risk.kind}-${index}`}
           title={risk.description}
-          className="inline-flex items-center rounded-full border border-warning/25 bg-warning/8 px-2 py-0.5 text-[11px] text-amber-800 dark:text-amber-200"
+          className="pill pill-warn"
         >
           {label(zh, RISK_LABELS[risk.kind])}
         </span>
@@ -130,7 +131,7 @@ function ChangeList({ title, items }: { title: string; items: readonly string[] 
   if (items.length === 0) return null;
   return (
     <div>
-      <div className="mb-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground/70">{title}</div>
+      <div className="mb-1 text-small font-medium uppercase tracking-widest text-muted-foreground/70">{title}</div>
       <ul className="space-y-1 text-xs leading-5 text-muted-foreground">
         {items.map((item, index) => <li key={index}>· {item}</li>)}
       </ul>
@@ -154,18 +155,18 @@ function BranchCard({
   readonly onSelect?: (branchId: string) => void;
 }) {
   return (
-    <article className="relative flex min-w-0 flex-col rounded-xl border border-border/55 bg-background/70 p-3.5 shadow-[0_10px_30px_-24px_rgba(0,0,0,0.65)]">
-      <div className="absolute -top-[19px] left-1/2 h-4 w-px -translate-x-1/2 bg-primary/35" />
-      <div className="absolute -top-[22px] left-1/2 h-2 w-2 -translate-x-1/2 rounded-full border border-primary/50 bg-card" />
+    <article className="well relative flex min-w-0 flex-col">
+      <div className="absolute -top-4.75 left-1/2 h-4 w-px -translate-x-1/2 bg-primary/35" />
+      <div className="absolute -top-5.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full border border-primary/50 bg-card" />
 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[11px] font-medium uppercase tracking-[0.13em] text-primary/75">{branch.branchId}</div>
-          <h4 className="mt-1 text-[15px] font-semibold leading-5 text-foreground">{branch.title}</h4>
+          <div className="text-small font-medium uppercase tracking-widest text-primary/75">{branch.branchId}</div>
+          <h4 className="mt-1 text-body font-semibold leading-5 text-foreground">{branch.title}</h4>
         </div>
-        <div className="shrink-0 rounded-lg border border-primary/20 bg-primary/5 px-2 py-1 text-right">
-          <div className="text-[15px] font-semibold leading-none text-primary">{branch.intentAlignment.score}</div>
-          <div className="mt-1 text-[9px] uppercase tracking-wide text-muted-foreground">{zh ? "意图" : "intent"}</div>
+        <div className="notice shrink-0 text-right">
+          <div className="text-body font-semibold leading-none text-primary">{branch.intentAlignment.score}</div>
+          <div className="mt-1 text-micro uppercase tracking-wide text-muted-foreground">{zh ? "意图" : "intent"}</div>
         </div>
       </div>
 
@@ -174,7 +175,7 @@ function BranchCard({
       <ol className="mt-3 space-y-2 border-l border-primary/20 pl-3">
         {branch.beats.map((beat) => (
           <li key={`${branch.branchId}-${beat.chapter}`} className="relative text-xs leading-5 text-foreground/90">
-            <span className="absolute -left-[15px] top-[7px] h-1.5 w-1.5 rounded-full bg-primary/65" />
+            <span className="absolute -left-3.75 top-1.75 h-1.5 w-1.5 rounded-full bg-primary/65" />
             <span className="font-medium text-primary">{zh ? `第 ${beat.chapter} 章` : `Ch. ${beat.chapter}`}</span>
             <span className="ml-1.5">{beat.summary}</span>
           </li>
@@ -210,9 +211,9 @@ function BranchCard({
         data-branch-id={branch.branchId}
         disabled={stale || pending || !onSelect}
         onClick={() => onSelect?.(branch.branchId)}
-        className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary/15 disabled:cursor-not-allowed disabled:border-border/40 disabled:bg-muted/30 disabled:text-muted-foreground/60"
+        className="btn btn-line btn-sm mt-4 inline-flex w-full items-center justify-center gap-1.5"
       >
-        {pending ? <RefreshCw size={13} className="animate-spin" /> : <Check size={13} />}
+        {pending ? <Spinner /> : <Check size={13} />}
         {stale
           ? (zh ? "过期推演不可采用" : "Stale forecast")
           : (zh ? "采用此分支" : "Use this branch")}
@@ -229,7 +230,7 @@ export function NarrativeForecastPreview({ exec, onSelectBranch, onRecheck }: Na
 
   if (details.kind === "selected") {
     return (
-      <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/25 bg-primary/5 px-3.5 py-3">
+      <div className="notice mx-3 mb-3 mt-1">
         <div className="flex items-center gap-2 text-sm font-semibold text-primary">
           <Check size={15} />
           {tr("候选分支已保存", "Candidate branch saved")}
@@ -241,7 +242,7 @@ export function NarrativeForecastPreview({ exec, onSelectBranch, onRecheck }: Na
           )}
         </p>
         {details.stale && (
-          <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
+          <p className="mt-2 text-xs text-(--warn) ">
             {tr("该推演基于旧正史，请核验后再继续写作。", "This forecast is stale; verify it before writing.")}
           </p>
         )}
@@ -271,27 +272,27 @@ export function NarrativeForecastPreview({ exec, onSelectBranch, onRecheck }: Na
   };
 
   return (
-    <section className="mx-3 mb-3 mt-1 overflow-hidden rounded-2xl border border-primary/25 bg-[linear-gradient(145deg,hsl(var(--card))_0%,hsl(var(--muted)/0.32)_100%)]">
+    <section className="panel panel-flush mx-3 mb-3 mt-1 overflow-hidden">
       <header className="border-b border-border/45 px-4 py-3.5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[15px] font-semibold text-foreground">
+              <span className="inline-flex items-center gap-1.5 text-body font-semibold text-foreground">
                 <GitFork size={16} className="text-primary" />
                 {zh ? "剧情多线推演" : "Narrative forecast"}
               </span>
-              <span className="rounded-full border border-primary/20 bg-primary/8 px-2 py-0.5 text-[10px] font-medium tracking-wide text-primary">
+              <span className="pill">
                 {zh ? "非正史规划" : "NON-CANONICAL"}
               </span>
               {stale && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-warning/25 bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200">
+                <span className="pill pill-warn">
                   <AlertTriangle size={11} />
                   {zh ? "正史已变化" : "Canon changed"}
                 </span>
               )}
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground/85">{forecast.divergence}</p>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-small text-muted-foreground">
               <span>{zh ? `基于第 ${forecast.baseChapter} 章` : `After chapter ${forecast.baseChapter}`}</span>
               <span>{zh ? `${forecast.branches.length} 条候选分支` : `${forecast.branches.length} branches`}</span>
               <span>{zh ? `推演未来约 ${forecast.horizon} 章` : `~${forecast.horizon} chapters ahead`}</span>
@@ -302,15 +303,15 @@ export function NarrativeForecastPreview({ exec, onSelectBranch, onRecheck }: Na
               type="button"
               onClick={() => { void recheck(); }}
               disabled={rechecking}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground disabled:opacity-50"
+              className="btn btn-line btn-sm inline-flex shrink-0 items-center gap-1.5"
             >
-              <RefreshCw size={12} className={rechecking ? "animate-spin" : ""} />
+              {rechecking ? <Spinner /> : <RefreshCw size={12} />}
               {zh ? "重新核验" : "Recheck"}
             </button>
           )}
         </div>
         {stale && (
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/8 px-3 py-2 text-xs leading-5 text-amber-900 dark:text-amber-100">
+          <div className="caution mt-3 flex items-start gap-2 text-xs leading-5">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <span>{zh ? "正史输入已在生成后变化。请重新推演，不要继续采用旧分支。" : "Canonical inputs changed after generation. Regenerate before selecting a branch."}</span>
           </div>
@@ -318,8 +319,8 @@ export function NarrativeForecastPreview({ exec, onSelectBranch, onRecheck }: Na
       </header>
 
       <div className="relative px-4 pb-4 pt-7">
-        <div className="pointer-events-none absolute left-8 right-8 top-[17px] h-px bg-gradient-to-r from-transparent via-primary/35 to-transparent" />
-        <div className="pointer-events-none absolute left-1/2 top-[9px] -translate-x-1/2 text-primary/70">
+        <div className="pointer-events-none absolute left-8 right-8 top-4.25 h-px bg-gradient-to-r from-transparent via-primary/35 to-transparent" />
+        <div className="pointer-events-none absolute left-1/2 top-2.25 -translate-x-1/2 text-primary/70">
           <Sparkles size={14} />
         </div>
         <div className="grid auto-cols-[minmax(17rem,1fr)] grid-flow-col gap-3 overflow-x-auto pb-1 [scrollbar-width:thin]">

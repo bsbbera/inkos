@@ -56,6 +56,7 @@ import {
   readPlayImageSettings,
   writePlayImageSettings,
   type PlayImageSettings,
+  type StyleProfileV2,
   Scheduler,
   coverSecretKey,
   normalizeCoverBaseUrl,
@@ -144,11 +145,19 @@ import {
   resumePipeline,
   pausePipeline,
   registerExecutor,
+  EXECUTORS as CORE_EXECUTORS,
+  createStoryAsk,
+  runStoryAudit,
   detectAndRewrite,
   enqueueJob,
+  trackJob,
+  ingestLinkedPages,
+  CRAWL_MAX_PAGES,
   cancelJob,
+  cancelPipelineUnit,
   listJobs,
   setJobSink,
+  setJobUnit,
   createStorybook,
   planStorybook,
   writeStorybookSpread,
@@ -160,6 +169,7 @@ import {
   openPublicationIssue,
   ensurePipeline,
   loadPipeline,
+  openPipelineGate,
   pipelineFor,
   pipelineWaitingOn,
   rejectPipelineGate,
@@ -168,6 +178,20 @@ import {
   type PipelineGate,
   type PipelineState,
   type ProductionRef,
+  type StageContext,
+  type StageResult,
+  PRINT_SERVICES,
+  TRIMS,
+  buildPrintEdition,
+  isbnDigits,
+  normaliseProfile,
+  readPrintProfile,
+  typstBinary,
+  writePrintProfile,
+  loadPersonalItems,
+  readPersonalConfig,
+  writePersonalConfig,
+  type PersonalSourcesConfig,
   AGENT_JOBS,
   AGENT_ROSTER,
   AGENT_GROUP_LABELS,
@@ -177,9 +201,18 @@ import {
   type ModelPin,
 } from "@actalk/quire-core";
 import { listAuditTargets, registerAuditRoutes } from "./audit.js";
+import {
+  approveAsset, isServableImage, redesignAsset, registerAssetRoutes, rememberOnRecipe, trashAsset,
+} from "./assets.js";
+import { WORLD_TYPES, createDesignDesk } from "./design-desk.js";
+import { createSettingDesk } from "./setting-desk.js";
+import { registerAuditPackRoutes, silenceCategory } from "./audit-packs.js";
+import { registerFinalRoutes } from "./final.js";
+import { addNoteFinding } from "./findings-store.js";
+import { appendFeedback, registerTasteRoutes } from "./taste.js";
 import { registerProductionContextRoutes } from "./production-context.js";
 import { isApproved, readAuditState, updateFileAudit } from "./audit-state.js";
-import { blockersFor, readFindings } from "./findings-store.js";
+import { blockersFor, readFindings, readPassage } from "./findings-store.js";
 import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
@@ -508,8 +541,10 @@ function resolveProjectImageFile(root: string, rawPath: string): { readonly reso
   ) {
     throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Invalid project file path");
   }
-  if (!relPath.startsWith("shorts/") && !relPath.startsWith("covers/") && !relPath.startsWith("interactive-films/")) {
-    throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Only generated shorts/, covers/, interactive-films/ images can be previewed");
+  // Generated art from any production now, for the gallery; other images under
+  // a book stay private. One rule, shared with the gallery's listing.
+  if (!isServableImage(relPath)) {
+    throw new ApiError(400, "INVALID_PROJECT_FILE_PATH", "Only generated art, covers and shorts/ or interactive-films/ images can be previewed");
   }
 
   const ext = relPath.split(".").pop()?.toLowerCase() ?? "";
@@ -746,7 +781,7 @@ async function normalizeAgentAttachments(
     throw new ApiError(413, "TOO_MANY_ATTACHMENTS", `At most ${MAX_AGENT_ATTACHMENTS} files can be attached to one message`);
   }
 
-  const uploadDir = join(root, ".inkos", "uploads", safeUploadFileName(sessionId));
+  const uploadDir = join(root, ".quire", "uploads", safeUploadFileName(sessionId));
   const out: AgentSessionAttachment[] = [];
   for (const [index, raw] of value.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
@@ -840,7 +875,7 @@ async function storeProjectUpload(
   if (parsed.buffer.byteLength > options.maxBytes) {
     throw new ApiError(413, `${options.errorCode}_TOO_LARGE`, `${filename} exceeds ${options.maxBytes} bytes`);
   }
-  const uploadDir = join(root, ".inkos", "uploads", safeUploadFileName(options.scope));
+  const uploadDir = join(root, ".quire", "uploads", safeUploadFileName(options.scope));
   await mkdir(uploadDir, { recursive: true });
   const storedName = `${Date.now()}-${filename}`;
   const storedPath = join(uploadDir, storedName);
@@ -1210,6 +1245,23 @@ interface CollectedToolExec {
   logs?: string[];
   startedAt: number;
   completedAt?: number;
+}
+
+/**
+ * The name a confirmed run is listed under: the work it is making.
+ *
+ * Every confirm card carries its own payload shape, but each names the work
+ * in a `title` (a book, a short, a script) or, for a translation, a source.
+ * Failing that, the first words of the instruction still say which run it is.
+ */
+function workNameFor(payload: unknown, instruction: string, bookId?: string | null): string {
+  for (const value of Object.values((payload ?? {}) as Record<string, unknown>)) {
+    const title = (value as { title?: unknown } | null)?.title;
+    if (typeof title === "string" && title.trim()) return title.trim();
+  }
+  if (bookId) return bookId;
+  const words = instruction.trim().split(/s+/).slice(0, 8).join(" ");
+  return words || "untitled";
 }
 
 class ConfirmedActionExecutionError extends Error {
@@ -1686,7 +1738,17 @@ async function executeConfirmedProductionAction(args: {
       args.signal,
       (partialResult: unknown) => {
         const progress = toolResultText(partialResult, lang);
-        if (progress) exec.logs = [...(exec.logs ?? []), progress].slice(-80);
+        if (progress) {
+          exec.logs = [...(exec.logs ?? []), progress].slice(-80);
+          // Sent as it happens, to the card by its id. Kept only in the task
+          // snapshot, it reached the chat on a reload and never while the run
+          // was going, so a fifty-page magazine showed a spinner for an hour.
+          broadcast("log", {
+            sessionId: args.streamSessionId,
+            executionId: id,
+            message: progress,
+          });
+        }
         void args.onTaskChange(exec).catch(() => undefined);
       },
     );
@@ -1709,7 +1771,13 @@ async function executeConfirmedProductionAction(args: {
     });
     return exec;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // A run the person stopped is not a run that broke. Reporting the raw
+    // "This operation was aborted" made every stop read as a crash.
+    const stopped = args.signal?.aborted === true
+      || (error instanceof Error && error.name === "AbortError");
+    const message = stopped
+      ? pick(lang, "已由你停止。", "Stopped by you.")
+      : error instanceof Error ? error.message : String(error);
     const result = { content: [{ type: "text", text: message }] };
     exec.status = "error";
     exec.completedAt = Date.now();
@@ -2036,13 +2104,13 @@ function syncTopLevelLlmMirror(llm: Record<string, unknown>): void {
 }
 
 async function loadRawConfig(root: string): Promise<Record<string, unknown>> {
-  const configPath = join(root, "inkos.json");
+  const configPath = join(root, "quire.json");
   const raw = await readFile(configPath, "utf-8");
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
 async function saveRawConfig(root: string, config: Record<string, unknown>): Promise<void> {
-  await writeFile(join(root, "inkos.json"), JSON.stringify(config, null, 2), "utf-8");
+  await writeFile(join(root, "quire.json"), JSON.stringify(config, null, 2), "utf-8");
 }
 
 type ChapterReviewMode = "auto" | "manual";
@@ -2145,11 +2213,11 @@ async function readEnvConfigValues(path: string): Promise<EnvConfigValues> {
       values.set(key, unquoteEnvValue(value));
     }
 
-    const provider = values.get("INKOS_LLM_PROVIDER") ?? null;
-    const service = values.get("INKOS_LLM_SERVICE") ?? null;
-    const baseUrl = values.get("INKOS_LLM_BASE_URL") ?? null;
-    const model = values.get("INKOS_LLM_MODEL") ?? null;
-    const apiKey = values.get("INKOS_LLM_API_KEY") ?? "";
+    const provider = values.get("QUIRE_LLM_PROVIDER") ?? null;
+    const service = values.get("QUIRE_LLM_SERVICE") ?? null;
+    const baseUrl = values.get("QUIRE_LLM_BASE_URL") ?? null;
+    const model = values.get("QUIRE_LLM_MODEL") ?? null;
+    const apiKey = values.get("QUIRE_LLM_API_KEY") ?? "";
     const detected = Boolean(provider || service || baseUrl || model || apiKey);
 
     return {
@@ -2818,7 +2886,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return c.json({ error: { code: error.code, message: error.message } }, error.status as 400);
     }
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("LLM API key not set") || message.includes("INKOS_LLM_API_KEY not set")) {
+    if (message.includes("LLM API key not set") || message.includes("QUIRE_LLM_API_KEY not set")) {
       return c.json({ error: { code: "LLM_CONFIG_ERROR", message } }, 400);
     }
     console.error("[studio] Unexpected server error", error);
@@ -2869,9 +2937,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return freshConfig;
   }
 
-  // Read the project language fresh from inkos.json on every call, so a language
+  // Read the project language fresh from quire.json on every call, so a language
   // switch takes effect on the next request instead of being frozen at startup.
-  // A missing/corrupt inkos.json means "no project language configured" -> zh.
+  // A missing/corrupt quire.json means "no project language configured" -> zh.
   async function currentProjectLanguage(): Promise<StudioLanguage> {
     const raw = await loadRawConfig(root).catch(() => ({} as Record<string, unknown>));
     return normalizeStudioLanguage(raw.language);
@@ -2918,7 +2986,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       projectRoot: root,
       defaultLLMConfig: currentConfig.llm,
       foundationReviewRetries: currentConfig.foundation?.reviewRetries ?? 2,
-      writingReviewRetries: currentConfig.writing?.reviewRetries ?? 1,
+      writingReviewRetries: currentConfig.writing?.reviewRetries ?? 2,
       chapterReviewMode,
       revisionGate: overrides?.revisionGate ?? revisionGate,
       modelOverrides: currentConfig.modelOverrides,
@@ -3921,7 +3989,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const secrets = await loadSecrets(root);
     // One list, every way a model can be reached: an agent CLI on this machine,
     // a vendor API, a model served locally by Ollama or LM Studio. They are all
-    // already the same `InkosEndpoint` and all resolve through the same client,
+    // already the same `QuireEndpoint` and all resolve through the same client,
     // so there is nothing to gain by offering only one kind of them.
     //
     // This used to filter to `group === "cli"`. The other forty providers stayed
@@ -3989,7 +4057,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       if (localUp.has(entry.service)) services[i] = { ...entry, connected: localUp.get(entry.service)! };
     }
 
-    // Add custom services from inkos.json
+    // Add custom services from quire.json
     for (const svc of configuredServices) {
       if (svc.service === "custom") {
         const secretKey = `custom:${svc.name}`;
@@ -4035,8 +4103,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return c.json({
         error: pick(
           await currentProjectLanguage(),
-          "未检测到可导入的 LLM 环境变量配置，或缺少 INKOS_LLM_API_KEY。",
-          "No importable LLM environment variable configuration was detected, or INKOS_LLM_API_KEY is missing.",
+          "未检测到可导入的 LLM 环境变量配置，或缺少 QUIRE_LLM_API_KEY。",
+          "No importable LLM environment variable configuration was detected, or QUIRE_LLM_API_KEY is missing.",
         ),
       }, 400);
     }
@@ -4125,8 +4193,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     // endpoint is provided via env (the CLI/power-user path). This is the gate
     // for the Play auto-illustration toggles.
     const envConfigured = Boolean(
-      (process.env.INKOS_COVER_BASE_URL || process.env.INKOS_COVER_ENDPOINT)
-      && (process.env.INKOS_COVER_API_KEY || keyFor("kkaiapi")),
+      (process.env.QUIRE_COVER_BASE_URL || process.env.QUIRE_COVER_ENDPOINT)
+      && (process.env.QUIRE_COVER_API_KEY || keyFor("kkaiapi")),
     );
     const configured = Boolean(cover?.service && ready(cover.service)) || envConfigured;
     // The local renderer has no key, so `ready` said yes for it unconditionally
@@ -4564,13 +4632,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     let raw: Record<string, unknown>;
     try {
       currentConfig = await loadCurrentProjectConfig({ requireApiKey: false });
-      // Check if language was explicitly set in inkos.json (not just the schema default)
-      raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as Record<string, unknown>;
+      // Check if language was explicitly set in quire.json (not just the schema default)
+      raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8")) as Record<string, unknown>;
     } catch (error) {
       throw new ApiError(
         500,
         "PROJECT_CONFIG_INVALID",
-        `Failed to load inkos.json: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to load quire.json: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
     const languageExplicit = "language" in raw && raw.language !== "";
@@ -4590,6 +4658,22 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   app.get("/api/v1/skills", async (c) => {
     const result = await loadStudioSkills(root);
     return c.json(result);
+  });
+
+  /*
+   * One skill, whole.
+   *
+   * The list route carries every skill's body, which is a megabyte of craft
+   * documents to answer "what does this one say". A screen that shows a skill,
+   * and anything that wants to diff a user's override against the builtin it
+   * replaces, needs exactly one — so it gets exactly one.
+   */
+  app.get("/api/v1/skills/:skillId", async (c) => {
+    const id = normalizeStudioSkillId(c.req.param("skillId"), "skillId");
+    const { skills } = await loadStudioSkills(root);
+    const skill = skills.find((item) => item.id === id);
+    if (!skill) throw new ApiError(404, "SKILL_NOT_FOUND", `No such skill: ${id}`);
+    return c.json({ skill });
   });
 
   // Installed publication types. The sidebar builds itself from this, so a
@@ -4641,11 +4725,77 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // The same checks, for anything already written. A publication had a page of
   // its own and everything else had buttons that expired with the chat session
   // that produced it.
-  registerAuditRoutes(app, {
+  const { auditUnit } = registerAuditRoutes(app, {
     root,
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
     broadcast,
   });
+  // Called per request, after `shimUrl` below is defined.
+  const assetDeps = { root, broadcast, shimUrl: () => shimUrl() };
+  registerAssetRoutes(app, assetDeps);
+  // One verdict on every card, into one stream, and acted on (04 §7, 18 §1).
+  registerTasteRoutes(app, {
+    root,
+    broadcast,
+    ask: async (signal) => createStoryAsk(new PipelineRunner(await buildPipelineConfig()), signal),
+    image: {
+      approve: (type, id, path) => approveAsset(root, type, id, path),
+      trash: (type, id, path) => trashAsset(root, type, id, path),
+      redesign: (type, id, path, note) => redesignAsset(assetDeps, type, id, path, note),
+      remember: (path, entry) => rememberOnRecipe(root, path, entry),
+    },
+    noteFinding: (path, note, cause) => addNoteFinding(root, path, note, cause),
+  });
+  // The person's own final, and learning from it (04 §6).
+  registerFinalRoutes(app, { root, broadcast });
+  // What an audit looks for, as data a person can see and change (19 §4).
+  registerAuditPackRoutes(app, {
+    root,
+    // The bench is seeded from what this person already decided, so it is
+    // their standard the guard holds a pack version to (19 §5.4).
+    settledFindings: async (limit) => {
+      const settled = (await readFindings(root))
+        .filter((f) => f.state === "accepted" || f.state === "fixed" || f.state === "ignored")
+        .slice(-limit);
+      const out = [];
+      for (const f of settled) {
+        const passage = await readPassage(root, f);
+        if (!passage.paragraph) continue;
+        out.push({
+          id: f.id, path: f.path, category: f.category, state: f.state,
+          quote: f.quote, paragraph: passage.paragraph,
+        });
+      }
+      return out;
+    },
+    // The preview reports and never rewrites: the point is to watch findings
+    // move as a criterion is edited, not to change the manuscript while doing it.
+    preview: async ({ path, pack }) => {
+      const ask = createStoryAsk(new PipelineRunner(await buildPipelineConfig()));
+      const out = await runStoryAudit({ projectRoot: root, path, ask, pack, revise: false });
+      return { findings: out.findings };
+    },
+  });
+  // World, kit and cast: where a work's design is decided (08 §6, 07 §1b, 08 §9).
+  const desk = createDesignDesk({
+    root,
+    broadcast,
+    shimUrl: () => shimUrl(),
+    ask: async (signal) => createStoryAsk(new PipelineRunner(await buildPipelineConfig()), signal),
+    coreArtplan: (ctx) => CORE_EXECUTORS["design.artplan"]!(ctx),
+  });
+  desk.register(app);
+
+  // Time and place, researched before anything is written (22). The stage is
+  // declared for every type and does nothing when no world is pinned, which is
+  // how a conditional stage is spelled in a graph that has no conditionals.
+  const setting = createSettingDesk({
+    root,
+    broadcast,
+    ask: async (signal) => createStoryAsk(new PipelineRunner(await buildPipelineConfig()), signal),
+  });
+  setting.register(app);
+  registerExecutor("content.research", setting.research);
 
   // What a conversation is about, when it is about a short or an issue rather
   // than a book. The chat column could only describe a book, so every session
@@ -4782,7 +4932,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   app.put("/api/v1/project", async (c) => {
     const updates = await c.req.json<Record<string, unknown>>();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
@@ -4805,13 +4955,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   app.get("/api/v1/project/detection", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
     return c.json({ detection: raw.detection ?? null });
   });
 
   app.put("/api/v1/project/detection", async (c) => {
     const { detection } = await c.req.json<{ detection?: unknown }>();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     if (detection === null) {
       delete raw.detection;
@@ -4958,7 +5108,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // --- Logs ---
 
   app.get("/api/v1/logs", async (c) => {
-    const logPath = join(root, "inkos.log");
+    const logPath = join(root, "quire.log");
     try {
       const content = await readFile(logPath, "utf-8");
       const lines = content.trim().split("\n").slice(-100);
@@ -5533,6 +5683,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         const taskController = new AbortController();
         activeConfirmedTasks.set(taskId, taskController);
         let pendingBookId: string | null = null;
+        /*
+         * Listed with everything else in flight, so the rail can say what is
+         * running and for which work. A magazine is listed by its own runner,
+         * under the issue it is writing, so it is left out here rather than
+         * shown twice.
+         */
+        let listed: ReturnType<typeof trackJob> | null = null;
         try {
           // 预留成功后再走快照检查：本进程的任务都会占预留名额，这里防的是
           // 旧进程遗留的运行中快照（loadReconciledTaskSnapshot 会把它对账成
@@ -5564,6 +5721,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             timestamp: Date.now(),
           }], instruction, { sessionKind });
 
+          listed = confirmedIntent === "publication_create"
+            ? null
+            : trackJob({
+              ref: { type: "task", id: workNameFor(actionPayload, instruction, agentBookId) },
+              stage: confirmedIntent,
+              controller: taskController,
+            });
           const exec = await executeConfirmedProductionAction({
             pipeline,
             root,
@@ -5579,14 +5743,19 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             taskId,
             sourceRequestId,
             signal: taskController.signal,
-            onTaskChange: (taskExec) => persistConfirmedTask(
-              bookSession.sessionId,
-              confirmedIntent,
-              taskExec,
-              sourceRequestId,
-            ),
+            onTaskChange: (taskExec) => {
+              const said = taskExec.logs?.at(-1) ?? taskExec.stages?.find((st) => st.status === "pending")?.label;
+              if (said) listed?.progress(said);
+              return persistConfirmedTask(
+                bookSession.sessionId,
+                confirmedIntent,
+                taskExec,
+                sourceRequestId,
+              );
+            },
             ...(playMode ? { playMode } : {}),
           });
+          listed?.finish(exec.status === "error" ? (exec.error ?? "the run failed") : undefined);
 
           let createdBookId: string | null = null;
           if (exec.status === "completed") {
@@ -5641,6 +5810,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             },
           });
         } catch (error) {
+          listed?.finish(error);
           const message = error instanceof Error ? error.message : String(error);
           const failure = formatAgentActionFailure(message, surfaceLanguage);
           if (pendingBookId) {
@@ -5658,7 +5828,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             // 指令已在任务开始时写入 transcript，失败时同样只补助手工具消息。
             await appendSessionMessagesUnlessDeleted(root, bookSession.sessionId, [
               manualToolAssistantMessage(
-                message,
+                // Marked as a failure, and only its first line: stored bare, a
+                // stage error rendered as prose with a drop cap and the raw
+                // model reply beneath it. The full text stays on the task card.
+                `✗ ${message.split("\n")[0]}`,
                 error.exec,
                 configuredEntry?.service ?? reqService ?? config.llm.provider,
                 reqModel ?? config.llm.model,
@@ -5672,6 +5845,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             response: failure.message,
           }, failure.status);
         } finally {
+          // Idempotent: only the paths that ended without saying how reach it.
+          listed?.finish(taskController.signal.aborted ? undefined : "ended without a result");
           activeConfirmedTasks.delete(taskId);
           reservedProductionSessions.delete(reservedSessionId);
         }
@@ -5977,7 +6152,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   app.post("/api/v1/project/language", async (c) => {
     const { language } = await c.req.json<{ language: "zh" | "en" }>();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
@@ -6222,6 +6397,31 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   });
 
+  /**
+   * Carry work written outside the pipeline on to its pictures (or build).
+   *
+   * Such work has no run, so nothing ever moved it past the writing. This makes
+   * one, walks it through the content gate (left open for a sign-off - it is
+   * not a stop) and starts whatever stage comes next.
+   */
+  app.post("/api/v1/productions/:type/:id/content-ready", async (c) => {
+    const ref = productionRefFrom(c);
+    const body = await c.req.json<{ totalUnits?: number }>().catch(() => ({} as { totalUnits?: number }));
+    const totalUnits = typeof body.totalUnits === "number" && body.totalUnits > 0
+      ? Math.floor(body.totalUnits)
+      : 1;
+    try {
+      const result = await openPipelineGate({
+        projectRoot: root, ref, gate: "content", totalUnits,
+        emit: (event) => broadcast("pipeline:stage", event),
+      });
+      startStage(ref);
+      return c.json({ ref, ...result });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
+    }
+  });
+
   app.post("/api/v1/productions/:type/:id/advance", async (c) => {
     const ref = productionRefFrom(c);
     try {
@@ -6256,7 +6456,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       // two jobs running the same units twice.
       const state = await loadPipeline(root, ref).catch(() => null);
       const stage = state?.stage ?? "pipeline";
-      enqueueJob({
+      // The id is captured rather than closed over directly: `enqueue` starts
+      // the work before it returns, so the binding must already exist.
+      let jobId = "";
+      const queued = enqueueJob({
         ref,
         stage,
         work: async ({ signal, onProgress }) => {
@@ -6265,6 +6468,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
             ref,
             shimUrl: shimUrl(),
             signal,
+            // Which unit is in hand, so the rail can say "page 12" and a stop
+            // can be aimed at that page instead of the whole stage.
+            onUnit: (unit) => { if (jobId) setJobUnit(jobId, unit); },
             onProgress: (message) => {
               onProgress(message);
               broadcast("pipeline:stage", { kind: "progress", ref, message });
@@ -6292,6 +6498,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           if (out.advanced) startStage(ref);
         },
       });
+      jobId = queued.id;
     })();
   }
 
@@ -6391,7 +6598,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return { ok: false, artifacts: [], error: `no automatic de-slop for ${ctx.type} yet` };
     }
     try {
-      const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8")) as {
+      const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8")) as {
         detection?: unknown;
       };
       const detection = DetectionConfigSchema.safeParse(raw.detection);
@@ -6434,6 +6641,69 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   /*
+   * The read and the de-slop, as stages, for the types whose runners stop at
+   * writing (14 §5). A short, a script, a storyboard and a translation used to
+   * park at `content.audit` until somebody happened to press Audit on the
+   * right file; now the run reads its own work and walks to the content gate,
+   * and the findings wait there exactly as a person's audit would leave them.
+   *
+   * Per type, never bare: a bare registration would take the book's audit too,
+   * and the book's is the continuity auditor inside its own runner.
+   */
+  const readStage = (mode: "audit" | "deslop") => async (ctx: StageContext): Promise<StageResult> => {
+    try {
+      if (ctx.type === "translation") await translationToMarkdown(ctx.id, ctx.unit);
+      const out = await auditUnit({
+        type: ctx.type, id: ctx.id, unit: ctx.unit, mode,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+        ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+      });
+      ctx.onProgress?.(`${mode === "deslop" ? "De-slopped" : "Read"} ${out.paths.length} file${out.paths.length === 1 ? "" : "s"}: ${out.findings} finding${out.findings === 1 ? "" : "s"}`);
+      return { ok: true, artifacts: out.paths };
+    } catch (error) {
+      return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };
+    }
+  };
+
+  /**
+   * A translated chapter as prose a person — and the audit — can read.
+   *
+   * The translation runner keeps segments in JSON; the audit reads Markdown.
+   * The copy is regenerated from the JSON every time, so it is never the
+   * version anyone edits by accident.
+   */
+  async function translationToMarkdown(id: string, unit: number): Promise<void> {
+    const name = `chapter-${String(unit).padStart(4, "0")}`;
+    const dir = join(root, "translations", id, "translated");
+    const chapter = JSON.parse(await readFile(join(dir, `${name}.json`), "utf-8")) as {
+      title?: string; segments?: Array<{ target?: string }>;
+    };
+    const body = (chapter.segments ?? []).map((s) => (s.target ?? "").trim()).filter(Boolean).join("\n\n");
+    if (!body) throw new Error(`chapter ${unit} of ${id} has no translated text yet`);
+    await writeFile(join(dir, `${name}.md`), `# ${chapter.title ?? `Chapter ${unit}`}\n\n${body}\n`, "utf-8");
+  }
+
+  for (const type of ["short", "script", "storyboard", "translation", "interactive-film"]) {
+    registerExecutor("content.audit", readStage("audit"), type);
+  }
+  for (const type of ["short", "script"]) registerExecutor("content.destyle", readStage("deslop"), type);
+  // A translation is held to its source, not to a voice; rewriting it to sound
+  // less machine-made would move it away from what the author wrote.
+  registerExecutor("content.destyle", async (ctx) => {
+    ctx.onProgress?.("A translation is not de-slopped: that would rewrite it away from its source.");
+    return { ok: true, artifacts: [] };
+  }, "translation");
+
+  /*
+   * The art plan runs through the design desk (design-desk.ts): the world and
+   * the cast are chosen once from the approved text, then the ArtDirector
+   * decides each unit's pictures. Wrapped around the engine's plan rather
+   * than added as stages: they need a model, which lives up here, and a new
+   * stage in the graph would park every run already past it.
+   */
+  for (const type of WORLD_TYPES) registerExecutor("design.artplan", desk.artplan, type);
+
+  /*
    * Job news, on the stream the app already has open.
    *
    * The queue is in the engine and knows nothing about browsers; this is the
@@ -6445,6 +6715,54 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   /** What is running, what is waiting, and what just finished. */
   app.get("/api/v1/jobs", (c) => c.json({ jobs: listJobs() }));
+
+  /*
+   * Research from an article and every page it links to.
+   *
+   * One `.md` per page lands in the workspace's `research/` folder, where a magazine's
+   * research stage reads the person's own sources first. It runs as a listed
+   * job, so the rail shows which page it is on; nothing here waits for it.
+   */
+  app.post("/api/v1/materials/crawl", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as {
+      url?: unknown; stopAt?: unknown; maxPages?: unknown;
+    };
+    const url = typeof body.url === "string" ? body.url.trim() : "";
+    if (!/^https?:\/\//i.test(url)) {
+      return c.json({ error: "url must be an http(s) address" }, 400);
+    }
+    const stopAt = typeof body.stopAt === "string" && body.stopAt.trim() ? body.stopAt.trim() : undefined;
+    const maxPages = Math.max(1, Math.min(CRAWL_MAX_PAGES, Number(body.maxPages) || CRAWL_MAX_PAGES));
+
+    const controller = new AbortController();
+    const { hostname, pathname } = new URL(url);
+    const job = trackJob({ ref: { type: "research", id: `${hostname}${pathname}` }, stage: "gather", controller });
+    void ingestLinkedPages(root, {
+      url,
+      ...(stopAt ? { stopAt } : {}),
+      maxPages,
+      purpose: "research",
+      signal: controller.signal,
+      onProgress: (message) => job.progress(message),
+    })
+      .then((result) => {
+        job.progress(
+          `${result.pages.length + 1} pages saved`
+          + (result.failed.length ? `, ${result.failed.length} could not be read` : "")
+          + (result.skipped ? `, ${result.skipped} over the limit left out` : ""),
+        );
+        broadcast("materials:crawled", {
+          url,
+          saved: result.pages.length + 1,
+          failed: result.failed,
+          skipped: result.skipped,
+          files: [result.article, ...result.pages].map((m) => m.markdownPath),
+        });
+        job.finish();
+      })
+      .catch((error: unknown) => job.finish(error));
+    return c.json({ job: job.job, maxPages, stopAt: stopAt ?? null });
+  });
 
   /*
    * Stop one.
@@ -6461,6 +6779,25 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return cancelJob(id)
       ? c.json({ ok: true, id })
       : c.json({ ok: false, id, error: "no such job, or it has already finished" }, 404);
+  });
+
+  /*
+   * Stop one unit, and let the stage carry on.
+   *
+   * Cancelling used to be all or nothing: a page going wrong on image nine
+   * meant ending the art stage for all fifty. The unit is left unfinished
+   * rather than failed, so the run stays on the stage and the next pass picks
+   * that page up.
+   */
+  app.post("/api/v1/productions/:type/:id/units/:unit/cancel", (c) => {
+    const ref = productionRefFrom(c);
+    const unit = Number(c.req.param("unit"));
+    if (!Number.isInteger(unit) || unit < 1) {
+      return c.json({ ok: false, error: "a unit is a whole number from 1" }, 400);
+    }
+    return cancelPipelineUnit(ref, unit)
+      ? c.json({ ok: true, ref, unit })
+      : c.json({ ok: false, ref, unit, error: "that unit is not being worked on" }, 404);
   });
 
   /*
@@ -6555,15 +6892,127 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   });
 
+  /*
+   * The print edition (07 §Print): the profile a work is printed to, and the
+   * folder that is ready to upload. Building it is a job like any stage, so it
+   * shows in the rail and can be stopped.
+   */
+  const workRelOf = (type: string, id: string): string | null => {
+    const spec = PRODUCTIONS.find((p) => p.id === type);
+    if (!spec?.pipeline || spec.pipeline.buildShape === "not-paper" || !isSafeBookId(id)) return null;
+    return type === "publication" ? join(spec.outDir, "issues", id) : join(spec.outDir, id);
+  };
+
+  app.get("/api/v1/productions/:type/:id/print", async (c) => {
+    const { type, id } = productionRefFrom(c);
+    const rel = workRelOf(type, id);
+    if (!rel) return c.json({ error: `${type} has no print edition` }, 400);
+    const work = join(root, rel);
+    const profile = await readPrintProfile(work, type);
+    const pkgDir = join(work, "build", "print", profile.service);
+    const readJson = async <T,>(file: string, fallback: T): Promise<T> =>
+      await readFile(file, "utf-8").then((t) => JSON.parse(t) as T).catch(() => fallback);
+    const saved = await readJson<{ pages?: number; spineMm?: number } | null>(join(pkgDir, "print.json"), null);
+    const findings = await readJson<unknown[]>(join(pkgDir, "preflight.json"), []);
+    const at = await stat(join(pkgDir, "CHECKLIST.md")).then((s) => s.mtime.toISOString()).catch(() => null);
+    return c.json({
+      profile,
+      services: Object.entries(PRINT_SERVICES).map(([key, s]) => ({
+        id: key, label: s.label, bindings: s.bindings, upload: s.upload, approx: s.approx,
+      })),
+      trims: Object.entries(TRIMS).map(([key, t]) => ({ id: key, name: t.name })),
+      typst: Boolean(typstBinary()),
+      package: at
+        ? { dir: relative(root, pkgDir).split("\\").join("/"), at, pages: saved?.pages ?? null, spineMm: saved?.spineMm ?? null, findings }
+        : null,
+    });
+  });
+
+  app.post("/api/v1/productions/:type/:id/print", async (c) => {
+    const { type, id } = productionRefFrom(c);
+    const rel = workRelOf(type, id);
+    if (!rel) return c.json({ error: `${type} has no print edition` }, 400);
+    const work = join(root, rel);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const profile = normaliseProfile({ ...(await readPrintProfile(work, type)), ...body }, type);
+    if (profile.isbn) {
+      const checked = isbnDigits(profile.isbn);
+      if (typeof checked !== "string") return c.json({ error: `ISBN: ${checked.error}` }, 400);
+    }
+    await writePrintProfile(work, profile);
+    return c.json({ profile });
+  });
+
+  /*
+   * The person's own reading as a research source (13 §Sources): folders of
+   * notes and a Zotero library. The answer counts what each yields, so a
+   * wrong folder or tag shows up here as zero rather than as an issue that
+   * quietly ignored it.
+   */
+  app.get("/api/v1/sources/personal", async (c) => {
+    const config = await readPersonalConfig(root);
+    const items = await loadPersonalItems(root).catch(() => []);
+    return c.json({
+      config,
+      items: items.length,
+      bySource: { markdown: items.filter((i) => i.source === "markdown").length, zotero: items.filter((i) => i.source === "zotero").length },
+      sample: items.slice(0, 5).map((i) => ({ title: i.title, date: i.date ?? null, tags: i.tags.slice(0, 6) })),
+    });
+  });
+
+  app.post("/api/v1/sources/personal", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as PersonalSourcesConfig;
+    const markdown = (Array.isArray(body.markdown) ? body.markdown : [])
+      .filter((m) => m && typeof m.dir === "string" && m.dir.trim() && isAbsolute(m.dir))
+      .map((m) => ({ dir: m.dir.trim(), ...(m.tag ? { tag: String(m.tag) } : {}), ...(m.since ? { since: String(m.since) } : {}) }));
+    const zotero = body.zotero && typeof body.zotero === "object"
+      ? { ...(body.zotero.path ? { path: String(body.zotero.path) } : {}), ...(body.zotero.tag ? { tag: String(body.zotero.tag) } : {}), ...(body.zotero.since ? { since: String(body.zotero.since) } : {}) }
+      : null;
+    await writePersonalConfig(root, { markdown, zotero });
+    const items = await loadPersonalItems(root).catch(() => []);
+    return c.json({ config: { markdown, zotero }, items: items.length });
+  });
+
+  app.post("/api/v1/productions/:type/:id/print/build", async (c) => {
+    const ref = productionRefFrom(c);
+    const rel = workRelOf(ref.type, ref.id);
+    if (!rel) return c.json({ error: `${ref.type} has no print edition` }, 400);
+    let interiorPdf: string | undefined;
+    if (ref.type === "publication") {
+      // The magazine's interior is its Affinity build; this only preflights and packages it.
+      const issue = await readFile(join(root, rel, "publication.json"), "utf-8")
+        .then((t) => JSON.parse(t) as { build?: { pdf?: string } }).catch(() => null);
+      const pdf = issue?.build?.pdf;
+      if (!pdf) return c.json({ error: "build the issue first — its PDF is the interior" }, 409);
+      interiorPdf = isAbsolute(pdf) ? pdf : join(root, pdf);
+    }
+    const job = enqueueJob({
+      ref,
+      stage: "print",
+      work: async ({ signal, onProgress }) => {
+        const out = await buildPrintEdition({
+          projectRoot: root, type: ref.type, id: ref.id, workRel: rel, signal, onProgress,
+          ...(interiorPdf ? { interiorPdf } : {}),
+        });
+        broadcast("print:ready", { ref, dir: out.packageDir, blocking: out.blocking, pages: out.pages });
+      },
+    });
+    return c.json({ job });
+  });
+
   app.post("/api/v1/productions/:type/:id/gates/:gate/approve", async (c) => {
     const ref = productionRefFrom(c);
     const gate = asGate(c.req.param("gate"));
     if (!gate) return c.json({ error: "Unknown gate" }, 400);
-    const body = await c.req.json<{ units?: number[]; by?: string }>()
-      .catch(() => ({} as { units?: number[]; by?: string }));
+    const body = await c.req.json<{ units?: number[]; by?: string; totalUnits?: number }>()
+      .catch(() => ({} as { units?: number[]; by?: string; totalUnits?: number }));
     try {
-      // Approving is the whole instruction. Whatever the approval unblocks
-      // starts here, without a second call anyone has to know to make.
+      // A sign-off can come at any time, before a run exists at all: work
+      // written before runs were kept gets one here, standing where it began.
+      await ensurePipeline({
+        projectRoot: root, ref,
+        totalUnits: typeof body.totalUnits === "number" && body.totalUnits > 0 ? Math.floor(body.totalUnits) : 1,
+      });
       const result = await approvePipelineGate({
         projectRoot: root, ref, gate,
         ...(Array.isArray(body.units) ? { units: body.units } : {}),
@@ -6571,8 +7020,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         emit: (event) => broadcast("pipeline:stage", event),
       });
       await mirrorGateToIssue(ref, gate, result.state.gates[gate]?.state === "approved");
-      // The whole point of approving: the next stage begins on its own.
-      startStage(ref);
+      // A sign-off is a verdict, and the gates are the capture UI (18 §1).
+      await appendFeedback(root, {
+        ref: { type: ref.type, id: ref.id }, surface: gate, verdict: "keep", source: "gate", scope: { gate },
+        ...(Array.isArray(body.units) ? { diff: { units: body.units } } : {}),
+      }).catch(() => undefined);
+      // Nothing is started here: the run never waited on this sign-off.
       return c.json({ ref, ...result });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
@@ -6635,6 +7088,11 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         ...(body.note ? { note: body.note } : {}),
         ...(backTo ? { backTo } : {}),
       });
+      await appendFeedback(root, {
+        ref: { type: ref.type, id: ref.id }, surface: gate, verdict: "redo", source: "gate", scope: { gate },
+        ...(body.note ? { note: body.note } : {}),
+        diff: { units: body.units, ...(backTo ? { backTo } : {}) },
+      }).catch(() => undefined);
       return c.json({ ref, state });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
@@ -6661,6 +7119,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       // Withdrawal has to travel to the issue file too, or the build stays
       // unblocked by a sign-off the run no longer has.
       await mirrorGateToIssue(ref, gate, false);
+      // Pictures and build carry on: taking a sign-off back is not a stop.
       return c.json({ ref, state });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : String(e) }, 400);
@@ -6769,7 +7228,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     // Normalised on the way in, so the file converges on one spelling per agent
     // instead of accumulating `stateValidator` beside `state-validator`.
     const overrides = normalizeOverrides(body.overrides);
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     const raw = JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
     raw.modelOverrides = overrides;
     await writeFile(configPath, JSON.stringify(raw, null, 2), "utf-8");
@@ -6778,13 +7237,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   app.get("/api/v1/project/model-overrides", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
     return c.json({ overrides: raw.modelOverrides ?? {} });
   });
 
   app.put("/api/v1/project/model-overrides", async (c) => {
     const { overrides } = await c.req.json<{ overrides: Record<string, unknown> }>();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     raw.modelOverrides = overrides;
     const { writeFile: writeFileFs } = await import("node:fs/promises");
@@ -6931,13 +7390,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // --- Notify channels ---
 
   app.get("/api/v1/project/notify", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "inkos.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
     return c.json({ channels: raw.notify ?? [] });
   });
 
   app.put("/api/v1/project/notify", async (c) => {
     const { channels } = await c.req.json<{ channels: unknown[] }>();
-    const configPath = join(root, "inkos.json");
+    const configPath = join(root, "quire.json");
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     raw.notify = channels;
     const { writeFile: writeFileFs } = await import("node:fs/promises");
@@ -7381,12 +7840,27 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     });
     await rm(staging, { recursive: true, force: true }).catch(() => null);
 
+    /*
+     * Keep passages of the sample, not only a description of it.
+     *
+     * A voice was stored as prose about the writing plus seven numbers, and a
+     * rewrite could only ever be told what the voice was like. Showing it two
+     * paragraphs the author actually wrote is the single biggest difference
+     * to how close the result lands (05 §2c).
+     */
+    const { chooseExemplars, writeExemplars } = await import("@actalk/quire-core");
+    const samples = await writeExemplars(
+      join(root, "styles", meta.id),
+      chooseExemplars(text, resolved),
+    );
+
     broadcast("style:complete", { style: meta.id });
     return c.json({
       ok: true,
       style: meta,
       profile: result.profile,
       deterministic: result.deterministic,
+      samples,
       ...(result.note ? { note: result.note } : {}),
       minSample: MIN_SAMPLE_FOR_LLM,
     });
@@ -7407,15 +7881,35 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     if (type === "publication") {
       return c.json({ error: "A magazine takes its voice from its series house style." }, 400);
     }
-    const { styleId } = await c.req.json<{ styleId?: string }>()
-      .catch(() => ({}) as { styleId?: string });
+    const { styleId, blend } = await c.req.json<{ styleId?: string; blend?: unknown }>()
+      .catch(() => ({}) as { styleId?: string; blend?: unknown });
     if (!styleId) return c.json({ error: "styleId is required" }, 400);
 
-    const { applyStyleTo } = await import("@actalk/quire-core");
+    const { applyStyleTo, normaliseBlend, droppedFacets } = await import("@actalk/quire-core");
     const meta = await applyStyleTo({ root, id: styleId, dir: styleDirFor(type, id) });
     if (!meta) return c.json({ error: "no such voice" }, 404);
+
+    /*
+     * "Mostly Chandler, some Didion for description, a touch of me."
+     *
+     * The dominant voice is what `applyStyleTo` just copied in; the blend is
+     * recorded beside it and compiled at rewrite time. One voice owns each
+     * facet, so a three-way mix produces a specific answer for dialogue
+     * rather than an average of three writers nobody asked (05 §4).
+     */
+    const parts = normaliseBlend(blend, styleId);
+    if (parts) {
+      const markPath = join(styleDirFor(type, id), "style.json");
+      const mark = await readFile(markPath, "utf-8").then((raw) => JSON.parse(raw) as Record<string, unknown>).catch(() => ({}));
+      await writeFile(markPath, `${JSON.stringify({ ...mark, blend: parts }, null, 2)}\n`, "utf-8");
+    }
+
     broadcast("style:complete", { type, id, voice: meta.name });
-    return c.json({ ok: true, style: meta });
+    return c.json({
+      ok: true,
+      style: meta,
+      ...(parts ? { blend: parts, dropped: droppedFacets(blend, parts) } : {}),
+    });
   });
 
   app.get("/api/v1/style/targets", async (c) => {
@@ -7498,6 +7992,50 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * and agreed with it, and a rewrite behind their back is exactly what that
    * mark exists to prevent.
    */
+  /**
+   * What a rewrite is shown besides the guide (05 §3, 22 §4).
+   *
+   * A blend compiles its target from every voice in it; a single voice is its
+   * own target. Exemplars come from the library entry rather than the work,
+   * because the work's copy of the guide is a snapshot and the samples are
+   * the author's actual prose.
+   */
+  async function restyleMaterial(projectRoot: string, type: string, id: string, workStyleDir: string) {
+    const { blendTarget, readExemplars, readLexicon } = await import("@actalk/quire-core");
+    const readJsonFile = async <T>(file: string): Promise<T | null> => {
+      try { return JSON.parse(await readFile(file, "utf-8")) as T; } catch { return null; }
+    };
+    const mark = await readJsonFile<{ id?: string; blend?: ReadonlyArray<{ id: string; weight: number; facets?: string[] }> }>(
+      join(workStyleDir, "style.json"),
+    );
+    const entries = mark?.blend?.length
+      ? mark.blend
+      : (mark?.id ? [{ id: mark.id, weight: 1, facets: [] as string[] }] : []);
+
+    const parts: Array<{ profile: StyleProfileV2 | undefined; weight: number; facets?: ReadonlyArray<string> }> = [];
+    let exemplars: Awaited<ReturnType<typeof readExemplars>> = [];
+    for (const entry of entries) {
+      const dir = join(projectRoot, "styles", entry.id);
+      const profile = await readJsonFile<{ v2?: StyleProfileV2 }>(join(dir, "style_profile.json"));
+      parts.push({ profile: profile?.v2, weight: entry.weight, ...(entry.facets ? { facets: entry.facets } : {}) });
+      const mine = await readExemplars(dir);
+      exemplars = [...exemplars, ...mine];
+    }
+    // Fall back to whatever the work itself holds: a voice imported by pasting
+    // text never had a library entry to read.
+    if (!parts.length) {
+      const own = await readJsonFile<{ v2?: StyleProfileV2 }>(join(workStyleDir, "style_profile.json"));
+      if (own?.v2) parts.push({ profile: own.v2, weight: 1 });
+    }
+
+    const lexicon = await readLexicon(projectRoot, type, id);
+    return {
+      exemplars,
+      target: blendTarget(parts),
+      prefer: (lexicon?.prefer ?? []).map((p) => p.term).slice(0, 20),
+    };
+  }
+
   app.post("/api/v1/productions/:type/:id/restyle", async (c) => {
     const type = c.req.param("type");
     const id = c.req.param("id");
@@ -7551,6 +8089,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         const { restyleProse, RestyleRefused, recomposeShortFiction, composedDirOf } = await import("@actalk/quire-core");
         const done: string[] = [];
         const skipped: Array<{ path: string; why: string }> = [];
+        // Three things the rewrite is given beyond the guide: passages by the
+        // author to copy the rhythm of, the measurements to check itself
+        // against, and any period words the world says not to modernise.
+        const { exemplars, target, prefer } = await restyleMaterial(root, type, id, styleDirFor(type, id));
 
         for (const [index, path] of targets.entries()) {
           if (signal.aborted) break;
@@ -7572,10 +8114,14 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
           onProgress(`${position}: rewriting ${name}…`);
           try {
-            const after = await restyleProse({
+            const result = await restyleProse({
               text: before,
               styleGuide,
               language,
+              ...(exemplars.length ? { exemplars } : {}),
+              ...(target ? { target } : {}),
+              ...(prefer.length ? { prefer } : {}),
+              onProgress: (message) => onProgress(`${position}: ${message}`),
               chat: async (system, user) => {
                 const response = await runWorkerAgent(config.client, config.model, [
                   { role: "system", content: system },
@@ -7584,6 +8130,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
                 return response.content;
               },
             });
+            const after = result.text;
             // Written only once the rewrite has come back whole, so a refusal
             // or an abort leaves the draft exactly as it was.
             if (signal.aborted) break;
@@ -7606,10 +8153,16 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
               rewritten: new Date().toISOString(),
               restyles: (had.restyles ?? 0) + 1,
               ...(voice ? { voice } : {}),
+              // The honest answer to "did it work", kept beside the file it is
+              // about so the screen can show it without re-measuring (05 §3).
+              ...(result.after === undefined ? {} : { voiceDistance: result.after }),
+              ...(result.before === undefined ? {} : { voiceDistanceBefore: result.before }),
             });
             broadcast("audit:text", { path, markdown: after });
             broadcast("audit:state", { path });
-            onProgress(`${position}: ${name} rewritten`);
+            onProgress(result.after === undefined
+              ? `${position}: ${name} rewritten`
+              : `${position}: ${name} rewritten — ${result.before?.toFixed(2)} → ${result.after.toFixed(2)} from the voice`);
           } catch (error) {
             const why = error instanceof Error ? error.message : String(error);
             skipped.push({ path, why });
@@ -8065,6 +8618,16 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   }
 
+  // Which engine draws pictures, and how much of a paid allowance is left
+  // (23 §8). The shim owns the answer because it is the half that calls them.
+  app.get("/api/v1/engines", () => shim("/image/engines"));
+  app.post("/api/v1/engines", async (c) =>
+    shim("/image/engines", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(await c.req.json().catch(() => ({}))),
+    }));
+
   app.get("/api/v1/mcp/servers", () => shim("/mcp/servers"));
 
   app.get("/api/v1/mcp/tools", (c) => {
@@ -8093,7 +8656,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const { GLOBAL_ENV_PATH } = await import("@actalk/quire-core");
 
     const checks = {
-      inkosJson: existsSync(join(root, "inkos.json")),
+      quireJson: existsSync(join(root, "quire.json")),
       projectEnv: existsSync(join(root, ".env")),
       globalEnv: existsSync(GLOBAL_ENV_PATH),
       booksDir: existsSync(join(root, "books")),

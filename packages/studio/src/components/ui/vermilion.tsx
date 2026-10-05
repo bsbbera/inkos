@@ -8,6 +8,7 @@
  */
 import { useEffect, useSyncExternalStore } from "react";
 import { Icon, type IconName } from "./icon";
+import { plainError } from "../../lib/error-copy";
 
 /** One pressed button per group. The seg is a choice, not a filter. */
 export function Seg<T extends string>({
@@ -95,24 +96,40 @@ export function Tabs<T extends string>({
  * event handlers, effects and non-React code, and threading a provider through
  * all of that buys nothing. One host renders it.
  */
-let toastText: string | null = null;
+interface ToastItem { readonly seq: number; readonly text: string; readonly bad: boolean; readonly out?: boolean }
+let toasts: readonly ToastItem[] = [];
 let toastSeq = 0;
 const toastListeners = new Set<() => void>();
-let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
 function emitToast() {
   for (const l of toastListeners) l();
 }
 
-export function toast(text: string) {
-  toastText = text;
-  toastSeq += 1;
+function setToasts(next: readonly ToastItem[]) {
+  toasts = next;
   emitToast();
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    toastText = null;
-    emitToast();
-  }, 2800);
+}
+
+/*
+ * Toasts stack, newest at the bottom, three at most. One slot used to mean a
+ * second toast wiped the first: "Saved." followed by a failure 200ms later
+ * left only the failure, and two failures left only the last one.
+ */
+export function toast(text: string, tone?: "bad") {
+  const seq = ++toastSeq;
+  const bad = tone === "bad";
+  setToasts([...toasts.filter((t) => !t.out).slice(-2), { seq, text, bad }]);
+  setTimeout(() => {
+    // Out first, so it can fade, then gone.
+    setToasts(toasts.map((t) => (t.seq === seq ? { ...t, out: true } : t)));
+    setTimeout(() => setToasts(toasts.filter((t) => t.seq !== seq)), 240);
+  }, bad ? 6000 : 2800);
+}
+
+/** An action failed. Said in words, held longer than a confirmation. */
+export function toastError(e: unknown, what = "That did not work.") {
+  const raw = e instanceof Error ? e.message : typeof e === "string" ? e : "";
+  toast(raw ? `${what} ${plainError(raw).text}` : what, "bad");
 }
 
 function subscribeToast(cb: () => void) {
@@ -122,19 +139,23 @@ function subscribeToast(cb: () => void) {
   };
 }
 
-/* The sequence is part of the snapshot so the same text fired twice still
-   re-runs the entry transition instead of sitting there silently. */
-const toastSnapshot = () => (toastText === null ? "" : `${toastSeq} ${toastText}`);
-
 export function ToastHost() {
-  const snap = useSyncExternalStore(subscribeToast, toastSnapshot, () => "");
-  const text = snap ? snap.slice(snap.indexOf(" ") + 1) : "";
+  const list = useSyncExternalStore(subscribeToast, () => toasts, () => toasts);
   /* Announced politely: it is the only confirmation a keyboard user gets that
      an accept landed, and it must not interrupt the reading they are in. */
   return (
-    <div className={snap ? "toast on" : "toast"} role="status" aria-live="polite">
-      <Icon name="check" size={15} className="tick" />
-      <span>{text}</span>
+    <div className="toasts">
+      {list.map((t) => (
+        <div
+          key={t.seq}
+          className={`toast on${t.bad ? " bad" : ""}${t.out ? " out" : ""}`}
+          role="status"
+          aria-live={t.bad ? "assertive" : "polite"}
+        >
+          <Icon name={t.bad ? "alert" : "check"} size={15} className="tick" />
+          <span>{t.text}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -144,6 +165,51 @@ export function ToastHost() {
  * four keys - audit findings, taste proposals, review verdicts - so the muscle
  * memory is worth exactly one implementation.
  */
+/* How many screens have bound j/k to a queue of their own. While any has, the
+   shell's list keys stand aside, or one key press would move two things. */
+let queueOwners = 0;
+
+const typing = (el: EventTarget | null) => {
+  const e = el as HTMLElement | null;
+  return !!e && (/^(input|textarea|select)$/i.test(e.tagName) || e.isContentEditable);
+};
+
+/* What j/k walk on a screen with no queue of its own: list rows, tiles, the
+   chapter table, and anything marked data-keynav. */
+const LIST_ITEMS = ".main :is(.rows > .row, .tiles > .tile, td > button.title, [data-keynav])";
+
+/**
+ * j / k move focus through the list on screen and Enter opens what has it
+ * (a button already answers Enter). Esc closes the panel that is open, by
+ * pressing its own close button - anything marked data-esc. Mounted once, in
+ * the shell.
+ */
+export function useListKeys() {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || typing(e.target)) return;
+      if (e.key === "Escape") {
+        // A dialog owns Escape while it is open.
+        if (document.querySelector("dialog[open], [role=dialog]")) return;
+        const close = [...document.querySelectorAll<HTMLElement>("[data-esc]")].filter((b) => b.offsetParent !== null).pop();
+        if (close) { e.preventDefault(); close.click(); }
+        return;
+      }
+      if ((e.key !== "j" && e.key !== "k") || queueOwners > 0) return;
+      const items = [...document.querySelectorAll<HTMLElement>(LIST_ITEMS)].filter((el) => el.offsetParent !== null);
+      if (items.length === 0) return;
+      e.preventDefault();
+      const at = items.findIndex((el) => el === document.activeElement || el.contains(document.activeElement));
+      const next = items[at < 0 ? 0 : Math.max(0, Math.min(items.length - 1, at + (e.key === "j" ? 1 : -1)))]!;
+      if (!next.hasAttribute("tabindex") && !/^(button|a)$/i.test(next.tagName)) next.tabIndex = -1;
+      next.focus();
+      next.scrollIntoView({ block: "nearest" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+}
+
 export function useQueueKeys(handlers: {
   readonly onNext?: () => void;
   readonly onPrev?: () => void;
@@ -152,6 +218,11 @@ export function useQueueKeys(handlers: {
   readonly enabled?: boolean;
 }) {
   const { onNext, onPrev, onAccept, onIgnore, enabled = true } = handlers;
+  useEffect(() => {
+    if (!enabled) return;
+    queueOwners += 1;
+    return () => { queueOwners -= 1; };
+  }, [enabled]);
   useEffect(() => {
     if (!enabled) return;
     const onKey = (e: KeyboardEvent) => {

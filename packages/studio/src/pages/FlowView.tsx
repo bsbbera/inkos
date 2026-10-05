@@ -22,6 +22,7 @@ import type { TFunction } from "../hooks/use-i18n";
 import { layoutStoryGraph } from "../lib/story-flow-layout";
 import { moveNodeDelta, addNodeDelta, genNodeId, addChoiceDelta, removeChoicesDelta, removeNodeDelta, genChoiceId } from "../lib/story-editor-deltas";
 import type { StoryGraph } from "@actalk/quire-core/interactive-film/graph-schema";
+import { Failed, Loading, ErrorLine } from "../components/ui/states";
 
 interface Nav {
   toDashboard: () => void;
@@ -35,19 +36,19 @@ type StoryEdge = Edge;
 const TYPE_COLOR: Record<string, string> = {
   start: "bg-success/15 border-success/50",
   branch: "bg-warning/15 border-warning/50",
-  ending: "bg-rose-500/15 border-rose-500/50",
-  merge: "bg-sky-500/15 border-sky-500/50",
+  ending: "bg-(--bad)/15 border-(--bad)/50",
+  merge: "bg-(--putty-2) border-(--ink-2)/50",
   explore: "bg-primary/15 border-primary/50",
   normal: "bg-muted border-border",
 };
 
 const TYPE_MINIMAP_COLOR: Record<string, string> = {
-  start: "#10b981",
-  branch: "#f59e0b",
-  ending: "#f43f5e",
-  merge: "#0ea5e9",
-  explore: "#8b5cf6",
-  normal: "#6b7280",
+  start: "var(--ok)",
+  branch: "var(--warn)",
+  ending: "var(--bad)",
+  merge: "var(--ink-2)",
+  explore: "var(--vermilion)",
+  normal: "var(--ink-3)",
 };
 
 function StoryFlowNode({ id, data }: NodeProps<StoryNode>) {
@@ -55,11 +56,10 @@ function StoryFlowNode({ id, data }: NodeProps<StoryNode>) {
   return (
     <div
       data-testid={`flow-node-${id}`}
-      className={`rounded border text-xs text-foreground ${cls}`}
-      style={{ width: 200, height: 90, padding: "8px 12px", boxSizing: "border-box", overflow: "hidden" }}
+      className={`well text-small ${cls} w-50 h-22.5 py-2 px-3 box-border overflow-hidden`}
     >
       <Handle type="target" position={Position.Left} />
-      <div className="font-medium line-clamp-2 leading-tight" style={{ maxHeight: "2.6em" }}>{data.label}</div>
+      <div className="font-medium line-clamp-2 leading-tight">{data.label}</div>
       <div className="opacity-60 text-xs mt-1">{data.nodeType}</div>
       <Handle type="source" position={Position.Right} />
     </div>
@@ -147,7 +147,7 @@ export default function FlowView({
         ...node,
         style: {
           opacity: onPath ? 1 : 0.2,
-          ...(onPath ? { boxShadow: "0 0 0 2px #8b5cf6" } : {}),
+          ...(onPath ? { boxShadow: "0 0 0 2px var(--vermilion)" } : {}),
         },
       };
     });
@@ -160,8 +160,8 @@ export default function FlowView({
       const onPath = hoveredPath ? hoveredPath.edgeIds.has(edge.id) : false;
       const offPath = hoveredPath !== null && !onPath;
 
-      const baseStroke = isEnding ? "#f59e0b" : "#9ca3af";
-      const stroke = onPath ? "#8b5cf6" : baseStroke;
+      const baseStroke = isEnding ? "var(--warn)" : "var(--ink-3)";
+      const stroke = onPath ? "var(--vermilion)" : baseStroke;
 
       const rawLabel = typeof edge.label === "string" ? edge.label : "";
       const label = rawLabel.length > 14 ? rawLabel.slice(0, 14) + "…" : rawLabel;
@@ -253,13 +253,8 @@ export default function FlowView({
     );
   };
 
-  if (loading) return <div className={c.muted}>{t("common.loading")}</div>;
-  if (error)
-    return (
-      <div className="text-destructive">
-        {t("common.error")}: {error}
-      </div>
-    );
+  if (loading) return <Loading what="Reading the story flow…" />;
+  if (error) return <Failed what="Could not open the story flow." detail={error} />;
   if (!graph) return null;
 
   return (
@@ -278,7 +273,7 @@ export default function FlowView({
         <button
           data-testid="flow-edit-toggle"
           onClick={() => setEditing((v) => !v)}
-          className={`ml-auto px-3 py-1 rounded text-xs ${c.btnSecondary}`}
+          className="btn btn-line btn-sm ml-auto"
         >
           {editing ? tr("完成编辑", "Done editing") : tr("编辑", "Edit")}
         </button>
@@ -286,21 +281,19 @@ export default function FlowView({
           <button
             data-testid="flow-add-node"
             onClick={onAddNode}
-            className={`px-3 py-1 rounded text-xs ${c.btnSecondary}`}
+            className="btn btn-line btn-sm"
           >
             {tr("加节点", "Add node")}
           </button>
         )}
       </div>
       {editError && (
-        <div data-testid="flow-edit-error" className="text-destructive text-xs">
-          {editError}
-        </div>
+        <div data-testid="flow-edit-error"><ErrorLine>{editError}</ErrorLine></div>
       )}
       {stats && (
         <div
           data-testid="flow-stats"
-          className="flex items-center gap-4 text-xs text-muted-foreground border border-border rounded px-3 py-1.5 bg-card shrink-0"
+          className="well flex items-center gap-4 shrink-0"
         >
           <span>{tr("总节点", "Nodes")} {stats.total}</span>
           <span>{tr("分支", "Branches")} {stats.branch}</span>
@@ -308,21 +301,21 @@ export default function FlowView({
           <span>{tr("死路", "Dead ends")} {stats.deadEnd}</span>
           <span className="ml-auto flex items-center gap-3">
             <span className="flex items-center gap-1">
-              <span style={{ display: "inline-block", width: 20, height: 2, background: "#9ca3af", borderRadius: 1 }} />
+              <span className="inline-block w-5 h-0.5 rounded-sm bg-(--ink-3)" />
               {tr("默认", "Default")}
             </span>
             <span className="flex items-center gap-1">
-              <span style={{ display: "inline-block", width: 20, height: 2, background: "#f59e0b", borderRadius: 1 }} />
+              <span className="inline-block w-5 h-0.5 rounded-sm bg-(--warn)" />
               {tr("结局边", "Ending edge")}
             </span>
             <span className="flex items-center gap-1">
-              <span style={{ display: "inline-block", width: 20, height: 2, background: "#8b5cf6", borderRadius: 1 }} />
+              <span className="inline-block w-5 h-0.5 rounded-sm bg-(--vermilion)" />
               {tr("悬停路径", "Hover path")}
             </span>
           </span>
         </div>
       )}
-      <div className="flex-1 min-h-0 border rounded">
+      <div className="well p-0 flex-1 min-h-0">
         <ReactFlow
           nodes={displayNodes}
           edges={displayEdges}

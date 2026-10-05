@@ -1,4 +1,4 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight } from "../../ui/glyphs";
 import type { HoldingRow } from "./types";
 import { KIND_LABEL_ZH, KIND_LABEL_EN } from "./types";
 
@@ -14,7 +14,7 @@ export function HoldingSlot(props: {
     <button
       type="button"
       onClick={onOpen}
-      className="flex w-full items-center gap-2.5 rounded-lg border border-border/30 bg-secondary/30 px-2.5 py-2 text-left hover:border-border/60"
+      className="well flex w-full items-center gap-2.5 text-left"
     >
       {row.imageUrl ? (
         <img src={row.imageUrl} alt="" aria-hidden="true" className="h-8 w-8 shrink-0 rounded object-cover" />
@@ -25,14 +25,14 @@ export function HoldingSlot(props: {
       )}
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5">
-          <span className="truncate text-[15px] leading-6 font-semibold text-foreground">{row.label}</span>
+          <span className="truncate text-body leading-6 font-semibold text-foreground">{row.label}</span>
           {row.isFresh ? (
-            <span className="shrink-0 rounded-full bg-success/20 px-1.5 text-[12px] leading-5 font-medium text-emerald-300">
+            <span className="shrink-0 rounded-full bg-success/20 px-1.5 text-small leading-5 font-medium text-(--ok)">
               {isZh ? "新" : "NEW"}
             </span>
           ) : null}
         </span>
-        <span className="mt-0.5 flex items-center gap-1.5 text-[14px] leading-6 text-muted-foreground">
+        <span className="mt-0.5 flex items-center gap-1.5 text-body leading-6 text-muted-foreground">
           <span className="shrink-0">{kind}</span>
           {row.preview ? <span className="truncate">· {row.preview}</span> : null}
         </span>

@@ -19,8 +19,10 @@
  * pattern" - true, unreadable, and impossible to act on without going to find
  * the seven sentences by hand.
  */
+import { vtName } from "../lib/view-transition";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/ui/icon";
+import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Tabs, toast, useQueueKeys } from "../components/ui/vermilion";
 import {
@@ -28,7 +30,7 @@ import {
   type Workflow,
 } from "../components/workflow";
 
-type Stage = "research" | "plan" | "write" | "fact-check" | "audit" | "art" | "build";
+type Stage = "research" | "plan" | "write" | "fact-check" | "audit" | "design" | "art" | "build";
 
 interface Page {
   readonly n: number;
@@ -91,7 +93,11 @@ interface Issue {
      so the brief and the section board had no data to render and were never
      built. */
   readonly sections?: readonly Section[];
-  readonly design?: { readonly sections?: readonly World[] } | null;
+  readonly design?: {
+    readonly sections?: readonly World[];
+    /* The issue's own law. A section can only be re-decided inside one. */
+    readonly spec?: unknown;
+  } | null;
   readonly research?: Record<string, unknown> | null;
   readonly audit?: { at: string; rounds?: number } | null;
   readonly lastError?: { at: string; stage?: string; message: string } | null;
@@ -103,6 +109,17 @@ interface Detail {
   readonly workflow: Workflow;
   readonly located: readonly Located[];
   readonly running: boolean;
+  /** The research files the run could read, cited ones first. */
+  readonly inputs?: {
+    readonly sources: number;
+    readonly files: ReadonlyArray<{
+      readonly title: string;
+      readonly source: string;
+      readonly path: string;
+      readonly chars: number;
+      readonly cited: boolean;
+    }>;
+  };
 }
 
 interface Nav { toDashboard: () => void }
@@ -110,7 +127,10 @@ interface Nav { toDashboard: () => void }
 // Must match the server's list. It did not: `fact-check` was a real stage the
 // server would run and this screen displayed, but neither dropdown offered it,
 // so a run could never be resumed at the only stage that checks facts.
-const STAGES: readonly Stage[] = ["research", "plan", "write", "fact-check", "audit", "art", "build"];
+// `design` sits between the audit and the art. It was missing from this list
+// while the runner already had it, so the one stage that decides the look
+// could not be reached from the screen that runs the issue.
+const STAGES: readonly Stage[] = ["research", "plan", "write", "fact-check", "audit", "design", "art", "build"];
 
 const post = async (path: string, body: unknown) => {
   const res = await fetch(path, {
@@ -149,6 +169,12 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
   const [tab, setTab] = useState<"brief" | "sections" | "pages" | "audit" | "build">("pages");
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<Record<number, string>>({});
+  // What the machine pre-screen said about each rendered spread (13 §9).
+  const [screens, setScreens] = useState<Record<number, ReadonlyArray<{ category: string; description: string }>>>({});
+  const [schedule, setSchedule] = useState<{ recurring: string; audience: string } | null>(null);
+  /* Which section the editor is re-deciding, and what they asked for. */
+  const [reWorld, setReWorld] = useState<number | null>(null);
+  const [reWorldNote, setReWorldNote] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -232,18 +258,19 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
     <div className="stack">
       {/* ----------------------------------------------------------- header */}
       <section>
-        <div className="spread" style={{ alignItems: "flex-start", gap: 16 }}>
-          <div style={{ minWidth: 0 }}>
+        <div className="spread items-start gap-4">
+          <div className="min-w-0">
             <button type="button" className="btn btn-quiet btn-sm" onClick={nav.toDashboard}>
               <Icon name="chevL" size={14} />Magazine
             </button>
-            <h2 className="h-page" style={{ marginTop: 8 }}>{issue.title || issue.subject}</h2>
-            <p className="dim" style={{ fontSize: 14, marginTop: 6, maxWidth: "68ch" }}>
+            <h2 className="h-page mt-2" style={vtName(issue.id)}>{issue.title || issue.subject}</h2>
+            <p className="dim text-body mt-1.5 max-w-wide">
               {issue.thesis}
             </p>
-            <p className="dim" style={{ fontSize: 12, marginTop: 5 }}>
-              {issue.type} · {issue.pages.length} pages · {issue.status}
-              {data.running ? " · running" : ""}
+            <p className="dim text-small mt-1.5">
+              {/* What it is, not what it is doing: the stage strip below says
+                  that, and saying it twice let the two disagree. */}
+              {issue.type} · {issue.pages.length} pages
             </p>
           </div>
           <button type="button" className="btn btn-line btn-sm" onClick={() => void load()}>
@@ -252,7 +279,42 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
         </div>
       </section>
 
-      {error ? <div className="fail"><Icon name="alert" size={15} /><span>{error}</span></div> : null}
+      {error ? <Failed what="That did not work." detail={error} /> : null}
+
+      {/* Why the last run stopped, and the one button that continues it.
+          This lived in the Build tab, three clicks from the stage that
+          failed, so a run that died in research looked like a run that had
+          never happened. */}
+      {workflow.lastError && !data.running ? (
+        <RunError
+          stage={workflow.lastError.stage}
+          message={workflow.lastError.message}
+          {...(workflow.lastError.stopped ? { stopped: true } : {})}
+          {...(workflow.lastError.at ? { at: workflow.lastError.at } : {})}
+          later={{
+            id: `publication:${issue.id}`,
+            label: issue.title || issue.subject,
+            url: `${api}/resume`,
+            body: { from: workflow.lastError.stage ?? from, stopAt },
+          }}
+        >
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={busy !== null}
+            onClick={() => {
+              const at = (workflow.lastError?.stage ?? from) as Stage;
+              setFrom(at);
+              void act("resume", () => post(`${api}/resume`, { from: at, stopAt }));
+            }}
+          >
+            <Icon name="play" size={14} />
+            {busy === "resume"
+              ? "Starting…"
+              : `Pick up from ${workflow.lastError.stage ?? from}`}
+          </button>
+        </RunError>
+      ) : null}
 
       {/* --------------------------------------------- stages, gates, hold */}
       <WorkflowBar workflow={workflow} label="build">
@@ -280,7 +342,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
 
       {/* ------------------------------------------------------------ brief */}
       {tab === "brief" ? (
-        <div className="cols cols-a" style={{ alignItems: "start" }}>
+        <div className="cols cols-a items-start">
           <div className="panel">
             <div className="panel-head"><h3>What you told it</h3></div>
             <div className="panel-body">
@@ -292,7 +354,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                 <div><span>Thesis</span><span>{issue.thesis}</span></div>
               </div>
               {issue.notes ? (
-                <p className="hint" style={{ marginTop: 12 }}>
+                <p className="hint mt-3">
                   Standing note for every stage: {issue.notes}
                 </p>
               ) : null}
@@ -303,25 +365,25 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
             <div className="panel">
               <div className="panel-head">
                 <h3>Pillars</h3>
-                <span className="dim mono" style={{ fontSize: 11 }}>
+                <span className="dim mono text-cap">
                   {(issue.sections ?? []).length} sections
                 </span>
               </div>
               <div className="panel-body">
                 {(issue.sections ?? []).length === 0 ? (
-                  <p className="hint">No flatplan yet. The plan stage writes one.</p>
+                  <Empty compact icon="layers" title="The sections land here once the plan stage has run." />
                 ) : (
                   <div className="rows">
                     {(issue.sections ?? []).map((s) => (
-                      <div key={s.n} className="row" style={{ padding: "9px 2px" }}>
-                        <span className="num tnum" style={{ width: "1.9em" }}>
+                      <div key={s.n} className="row py-2.5 px-0.5">
+                        <span className="num tnum">
                           {String(s.n).padStart(2, "0")}
                         </span>
                         <span className="grow">
-                          <span className="name" style={{ fontSize: 14 }}>{s.label}</span>
+                          <span className="name text-body">{s.label}</span>
                           <span className="meta">{s.question}</span>
                         </span>
-                        <span className="dim mono" style={{ fontSize: 11 }}>
+                        <span className="dim mono text-cap">
                           p{s.from}–{s.to}
                         </span>
                       </div>
@@ -334,15 +396,43 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
             <div className="panel">
               <div className="panel-head"><h3>Research it stands on</h3></div>
               <div className="panel-body">
-                {issue.research
-                  ? (
-                    <p className="dim" style={{ fontSize: 12.5 }}>
-                      {Object.keys(issue.research).length} block
-                      {Object.keys(issue.research).length === 1 ? "" : "s"} of gathered material:{" "}
-                      {Object.keys(issue.research).join(", ")}.
-                    </p>
-                  )
-                  : <p className="hint">Nothing gathered yet.</p>}
+                {/* What was read, file by file. This used to print the keys of
+                    the research object ("title, thesis, pillars"). */}
+                <p className="dim text-small">
+                  {issue.research
+                    ? `${data.inputs?.sources ?? 0} sources cited, ${
+                      data.inputs?.files.filter((f) => f.cited).length ?? 0
+                    } of them from your research files.`
+                    : "Nothing gathered yet. Your research files below are read first."}
+                </p>
+                {data.inputs?.files.length ? (
+                  <ul className="stack gap-2 mt-3 list-none p-0">
+                    {data.inputs.files.map((f) => (
+                      <li key={f.path} className="min-w-0">
+                        <div className="rowflex gap-2 items-baseline">
+                          <a
+                            href={/^https?:/.test(f.source) ? f.source : undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="trunc text-body min-w-0 flex-1"
+                          >
+                            {f.title}
+                          </a>
+                          {issue.research ? (
+                            <span className={`${f.cited ? "pill pill-ok" : "pill"} text-cap`}>
+                              {f.cited ? "cited" : "not cited"}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mono dim trunc text-cap">{f.path}</div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="hint mt-2">
+                    No research files in this workspace. Gathered pages land in the research folder.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -365,9 +455,9 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                 return (
                   <div key={s.n} className="col-sec">
                     <h4>{s.label}</h4>
-                    <p className="hint" style={{ marginBottom: 9 }}>{s.question}</p>
+                    <p className="hint mb-2.5">{s.question}</p>
                     {world ? (
-                      <div className="spec" style={{ marginBottom: 9 }}>
+                      <div className="spec mb-2.5">
                         <div><span>Register</span><span>{world.register}</span></div>
                         {world.technique ? <div><span>Technique</span><span>{world.technique}</span></div> : null}
                         <div><span>Idiom</span><span>{world.idiom}</span></div>
@@ -375,20 +465,69 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                         <div><span>Ink</span><span>{world.ink}</span></div>
                       </div>
                     ) : (
-                      <p className="hint" style={{ marginBottom: 9 }}>
-                        No design world yet — the art stage picks one.
+                      <p className="hint mb-2.5">
+                        No design yet — the <span className="mono">design</span> stage decides one world
+                        per section. Run it from the Build tab.
                       </p>
                     )}
+                    {/* The stage's choice is a default, not the last word: a
+                        register that is wrong for this section is the editor's
+                        call, and each section is meant to differ from its
+                        neighbours. Re-deciding one drops the design sign-off. */}
+                    {issue.design?.spec ? (
+                      reWorld === s.n ? (
+                        <div className="stack gap-1.5 mb-2.5">
+                          <input
+                            className="input text-small"
+                            autoFocus
+                            placeholder="what this section should look like (optional)"
+                            value={reWorldNote}
+                            onChange={(e) => setReWorldNote(e.target.value)}
+                          />
+                          <div className="rowflex gap-1.5">
+                            <button
+                              type="button"
+                              className="btn btn-sm"
+                              disabled={busy !== null || data.running}
+                              onClick={() => {
+                                const note = reWorldNote;
+                                setReWorld(null);
+                                setReWorldNote("");
+                                void act(`design-${s.n}`, () => post(`${api}/design/section`, { n: s.n, note }));
+                              }}
+                            >
+                              {busy === `design-${s.n}` ? "Choosing…" : "Choose"}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-ghost"
+                              onClick={() => { setReWorld(null); setReWorldNote(""); }}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost mb-2.5"
+                          disabled={busy !== null || data.running}
+                          onClick={() => { setReWorld(s.n); setReWorldNote(""); }}
+                        >
+                          <Icon name="sliders" size={13} />
+                          {world ? "Choose another design" : "Choose a design"}
+                        </button>
+                      )
+                    ) : null}
                     {own.map((p) => (
                       <button
                         key={p.n}
                         type="button"
-                        className="chip"
-                        style={{ width: "100%", cursor: "pointer" }}
+                        className="chip w-full cursor-pointer"
                         onClick={() => { setTab("pages"); setOpenPage(p.n); }}
                       >
                         <span className="mono">p{p.n}</span>
-                        <span className="grow" style={{ textAlign: "left" }}>{p.title}</span>
+                        <span className="grow text-left">{p.title}</span>
                         <span className="dens">{p.density}</span>
                       </button>
                     ))}
@@ -403,10 +542,10 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
       {/* ------------------------------------------------------------ pages */}
       {tab === "pages" ? (
         <div className="stack">
-          <div className="spread" style={{ alignItems: "flex-end" }}>
+          <div className="spread items-end">
             <div>
               <h3 className="h-panel">The flatplan</h3>
-              <p className="hint" style={{ marginTop: 3 }}>
+              <p className="hint mt-1">
                 Reading order, always. The letter under each page is its density; the
                 word beside it is what kind of page it is.
               </p>
@@ -432,7 +571,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                   </span>
                   <span className="cap">
                     <span className="dens">{p.density}</span>
-                    <span className="grow" style={{ textAlign: "left" }}>{p.type}</span>
+                    <span className="grow text-left">{p.type}</span>
                     {p.image ? <Icon name="image" size={12} /> : null}
                     {mine ? <span className="pill pill-warn">{mine}</span> : null}
                   </span>
@@ -451,7 +590,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                 <div className="panel-head">
                   <span className="grow">
                     <h3>p{p.n} · {p.title}</h3>
-                    <span className="dim" style={{ fontSize: 11 }}>
+                    <span className="dim text-cap">
                       {p.type} · density {p.density}
                       {p.body ? ` · ${p.words ?? 0} words` : " · unwritten"}
                     </span>
@@ -466,22 +605,23 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                 </div>
                 <div className="panel-body">
                   {p.body ? (
-                    <div className="read scroll-y" style={{ maxHeight: 320, "--rs": "15px", "--rm": "62ch" } as React.CSSProperties}>
-                      <p style={{ whiteSpace: "pre-wrap" }}>{p.body}</p>
+                    <div className="read scroll-y max-h-80" style={{ "--rs": "15px", "--rm": "62ch" } as React.CSSProperties}>
+                      <p className="whitespace-pre-wrap">{p.body}</p>
                     </div>
                   ) : (
                     <p className="hint">This page has not been written yet.</p>
                   )}
 
-                  <div className="rowflex" style={{ gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                  <div className="rowflex gap-2 mt-3 flex-wrap">
                     <button
                       type="button"
                       className="btn btn-line btn-sm"
                       disabled={busy !== null}
                       onClick={() => void act(`render-${p.n}`, async () => {
                         const out = await post(`${api}/render`, { page: p.n });
-                        if (out.image) setPreview((prev) => ({ ...prev, [p.n]: out.image }));
-                        else throw new Error(out.error || "the spread could not be rendered");
+                        if (!out.image) throw new Error(out.error || "the spread could not be rendered");
+                        setPreview((prev) => ({ ...prev, [p.n]: out.image }));
+                        setScreens((prev) => ({ ...prev, [p.n]: Array.isArray(out.prescreen) ? out.prescreen : [] }));
                       })}
                     >
                       {busy === `render-${p.n}` ? "Rendering…" : "Render spread"}
@@ -490,15 +630,25 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                         passage below and applies to all of them. */}
                     {p.body ? <ReadAloud rateControl={false} text={p.body} label="Hear the page" /> : null}
                     {preview[p.n] ? (
-                      <span className="dim mono" style={{ fontSize: 11, alignSelf: "center" }}>
+                      <span className="dim mono text-cap self-center">
                         {preview[p.n]}
                       </span>
                     ) : null}
                   </div>
 
+                  {/* The pre-screen: a crowded, loud, busy or washed-out page
+                      is named here, before anyone has to judge it by eye. */}
+                  {screens[p.n] ? (
+                    screens[p.n]!.length ? (
+                      <ul className="hint mt-2 pl-4.5">
+                        {screens[p.n]!.map((f) => <li key={f.category}>{f.description}</li>)}
+                      </ul>
+                    ) : <p className="hint mt-2">Pre-screen: nothing crowded, loud or busy.</p>
+                  ) : null}
+
                   {/* A note here is not a comment field. It becomes a finding
                       and goes through the same revise pass the audit uses. */}
-                  <div className="rowflex" style={{ gap: 8, marginTop: 10 }}>
+                  <div className="rowflex gap-2 mt-2.5">
                     <input
                       className="input grow"
                       value={note}
@@ -527,10 +677,10 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
       {/* ------------------------------------------------------------ audit */}
       {tab === "audit" ? (
         <div className="stack">
-          <div className="spread" style={{ alignItems: "flex-end" }}>
+          <div className="spread items-end">
             <div>
               <h3 className="h-panel">What the audit found</h3>
-              <p className="dim" style={{ fontSize: 12, marginTop: 3 }}>
+              <p className="dim text-small mt-1">
                 {issue.audit
                   ? `${findings.length} standing · ${issue.audit.rounds
                     ? `${issue.audit.rounds} revise rounds`
@@ -538,7 +688,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                   : "This issue has never been audited."}
               </p>
             </div>
-            <div className="rowflex" style={{ gap: 8 }}>
+            <div className="rowflex gap-2">
               <button
                 type="button"
                 className="btn btn-sm"
@@ -568,16 +718,16 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                   the sentences it objects to.
                 </Empty>
           ) : (
-            <div className="cols cols-b" style={{ alignItems: "start" }}>
+            <div className="cols cols-b items-start">
               {/* ---- the queue ---- */}
               <div className="panel">
                 <div className="panel-head">
                   <h3>The queue</h3>
-                  <span className="dim mono" style={{ fontSize: 11 }}>
+                  <span className="dim mono text-cap">
                     {findings.length} standing
                   </span>
                 </div>
-                <div className="panel-body scroll-y" style={{ padding: 8, maxHeight: 480 }}>
+                <div className="panel-body scroll-y p-2 max-h-120">
                   {findings.map((f, i) => (
                     <button
                       /* Position, not id: an id is derived from path, category
@@ -590,7 +740,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                       aria-current={current?.id === f.id}
                       onClick={() => setAtIndex(i)}
                     >
-                      <span className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
+                      <span className="rowflex gap-2 flex-nowrap">
                         <span className={SEV_CLASS[f.severity] ?? "sev sev-info"} />
                         <span className="grow">
                           <b>{f.title}</b>
@@ -605,7 +755,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                     </button>
                   ))}
                 </div>
-                <div className="panel-body" style={{ borderTop: "1px solid var(--line)", padding: "10px 16px" }}>
+                <div className="panel-body border-t border-t-(--line) py-2.5 px-4">
                   <p className="hint">
                     <span className="kbd">J</span> <span className="kbd">K</span> move through them.
                     Rewriting is the revise pass, above.
@@ -616,27 +766,27 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               {/* ---- the passage ---- */}
               {current ? (
                 <div className="dark crop">
-                  <span className="disc dots dots-light" aria-hidden="true"
-                        style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
+                  <span className="disc dots dots-light w-52.5 h-52.5 -right-22.5 -bottom-26" aria-hidden="true"
+ />
 
-                  <div style={{ padding: "18px 24px 0", position: "relative" }}>
-                    <div className="spread" style={{ alignItems: "flex-start" }}>
+                  <div className="px-6 pt-4.5 pb-0 relative">
+                    <div className="spread items-start">
                       <div>
                         <div className="label">
                           p{pageOf(current)} · {current.category}
                         </div>
-                        <h3 style={{ fontSize: 17.5, marginTop: 7 }}>{current.title}</h3>
+                        <h3 className="text-lead mt-2">{current.title}</h3>
                       </div>
                       <span className="pill">
                         {Math.min(atIndex, findings.length - 1) + 1} of {findings.length}
                       </span>
                     </div>
-                    <p className="muted" style={{ fontSize: 14, marginTop: 10, maxWidth: "56ch" }}>
+                    <p className="muted text-body mt-2.5 max-w-measure">
                       {current.description}
                     </p>
                   </div>
 
-                  <div style={{ padding: "18px 24px 0", position: "relative" }}>
+                  <div className="px-6 pt-4.5 pb-0 relative">
                     {currentPage?.body ? (
                       <MarkedPassage
                         text={currentPage.body}
@@ -644,17 +794,17 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                         markEnd={current.end}
                       />
                     ) : (
-                      <p className="muted" style={{ fontSize: 14 }}>
+                      <p className="muted text-body">
                         This page has not been written yet.
                       </p>
                     )}
                   </div>
 
-                  <div style={{ padding: "18px 24px 0", position: "relative" }}>
+                  <div className="px-6 pt-4.5 pb-0 relative">
                     <Suggestion suggestion={current.suggestion} />
                   </div>
 
-                  <div className="verdict" style={{ marginTop: 20 }}>
+                  <div className="read-actions mt-5">
                     {/* Hearing it is the fastest way to judge a sentence that
                         scans badly, which is most of what these checks find. */}
                     <ReadAloud
@@ -689,14 +839,14 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
           <div className="panel">
             <div className="panel-head">
               <h3>Pick the run back up</h3>
-              <span className="dim" style={{ fontSize: 11 }}>
+              <span className="dim text-cap">
                 A run that stopped part-way starts again here.
               </span>
             </div>
-            <div className="panel-body rowflex" style={{ gap: 10, flexWrap: "wrap" }}>
+            <div className="panel-body rowflex gap-2.5 flex-wrap">
               <span className="label">Resume from</span>
               <select
-                className="input" style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                className="input w-auto py-1.5 px-2.5 text-small"
                 value={from}
                 onChange={(e) => setFrom(e.target.value as Stage)}
               >
@@ -704,7 +854,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               </select>
               <span className="label">through</span>
               <select
-                className="input" style={{ width: "auto", padding: "6px 10px", fontSize: 13 }}
+                className="input w-auto py-1.5 px-2.5 text-small"
                 value={stopAt}
                 onChange={(e) => setStopAt(e.target.value as Stage)}
               >
@@ -722,25 +872,55 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
             </div>
           </div>
 
-          {/* Why the last run stopped. Without this the page showed a
-              half-written issue that was not running and said nothing about
-              either fact. */}
-          {workflow.lastError && !data.running ? (
-            <div className="fail">
-              <Icon name="alert" size={15} />
-              <span>
-                The last run stopped
-                {workflow.lastError.stage ? ` during ${workflow.lastError.stage}` : ""}:{" "}
-                {workflow.lastError.message}
-              </span>
-            </div>
-          ) : null}
+          {/* Why the last run stopped is said once, above the tabs, beside the
+              button that continues it. */}
+
+          {/* Who it is for picks the writing bar; a repeat makes the next
+              issue on its own and stops it at the copy sign-off. */}
+          {(() => {
+            const saved = issue as { recurring?: string | null; audience?: string };
+            const s = schedule ?? { recurring: saved.recurring ?? "", audience: saved.audience ?? "" };
+            return (
+              <div className="panel">
+                <div className="panel-head"><h3>Reader and repeat</h3></div>
+                <div className="panel-body rowflex gap-2 flex-wrap">
+                  <input
+                    className="input"
+                    value={s.audience}
+                    placeholder="Who reads it — e.g. kids 7-10"
+                    aria-label="Reader"
+                    onChange={(e) => setSchedule({ ...s, audience: e.target.value })}
+                  />
+                  <select
+                    value={s.recurring}
+                    aria-label="Repeat"
+                    onChange={(e) => setSchedule({ ...s, recurring: e.target.value })}
+                  >
+                    <option value="">One issue</option>
+                    <option value="weekly">A new issue weekly</option>
+                    <option value="monthly">A new issue monthly</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn btn-line btn-sm"
+                    disabled={busy !== null || schedule === null}
+                    onClick={() => void act("schedule", async () => {
+                      await post(`${api}/schedule`, { audience: s.audience, recurring: s.recurring || null });
+                      setSchedule(null);
+                    })}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
 
           <div className="panel">
             <div className="panel-head"><h3>When it finishes</h3></div>
             <div className="panel-body">
               {issue.build?.pdf
-                ? <p className="mono" style={{ fontSize: 12.5 }}>{issue.build.pdf}</p>
+                ? <p className="mono text-small">{issue.build.pdf}</p>
                 : (
                   <p className="hint">
                     No PDF yet. The build stage lays the issue out in Affinity and exports

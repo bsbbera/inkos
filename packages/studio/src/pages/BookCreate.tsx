@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { BookCreationDraft } from "@actalk/quire-core";
-import { BookPlus, CheckCircle2, RotateCcw, Sparkles } from "lucide-react";
+import { BookPlus, CheckCircle2, RotateCcw, Sparkles } from "../components/ui/glyphs";
 import { fetchJson, useApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
@@ -10,6 +10,7 @@ import {
   getBookCreateSessionId,
   setBookCreateSessionId,
 } from "./chat-page-state";
+import { Failed, Loading } from "../components/ui/states";
 
 interface Nav {
   toDashboard: () => void;
@@ -795,37 +796,35 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
-      <header className="q-head">
-        <p className="q-label">{t("bread.newBook")}</p>
-        <h1 className="mt-3">{t("create.title")}</h1>
+      <header className="head">
+        <p className="label">{t("bread.newBook")}</p>
+        <h1 className="h-page mt-3">{t("create.title")}</h1>
         <p className="leading-7">{copy.idleBody}</p>
       </header>
 
       {error && (
-        <div role="alert" className={`border ${c.error} rounded-xl px-4 py-3 text-sm animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both]`}>
-          {error}
-        </div>
+        <div className="panel-in"><Failed what="The book was not created." detail={error} /></div>
       )}
 
       {status && (
-        <div role="status" className="flex items-center gap-2.5 rounded-xl border border-primary/40 bg-primary/5 px-4 py-3 text-sm text-primary animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both]">
-          <span className="q-thinking" aria-hidden="true"><i /><i /><i /></span>
+        <div role="status" className="notice flex items-center gap-2.5 text-sm panel-in">
+          <span className="thinking" aria-hidden="true"><i /><i /><i /></span>
           {status}
         </div>
       )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]">
-        <section className="q-crop space-y-5 rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
-          <span className="q-disc q-disc-fill" aria-hidden="true"
-                style={{ width: 180, height: 180, right: -78, top: -84, opacity: .1 }} />
+        <section className="panel crop space-y-5">
+          <span className="disc fill w-45 h-45 -right-19.5 -top-21 opacity-10" aria-hidden="true"
+ />
           <div className="relative space-y-1.5">
-            <div className="q-label">{copy.formHeading}</div>
-            <p className="q-note text-xs leading-6">{copy.formHint}</p>
+            <div className="label">{copy.formHeading}</div>
+            <p className="note text-xs leading-6">{copy.formHint}</p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
-            <label className="q-field">
-              <span className="q-label">{copy.titleLabel}</span>
+            <label className="field">
+              <span className="label">{copy.titleLabel}</span>
               <input
                 value={form.title}
                 onChange={(event) => updateForm({ title: event.target.value })}
@@ -833,8 +832,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 placeholder={copy.titlePlaceholder}
               />
             </label>
-            <label className="q-field">
-              <span className="q-label">{copy.genreLabel}</span>
+            <label className="field">
+              <span className="label">{copy.genreLabel}</span>
               <input
                 value={form.genre}
                 onChange={(event) => updateForm({ genre: event.target.value })}
@@ -845,8 +844,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            <label className="q-field">
-              <span className="q-label">{copy.platformLabel}</span>
+            <label className="field">
+              <span className="label">{copy.platformLabel}</span>
               <select
                 value={form.platform}
                 onChange={(event) => updateForm({ platform: event.target.value })}
@@ -857,8 +856,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 ))}
               </select>
             </label>
-            <label className="q-field">
-              <span className="q-label">{copy.targetChaptersLabel}</span>
+            <label className="field">
+              <span className="label">{copy.targetChaptersLabel}</span>
               <input
                 type="number"
                 min={1}
@@ -867,8 +866,8 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 className="w-full text-sm"
               />
             </label>
-            <label className="q-field">
-              <span className="q-label">{copy.chapterWordCountLabel}</span>
+            <label className="field">
+              <span className="label">{copy.chapterWordCountLabel}</span>
               <input
                 type="number"
                 min={1000}
@@ -880,7 +879,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           </div>
 
           <label className="space-y-2 block">
-            <span className="q-label">{copy.briefLabel}</span>
+            <span className="label">{copy.briefLabel}</span>
             <textarea
               value={form.brief}
               onChange={(event) => updateForm({ brief: event.target.value })}
@@ -893,7 +892,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           {creating && (
             <div className="grid gap-2 sm:grid-cols-3">
               {copy.creationSteps.map((step) => (
-                <div key={step} className="flex items-center gap-2 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-primary">
+                <div key={step} className="notice flex items-center gap-2 text-xs">
                   <CheckCircle2 size={14} />
                   <span>{step}</span>
                 </div>
@@ -904,7 +903,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
           <button
             onClick={handleFormCreate}
             disabled={!canSubmitForm || creating || submitting}
-            className={`inline-flex items-center gap-2 px-5 py-3 ${c.btnPrimary} rounded-md disabled:opacity-50 font-medium text-sm`}
+            className="btn inline-flex items-center gap-2"
           >
             <BookPlus size={16} />
             {creating ? copy.creatingBook : copy.createBook}
@@ -912,9 +911,9 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
         </section>
 
         <aside className="space-y-4">
-          <section className="rounded-lg border border-border/60 bg-card/80 p-5 space-y-4">
+          <section className="panel space-y-4">
             <div className="space-y-1">
-              <div className="text-[11px] uppercase text-muted-foreground font-bold">
+              <div className="text-small uppercase text-muted-foreground font-bold">
                 {copy.assistantHeading}
               </div>
               <p className="text-xs text-muted-foreground leading-6">{copy.assistantHint}</p>
@@ -932,7 +931,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
               <button
                 onClick={handleDraftSubmit}
                 disabled={submitting || creating || !input.trim()}
-                className={`inline-flex items-center gap-2 px-3 py-2 ${c.btnPrimary} rounded-md disabled:opacity-50 font-medium text-xs`}
+                className="btn btn-sm inline-flex items-center gap-2"
               >
                 <Sparkles size={14} />
                 {submitting ? copy.submitting : copy.submit}
@@ -940,7 +939,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
               <button
                 onClick={handleDiscard}
                 disabled={!draft || submitting || creating}
-                className="inline-flex items-center gap-2 px-3 py-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20 disabled:opacity-50 font-medium text-xs"
+                className="btn btn-line btn-sm inline-flex items-center gap-2"
               >
                 <RotateCcw size={14} />
                 {copy.discard}
@@ -948,25 +947,25 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
             </div>
           </section>
 
-          <section className="rounded-lg border border-border/60 bg-card/80 p-5 space-y-4">
+          <section className="panel space-y-4">
             <div className="space-y-1">
-              <div className="text-[11px] uppercase text-muted-foreground font-bold">
+              <div className="text-small uppercase text-muted-foreground font-bold">
                 {copy.draftHeading}
               </div>
               <p className="text-xs text-muted-foreground leading-6">{copy.syncedHint}</p>
             </div>
 
             {loadingDraft ? (
-              <div className="text-sm text-muted-foreground">{projectLang === "zh" ? "读取草案中…" : "Loading draft…"}</div>
+              <Loading what={projectLang === "zh" ? "读取草案中…" : "Reading the draft…"} rows={2} />
             ) : draft ? (
               <div className="space-y-4">
                 {summaryStages.some((stage) => stage.rows.length > 0) ? (
                   <div className="space-y-3">
                     {summaryStages.map((stage) => (
-                      <div key={stage.key} className="rounded-md border border-border/50 bg-background/70 px-3 py-2.5">
+                      <div key={stage.key} className="well">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-[10px] uppercase text-muted-foreground font-semibold">{stage.label}</div>
-                          <span className="rounded-full border border-border/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+                          <div className="text-cap uppercase text-muted-foreground font-semibold">{stage.label}</div>
+                          <span className="pill border border-border/60">
                             {stage.status === "complete"
                               ? (projectLang === "zh" ? "已补齐" : "Ready")
                               : stage.status === "partial"
@@ -978,7 +977,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                           <div className="mt-2 space-y-2">
                             {stage.rows.map((row) => (
                               <div key={row.key}>
-                                <div className="text-[10px] uppercase text-muted-foreground">{row.label}</div>
+                                <div className="text-cap uppercase text-muted-foreground">{row.label}</div>
                                 <div className="mt-0.5 text-sm leading-6 whitespace-pre-wrap">{row.value}</div>
                               </div>
                             ))}
@@ -987,7 +986,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                         {stage.missing.length > 0 ? (
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {stage.missing.map((field) => (
-                              <span key={field} className="rounded-md bg-secondary/60 px-2 py-0.5 text-[10px] text-muted-foreground">
+                              <span key={field} className="pill">
                                 {field}
                               </span>
                             ))}
@@ -1005,7 +1004,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                       {draft.missingFields.map((field) => (
                         <span
                           key={field}
-                          className="rounded-md border border-border/70 bg-secondary/50 px-2 py-1 text-xs text-muted-foreground"
+                          className="pill"
                         >
                           {field}
                         </span>
@@ -1018,21 +1017,21 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={applyDraftToForm}
-                    className="px-3 py-2 rounded-md border border-border bg-secondary text-secondary-foreground font-medium text-xs"
+                    className="btn btn-line btn-sm text-secondary-foreground"
                   >
                     {copy.applyDraft}
                   </button>
                   <button
                     onClick={handleCreate}
                     disabled={!canCreateFromDraft(draft) || creating || submitting}
-                    className="px-3 py-2 rounded-md border border-border text-muted-foreground hover:text-foreground hover:border-foreground/20 disabled:opacity-50 font-medium text-xs"
+                    className="btn btn-line btn-sm"
                   >
                     {creating ? copy.creating : copy.create}
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="rounded-md border border-dashed border-border/70 bg-background/50 px-4 py-5">
+              <div className="well">
                 <div className="font-medium">{copy.idleTitle}</div>
                 <p className="mt-2 text-sm text-muted-foreground leading-7">
                   {copy.helperBody}

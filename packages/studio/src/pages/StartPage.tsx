@@ -66,7 +66,7 @@ export function StartPage({
       title: "Long novel",
       what: "Chapter by chapter, through draft, audit and revise. The form the rest of the app is shaped around.",
       /* Every other tile makes a fresh draft; this one only changed route, so
-         ChatPage read `inkos.book-create.session-id` back out of localStorage
+         ChatPage read `quire.book-create.session-id` back out of localStorage
          and reopened the last unfinished book setup. Nothing ever cleared that
          key except a book actually being created, so a setup abandoned once
          became the permanent answer to "start something". Reloading #/book/new
@@ -187,12 +187,12 @@ export function StartPage({
 
   return (
     <div className="stack-lg">
-      <section className="crop" style={{ paddingBottom: 0 }}>
-        <span className="disc fill" style={{ width: 230, height: 230, right: -112, top: -124, opacity: 0.13 }} />
-        <span className="disc stroke" style={{ width: 118, height: 118, right: -38, top: -34, opacity: 0.4 }} />
-        <span className="disc dots" style={{ width: 96, height: 96, left: -58, bottom: -66, opacity: 0.28 }} />
+      <section className="crop pb-0">
+        <span className="disc fill w-57.5 h-57.5 -right-28 -top-31 opacity-13" />
+        <span className="disc stroke w-29.5 h-29.5 -right-9.5 -top-8.5 opacity-40" />
+        <span className="disc dots w-24 h-24 -left-14.5 -bottom-16.5 opacity-28" />
         <h2 className="h-page">What are you making?</h2>
-        <p className="muted" style={{ fontSize: 14, marginTop: 10, maxWidth: "56ch" }}>
+        <p className="muted text-body mt-2.5 max-w-measure">
           Picking one opens a conversation, not a form. You describe it, the machine asks a few
           questions and writes the first truth files as you answer, and nothing lands on disk
           until you say so.
@@ -212,11 +212,11 @@ export function StartPage({
           if (e.key === "Enter") seeded("")();
         }}
       >
-        <span className="disc stroke-l" style={{ width: 150, height: 150, right: -64, bottom: -70 }} />
+        <span className="disc stroke-l w-37.5 h-37.5 -right-16 -bottom-17.5" />
         <div className="spread">
           <div>
             <h3 className="h-panel">Not sure which</h3>
-            <p className="note" style={{ fontSize: 14, marginTop: 4 }}>
+            <p className="note text-body mt-1">
               Describe it in a sentence and Quire will pick the form, set up the folder and write
               the first truth file. You can change the form afterwards.
             </p>
@@ -242,10 +242,10 @@ function Group({
   if (ways.length === 0) return null;
   return (
     <section>
-      <div className="rowflex" style={{ gap: 12, marginBottom: 14 }}>
+      <div className="rowflex gap-3 mb-3.5">
         <span className="label">{label}</span>
-        <span style={{ flex: 1, height: 1, background: "var(--line)" }} />
-        <span className="dim" style={{ fontSize: 11 }}>{aside}</span>
+        <span className="flex-1 h-0.25 bg-(--line)" />
+        <span className="dim text-cap">{aside}</span>
       </div>
       <div className="tiles">
         {ways.map((w) => (

@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { setAppLanguage } from "./app-language";
-import { localizeKnownRuntimeMessage } from "./error-copy";
+import { localizeKnownRuntimeMessage, plainError } from "./error-copy";
 
 /*
  * These cases assert the Chinese copy. They were written when the global app
@@ -38,9 +38,32 @@ describe("localizeKnownRuntimeMessage", () => {
     expect(studioMessage).not.toMatch(/kkaiapi/i);
 
     const cliMessage = localizeKnownRuntimeMessage(
-      "INKOS_LLM_API_KEY not set. Run 'inkos config set-global' or add it to project .env file.",
+      "QUIRE_LLM_API_KEY not set. Run 'quire config set-global' or add it to project .env file.",
     );
-    expect(cliMessage).toContain("INKOS_LLM_API_KEY 未设置");
+    expect(cliMessage).toContain("QUIRE_LLM_API_KEY 未设置");
     expect(cliMessage).not.toMatch(/kkaiapi/i);
+  });
+});
+
+describe("plainError", () => {
+  it("turns a provider quota error into a sentence with the reset time", () => {
+    const e = plainError(
+      'page-8: antigravity: rate-limit — error: Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h30m50s. (response may be truncated) AGY_ERROR: {"short_error":"RESOURCE_EXHAUSTED (code 429)"}',
+    );
+    expect(e.where).toBe("page 8");
+    expect(e.text).toBe("Antigravity has hit its usage limit. It resets in 2h30m. Resume then, or pick another model in Settings.");
+    expect(e.rewritten).toBe(true);
+    // The fix is the model settings, and the limit lifts 2h30m after the error.
+    expect(e.fix).toBe("models");
+    expect(e.resetMs).toBe(150 * 60_000);
+  });
+  it("points a timeout at resuming, not at the settings", () => {
+    const e = plainError("write: claude: timeout — ETIMEDOUT");
+    expect(e.fix).toBe("resume");
+    expect(e.resetMs).toBeUndefined();
+  });
+  it("keeps an unknown message but drops the machine payload", () => {
+    expect(plainError('Outline missing for section 2 AGY_ERROR: {"x":1}').text).toBe("Outline missing for section 2");
+    expect(plainError("Outline missing").rewritten).toBe(false);
   });
 });

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createStudioServer } from "../api/server.js";
 import { createAndPersistBookSession, loadStoryGraph } from "@actalk/quire-core";
 
-const INKOS_CONFIG = JSON.stringify({
+const QUIRE_CONFIG = JSON.stringify({
   name: "test-project",
   version: "0.1.0",
   language: "zh",
@@ -15,15 +15,15 @@ const INKOS_CONFIG = JSON.stringify({
 
 describe("interactive-film-authoring confirm flow (stubbed LLM)", () => {
   let root: string;
-  const prev = process.env.INKOS_AGENT_LLM_STUB;
-  beforeAll(() => { process.env.INKOS_AGENT_LLM_STUB = "1"; });
+  const prev = process.env.QUIRE_AGENT_LLM_STUB;
+  beforeAll(() => { process.env.QUIRE_AGENT_LLM_STUB = "1"; });
   afterAll(() => {
-    if (prev === undefined) delete process.env.INKOS_AGENT_LLM_STUB;
-    else process.env.INKOS_AGENT_LLM_STUB = prev;
+    if (prev === undefined) delete process.env.QUIRE_AGENT_LLM_STUB;
+    else process.env.QUIRE_AGENT_LLM_STUB = prev;
   });
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "if-confirm-"));
-    await writeFile(join(root, "inkos.json"), INKOS_CONFIG, "utf-8");
+    await writeFile(join(root, "quire.json"), QUIRE_CONFIG, "utf-8");
     await mkdir(join(root, "interactive-films", "p"), { recursive: true });
   });
   afterEach(async () => { await rm(root, { recursive: true, force: true }); });

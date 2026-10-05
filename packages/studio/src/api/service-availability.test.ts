@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isServiceAvailable } from "./service-availability.js";
 
 // The regression this exists for: the four CLI providers were listed in the
-// endpoint bank but never written into inkos.json, so the old rule reported
+// endpoint bank but never written into quire.json, so the old rule reported
 // every one of them disconnected and chat had no model to select.
 describe("isServiceAvailable", () => {
   it("offers a CLI provider that needs no key, configured or not", () => {
@@ -34,7 +34,7 @@ describe("isServiceAvailable", () => {
 });
 
 describe("a local server", () => {
-  it("is offered without being written into inkos.json first", () => {
+  it("is offered without being written into quire.json first", () => {
     // Ollama on loopback: nothing to configure, nothing to hold a key for.
     expect(isServiceAvailable({
       group: "local", apiKeyOptional: true, hasApiKey: false, isConfigured: false,

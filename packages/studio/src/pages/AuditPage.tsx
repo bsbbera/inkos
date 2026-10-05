@@ -16,17 +16,23 @@
  * your intent, round dots are the file's own state; they never mean the same
  * thing inside one row.
  */
+import { Num } from "../components/ui/num";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TypeMark } from "../components/TypeMark";
 import type { SSEMessage } from "../hooks/use-sse";
 import { fetchJson, useApi } from "../hooks/use-api";
 import { useNewSSEMessages } from "../hooks/use-sse";
 import { Icon } from "../components/ui/icon";
+import { Spinner } from "../components/ui/working";
+import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
 import { copyText } from "../lib/clipboard";
+import { PicturesStrip } from "../components/PicturesStrip";
+import { SettingCard } from "../components/SettingCard";
+import { Verdict } from "../components/Verdict";
 import {
-  Grip, ReadAloud, ReadingSize, useColumns, useReadingSize, type Workflow,
+  Grip, ReadAloud, ReadingSize, STAGE_CLASS, useColumns, useReadingSize, type Workflow,
 } from "../components/workflow";
 
 /* ------------------------------------------------------------------- types */
@@ -54,6 +60,9 @@ interface FileAudit {
   /* Restyle passes over this file, and whose voice the last one used. */
   readonly restyles?: number;
   readonly voice?: string;
+  /* How far it reads from that voice, before and after the last pass. */
+  readonly voiceDistance?: number;
+  readonly voiceDistanceBefore?: number;
 }
 
 /** "read 4x, rewritten twice" - said only where there is something to say. */
@@ -78,7 +87,14 @@ function historyOf(a: FileAudit): string {
  */
 export function voiceOf(a: FileAudit): string | null {
   if (!a.restyles) return null;
-  return a.voice ? `in ${a.voice}'s voice` : "restyled";
+  const name = a.voice ? `in ${a.voice}'s voice` : "restyled";
+  // The measured move, when there is one. "0.31 → 0.12" is the honest answer
+  // to "did it work", which a name alone cannot give (05 §3).
+  if (a.voiceDistance === undefined) return name;
+  const after = a.voiceDistance.toFixed(2);
+  return a.voiceDistanceBefore === undefined
+    ? `${name} · ${after} away`
+    : `${name} · ${a.voiceDistanceBefore.toFixed(2)} → ${after}`;
 }
 
 interface Item {
@@ -118,7 +134,12 @@ const RESUME_STAGES = [
   "research", "plan", "write", "fact-check", "audit", "art", "build",
 ] as const;
 
-type Severity = "blocking" | "warning" | "note";
+/* The registry's gate names, in the words a person approving them uses. */
+const GATE_WORDS: Readonly<Record<string, string>> = {
+  content: "Writing", design: "Pictures", build: "Build",
+};
+
+type Severity ="blocking" | "warning" | "note";
 
 interface Finding {
   readonly id: string;
@@ -131,10 +152,25 @@ interface Finding {
   readonly description: string;
   readonly suggestion: string;
   readonly fix?: string;
-  readonly state: "open" | "accepted" | "ignored";
+  readonly state: "open" | "accepted" | "ignored" | "fixed";
   readonly para: number;
   readonly start: number;
   readonly end: number;
+}
+
+/** One reader-map run: per simulated reader, attention paragraph by paragraph. */
+interface ReaderRun {
+  readonly at: string | null;
+  readonly maps: ReadonlyArray<{
+    readonly persona: string;
+    readonly label: string;
+    readonly points: ReadonlyArray<{
+      readonly para: number;
+      readonly attention: number;
+      readonly reason: string;
+      readonly wouldStopHere: boolean;
+    }>;
+  }>;
 }
 
 interface Counts {
@@ -268,20 +304,43 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
     picked ? `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/pipeline` : "",
   );
   const pipeRun = pipelineData?.state ?? null;
-  const openGate = pipeRun?.status === "waiting-gate" ? pipeRun.stage.replace("gate:", "") : null;
 
-  /* The gate to undo is the last one given, not the first one declared: with
-     content and design both signed, withdrawing "content" would reopen the
-     writing while the pictures stood approved on top of it. */
-  const lastApproved = (["build", "design", "content"] as const)
-    .find((g) => pipeRun?.gates[g]?.state === "approved") ?? null;
+  /* The gates this kind of work has at all, read off the registry. Shown
+     whether or not a run exists: a gate that appears only while it is open
+     is a gate nobody knows is coming. */
+  const { data: registry } = useApi<{ productions: ReadonlyArray<{
+    readonly id: string;
+    readonly pipeline?: { readonly gates?: readonly string[]; readonly design?: readonly string[]; readonly build?: readonly string[] };
+  }> }>("/productions");
+  const declared = registry?.productions.find((p) => p.id === picked?.kind)?.pipeline ?? null;
 
-  const decideGate = async (verb: "approve" | "withdraw", gate: string | null) => {
-    if (!picked || !gate) return;
-    await act(verb === "approve" ? "gate" : "gate-undo", () => fetchJson(
+  /* A book and a storybook are drawn per chapter or spread; everything else
+     is one unit, which is what their runners already record. */
+  const workUnits = () => picked?.kind === "book" || picked?.kind === "storybook"
+    ? Math.max(1, items.filter((i) => unitOf(i) !== null).length)
+    : 1;
+
+  /* Any gate, any time. A sign-off is a record; nothing waits on it. */
+  const decideGate = async (verb: "approve" | "withdraw", gate: string) => {
+    if (!picked) return;
+    await act("gate", () => fetchJson(
       `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/gates/${gate}/${verb}`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
-    ), verb === "approve" ? "Signed off. The run moves on." : "Sign-off withdrawn.");
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ totalUnits: workUnits() }) },
+    ), verb === "approve" ? "Signed off." : "Sign-off withdrawn.");
+    await refetchPipeline();
+  };
+
+  /*
+   * Start the pictures (or the build, for a type with none) for work written
+   * before runs existed. A new work gets there on its own; this one has no run
+   * to carry it, so this makes one and walks it on.
+   */
+  const startNext = async () => {
+    if (!picked) return;
+    await act("start", () => fetchJson(
+      `/productions/${picked.kind}/${encodeURIComponent(picked.id)}/content-ready`,
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ totalUnits: workUnits() }) },
+    ), "Started.");
     await refetchPipeline();
   };
 
@@ -394,16 +453,22 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
     }
   }, [refetchDetail, refetchProjects, refetchFindings]);
 
-  const approveProject = (yes: boolean, force = false) => {
-    if (!picked || !detail) return;
-    /* A publication keeps its approvals on the issue, so the two gates are
-       forwarded to the routes that own them rather than duplicated here. */
+  /*
+   * Sign off the page on screen, and only that page.
+   *
+   * This called the project route, which loops every file in the work - so
+   * signing the one page you had read signed the twenty-one you had not. A
+   * publication still signs its copy on the issue, which is where that
+   * approval lives.
+   */
+  const approvePage = (yes: boolean) => {
+    if (!picked || !detail || !page) return;
     const path = picked.kind === "publication"
       ? `/publications/${encodeURIComponent(picked.id)}/approve`
-      : `/audit/project/${picked.kind}/${encodeURIComponent(picked.id)}/approve`;
+      : "/audit/approve";
     const body = picked.kind === "publication"
       ? { what: "copy", approve: yes }
-      : { approve: yes, ...(force ? { gate: "force" } : {}) };
+      : { path: page, approve: yes };
     return act(
       "approve",
       () => fetchJson(path, {
@@ -632,6 +697,75 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
     }
   }, [current, queue.length, refetchFindings]);
 
+  /* The reader map for this page (19 §5c): where simulated readers drift. */
+  const [readerRun, setReaderRun] = useState<ReaderRun | null>(null);
+  const [reading, setReading] = useState(false);
+  useEffect(() => {
+    setReaderRun(null);
+    if (!page) return;
+    fetchJson<ReaderRun>(`/audit/reader?path=${encodeURIComponent(page)}`)
+      .then(setReaderRun)
+      .catch(() => setReaderRun(null));
+  }, [page]);
+  /* One tint per paragraph: the coldest reader there, and what they said. */
+  const heat = useMemo(() => {
+    const out = new Map<number, { attention: number; reason: string; stop: boolean }>();
+    for (const map of readerRun?.maps ?? []) {
+      for (const p of map.points) {
+        const was = out.get(p.para);
+        const stop = p.wouldStopHere || !!was?.stop;
+        if (!was || p.attention < was.attention) {
+          out.set(p.para, { attention: p.attention, reason: `${map.label}: ${p.reason}`, stop });
+        } else if (stop !== was.stop) {
+          out.set(p.para, { ...was, stop });
+        }
+      }
+    }
+    return out;
+  }, [readerRun]);
+  const runReader = useCallback(async () => {
+    if (!page) return;
+    setReading(true);
+    toast("Two readers are reading this page…");
+    try {
+      const out = await fetchJson<ReaderRun & { cold: number }>("/audit/reader", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: page }),
+      });
+      setReaderRun(out);
+      toast(out.cold
+        ? `${out.cold} passage${out.cold === 1 ? "" : "s"} where a reader drifts, marked on the page.`
+        : "Nobody drifted. Nothing marked.");
+      await refetchFindings();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "The readers could not finish.");
+    } finally {
+      setReading(false);
+    }
+  }, [page, refetchFindings]);
+
+  /* The writer rewrites the marked words, and only them. */
+  const rewrite = useCallback(async () => {
+    if (!current) return;
+    setSettling(true);
+    toast("The writer is rewriting that passage…");
+    try {
+      await fetchJson(`/findings/${current.id}/rewrite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      toast("Rewritten. Restore puts the old words back.");
+      await Promise.all([refetchFindings(), refetchPage()]);
+      setAtIndex(0);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That did not take.");
+    } finally {
+      setSettling(false);
+    }
+  }, [current, refetchFindings, refetchPage]);
+
   useQueueKeys({
     enabled: !running && queue.length > 0 && mode === "read",
     onNext: () => setAtIndex((i) => Math.min(i + 1, queue.length - 1)),
@@ -685,13 +819,13 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
 
         <StateColumn
           pipeRun={pipeRun}
-          openGate={openGate}
-          lastApproved={lastApproved}
           onGate={(verb, gate) => void decideGate(verb, gate)}
           detail={detail ?? null}
           busy={busy}
           running={running}
-          onApprove={(yes, force) => void approveProject(yes, force)}
+          onApprove={(yes) => void approvePage(yes)}
+          declared={declared}
+          onStart={() => void startNext()}
           onResume={(a, b) => void resume(a, b)}
           onRevise={(deslop) => void revisePage(deslop)}
           onRestyle={(whole) => void restylePage(whole)}
@@ -733,6 +867,10 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
           busy={settling}
           onAccept={() => void settle("accepted")}
           onIgnore={() => void settle("ignored")}
+          onRewrite={() => void rewrite()}
+          heat={heat}
+          reading={reading}
+          onReader={() => void runReader()}
         />
 
       </div>
@@ -850,14 +988,13 @@ function ScopeColumn({
                 <button
                   key={item.path}
                   type="button"
-                  className="row"
-                  style={{ padding: "8px 4px", width: "100%", textAlign: "left" }}
+                  className="row py-2 px-1 w-full text-left"
                   aria-current={page === item.path}
                   onClick={() => onPage(item.path)}
                 >
-                  {f.num ? <span className="num tnum" style={{ width: "1.9em" }}>{f.num}</span> : null}
+                  {f.num ? <span className="num tnum">{f.num}</span> : null}
                   <span className="grow">
-                    <span className="name" style={{ fontSize: 14 }}>{f.name}</span>
+                    <span className="name text-body">{f.name}</span>
                     <span className="meta">
                       {item.words.toLocaleString()} words · {f.note}
                       {f.history ? ` · ${f.history}` : ""}
@@ -884,13 +1021,13 @@ function ScopeColumn({
           on every work in it. The only thing in this row that says anything
           is the toggle, so the row is the toggle. */}
       <div className="panel-head panel-head-thin">
-        <span className="grow trunc" style={{ minWidth: 0 }}>
+        <span className="grow trunc min-w-0">
           {picked ? (
-            <span className="rowflex" style={{ gap: 8, minWidth: 0 }}>
-              <span className="trunc" style={{ fontSize: 14, fontWeight: 600 }} title={picked.id}>
+            <span className="rowflex gap-2 min-w-0">
+              <span className="trunc text-body font-semibold" title={picked.id}>
                 {titleOf(picked.id)}
               </span>
-              <span className="dim" style={{ fontSize: 11, flex: "none" }}>
+              <span className="dim text-cap flex-none">
                 {items.length} file{items.length === 1 ? "" : "s"}
               </span>
             </span>
@@ -907,7 +1044,7 @@ function ScopeColumn({
         />
       </div>
 
-      <div className="panel-body grows" style={{ padding: "6px 14px 10px" }}>
+      <div className="panel-body grows px-3.5 pt-1.5 pb-2.5">
         {projects.length > 1 ? (
           <>
             {/* No "The work" heading, and no row for the work you are already
@@ -922,14 +1059,13 @@ function ScopeColumn({
                   <Fragment key={`${p.kind}/${p.id}`}>
                     <button
                       type="button"
-                      className="row row-work"
-                      style={{ padding: "8px 4px" }}
+                      className="row row-work py-2 px-1"
                       aria-current={open}
                       onClick={() => onPick({ kind: p.kind, id: p.id })}
                     >
                       <TypeMark kind={p.kind} />
                       <span className="grow">
-                        <span className="name" style={{ fontSize: 14 }} title={p.id}>
+                        <span className="name text-body" title={p.id}>
                           {titleOf(p.id)}
                         </span>
                         {/* The silhouette said the type already. Repeating the
@@ -946,12 +1082,12 @@ function ScopeColumn({
           </>
         ) : files}
       </div>
-      <div className="panel-body" style={{ borderTop: "1px solid var(--line)", padding: "13px 16px" }}>
-        <div className="rowflex" style={{ justifyContent: "space-between", marginBottom: 10 }}>
-          <span className="dim" style={{ fontSize: 11 }}>
+      <div className="panel-body border-t border-t-(--line) py-3.5 px-4">
+        <div className="rowflex justify-between mb-2.5">
+          <span className="dim text-cap">
             {here ? `${here.words.toLocaleString()} words` : `${items.length} files`}
           </span>
-          <span className="dim mono" style={{ fontSize: 11 }}>
+          <span className="dim mono text-cap">
             {estimate(here ? here.words : items.reduce((n, i) => n + i.words, 0))}
           </span>
         </div>
@@ -961,16 +1097,15 @@ function ScopeColumn({
             offering to start another. Both use the same controller, so one
             Stop serves both. */}
         {running || working ? (
-          <button type="button" className="btn btn-line" style={{ width: "100%", justifyContent: "center" }} onClick={onStop}>
-            <span className="spin" />
+          <button type="button" className="btn btn-line w-full justify-center" onClick={onStop}>
+            <Spinner />
             Stop
           </button>
         ) : (
           <>
             <button
               type="button"
-              className="btn"
-              style={{ width: "100%", justifyContent: "center" }}
+              className="btn w-full justify-center"
               disabled={!here}
               onClick={onRead}
             >
@@ -979,8 +1114,7 @@ function ScopeColumn({
             </button>
             <button
               type="button"
-              className="btn btn-quiet btn-sm"
-              style={{ width: "100%", justifyContent: "center", marginTop: 7 }}
+              className="btn btn-quiet btn-sm w-full justify-center mt-2"
               disabled={items.length === 0}
               onClick={onReadAll}
             >
@@ -988,7 +1122,7 @@ function ScopeColumn({
             </button>
           </>
         )}
-        <p className="hint" style={{ marginTop: 9 }}>
+        <p className="hint mt-2.5">
           {progress ?? "Findings from earlier runs stay until you settle them."}
         </p>
       </div>
@@ -1011,22 +1145,29 @@ function ScopeColumn({
  * work and the list of things standing against it are one subject, and a
  * finding that blocks the sign-off now sits under the sign-off it blocks.
  */
+/** The unit a page is: the first run of digits in its file name, as `refFromPath` reads it. */
+function unitOf(item: Item | null): number | null {
+  const digits = item ? /(\d+)/.exec(item.name.replace(/\.[^.]+$/, "")) : null;
+  const n = digits ? Number(digits[1]) : 0;
+  return n >= 1 ? n : null;
+}
+
 function StateColumn({
   detail, busy, running, onApprove, onResume, onRevise,
   onRestyle, voice, restyling,
-  pipeRun, openGate, lastApproved, onGate,
+  pipeRun, onGate, declared, onStart,
   items, allFindings, here,
   pageName, queue, counts, filter, onFilter, at, onPick,
 }: {
   readonly detail: Detail | null;
+  /** The gates and stages the registry declares for this kind of work. */
+  readonly declared: { readonly gates?: readonly string[]; readonly design?: readonly string[]; readonly build?: readonly string[] } | null;
+  /** Start the next stage of work written before runs existed. */
+  readonly onStart: () => void;
   readonly busy: string | null;
   /** Where the run itself stands, which the files on disk cannot say. */
   readonly pipeRun: PipelineRun | null;
-  /** The gate waiting on a person right now, if one is. */
-  readonly openGate: string | null;
-  /** The most recent sign-off, which is the one an undo should take back. */
-  readonly lastApproved: string | null;
-  readonly onGate: (verb: "approve" | "withdraw", gate: string | null) => void;
+  readonly onGate: (verb: "approve" | "withdraw", gate: string) => void;
   readonly running: boolean;
   readonly onApprove: (approve: boolean, force?: boolean) => void;
   readonly onResume: (from: string, stopAt: string) => void;
@@ -1098,7 +1239,13 @@ function StateColumn({
   const workflow = detail?.workflow ?? null;
   const signed = !!detail && detail.items.length > 0 && detail.items.every((i) => i.audit.approved);
   const auditGate = workflow?.gates.find((g) => g.name === "audit") ?? null;
-  const blocked = auditGate ? !auditGate.canApprove : false;
+  /* The sign-off button acts on the page on screen, so it is this page's
+     approval and this page's contradictions that decide it - not the other
+     twenty-one's. A publication signs its copy on the issue, all at once. */
+  const perIssue = detail?.kind === "publication";
+  const pageSigned = perIssue ? signed : !!here?.audit.approved;
+  const objections = perIssue ? auditGate?.blockers.length ?? 0 : counts.blocking;
+  const blocked = perIssue ? (auditGate ? !auditGate.canApprove : false) : counts.blocking > 0;
   const held = workflow ? !workflow.done.can : false;
 
   const pills: ReadonlyArray<{ value: Severity; label: string; className: string; n: number }> = [
@@ -1110,16 +1257,13 @@ function StateColumn({
   return (
     <div className="panel panel-flush colpanel">
       {/* ---------------------------------------------------------- status */}
-      <div className="panel-head" style={{ padding: "13px 16px" }}>
-        <span className="grow" style={{ minWidth: 0 }}>
+      <div className="panel-head py-3.5 px-4">
+        <span className="grow min-w-0">
           <h3 className="h-panel">Where it stands</h3>
           {workflow ? (
             <span
-              className="rowflex"
-              style={{
-                gap: 6, fontSize: 11, marginTop: 2, alignItems: "flex-start",
-                color: held ? "var(--bad)" : "var(--ok)",
-              }}
+              className="rowflex gap-1.5 text-cap mt-0.5 items-start"
+              style={{ color: held ? "var(--bad)" : "var(--ok)" }}
             >
               <Icon name={held ? "alert" : "check"} size={12} />
               <span>
@@ -1129,7 +1273,7 @@ function StateColumn({
               </span>
             </span>
           ) : (
-            <span className="dim" style={{ fontSize: 11 }}>Pick something on the left.</span>
+            <span className="dim text-cap">Pick something on the left.</span>
           )}
         </span>
         {workflow ? (
@@ -1152,8 +1296,8 @@ function StateColumn({
       <div className="grows">
 
         {/* ------------------------------------------- the whole production */}
-        <div className="panel-body" style={{ padding: "12px 16px" }}>
-          <div className="label" style={{ marginBottom: 8 }}>
+        <div className="panel-body py-3 px-4">
+          <div className="label mb-2">
             <span>All {global.pages} page{global.pages === 1 ? "" : "s"}</span>
           </div>
           {/* The figures and the four stages are one block, not two stacked
@@ -1172,13 +1316,13 @@ function StateColumn({
             </span>
             <span><b className={global.open ? "is-bad" : "is-ok"}>{global.open}</b><em>open</em></span>
             <span><b className={global.blocking ? "is-bad" : ""}>{global.blocking}</b><em>blocking</em></span>
-            <span><b>{global.words.toLocaleString()}</b><em>words</em></span>
+            <span><b><Num value={global.words} /></b><em>words</em></span>
           </div>
-          <div className="stats" style={{ marginTop: 11 }}>
-            <span><b>{global.reads}</b><em>reads</em></span>
-            <span><b>{global.revisions}</b><em>rewrites</em></span>
-            <span><b>{global.deslops}</b><em>de-AI</em></span>
-            <span><b>{global.notes}</b><em>notes</em></span>
+          <div className="stats mt-3">
+            <span><b><Num value={global.reads} /></b><em>reads</em></span>
+            <span><b><Num value={global.revisions} /></b><em>rewrites</em></span>
+            <span><b><Num value={global.deslops} /></b><em>de-AI</em></span>
+            <span><b><Num value={global.notes} /></b><em>notes</em></span>
             {global.styled > 0 ? (
               <span>
                 <b className={global.styled === global.pages ? "is-ok" : ""}>
@@ -1194,14 +1338,13 @@ function StateColumn({
               {workflow.stages.map((st) => (
                 <div
                   key={st.stage}
-                  className="rowflex"
-                  style={{ gap: 8, alignItems: "baseline", fontSize: 12 }}
+                  className="rowflex gap-2 items-baseline text-small"
                 >
-                  <span className={`st ${st.state === "done" ? "done" : st.state === "partial" ? "now" : ""}`}>
+                  <span className={`st ${STAGE_CLASS[st.state] ?? ""}`}>
                     <i />
                   </span>
-                  <span style={{ width: 52, fontWeight: 500 }}>{st.stage}</span>
-                  <span className="grow dim trunc" style={{ fontSize: 11 }} title={st.detail}>
+                  <span className="w-13 font-medium">{st.stage}</span>
+                  <span className="grow dim trunc text-cap" title={st.detail}>
                     {st.detail}
                   </span>
                 </div>
@@ -1211,56 +1354,30 @@ function StateColumn({
           </div>
         </div>
 
+        {/* The world this is set in, beside the manuscript: reading it and
+            correcting it are the two things anyone does with it (22 §5). */}
+        {detail ? (
+          <div className="panel-body py-3 px-4">
+            <SettingCard type={detail.kind} id={detail.id} />
+          </div>
+        ) : null}
+        {/* The print card used to sit here. It is a build-stage concern — trim,
+            binding, spine, an upload folder — and this screen is for reading a
+            work against its own rules. Putting it beside the manuscript meant
+            the one gate on this page was the one nobody needs while reading,
+            and the two that matter (design, build) were not on any page at all.
+            The component and its routes are kept; nothing renders them until
+            the build surface that owns them exists. See analysis/debt.md. */}
+
+        {/* What has been drawn for this work — this page's first — beside the
+            reading of it, and one verdict on the page itself (04 §7). */}
+        {detail ? (
+          <PicturesStrip kind={detail.kind} id={detail.id} {...(unitOf(here) !== null ? { unit: unitOf(here)! } : {})} />
+        ) : null}
       {workflow && showState ? (
         <>
-          {/* --------------------------------------------------- the run --
-              Where the pipeline itself has stopped, and the one decision that
-              restarts it. Everything below this panel is read off the files on
-              disk; this is read off the run, and it is the only thing on the
-              screen that knows a gate is open. */}
-          {pipeRun ? (
-            <div className="panel-body" style={{ padding: "10px 16px" }}>
-              <div className="rowflex" style={{ gap: 8, fontSize: 12, alignItems: "baseline" }}>
-                <span className="dim" style={{ fontSize: 11 }}>Run</span>
-                <span className="mono grow" style={{ fontSize: 11.5 }}>{pipeRun.stage}</span>
-                <span className={openGate ? "pill pill-warn" : "pill"}>
-                  {openGate ? `${openGate} gate open` : pipeRun.status}
-                </span>
-              </div>
-              {openGate ? (
-                <div className="rowflex" style={{ gap: 7, marginTop: 9, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    disabled={busy !== null}
-                    onClick={() => onGate("approve", openGate)}
-                  >
-                    <Icon name="check" size={13} />
-                    {busy === "gate" ? "Signing off…" : `Sign off the ${openGate}`}
-                  </button>
-                  <span className="hint" style={{ fontSize: 11 }}>
-                    Signing off starts whatever comes next. It can be withdrawn.
-                  </span>
-                </div>
-              ) : lastApproved ? (
-                <div className="rowflex" style={{ gap: 7, marginTop: 9 }}>
-                  <button
-                    type="button"
-                    className="btn btn-line btn-sm"
-                    disabled={busy !== null}
-                    onClick={() => onGate("withdraw", lastApproved)}
-                  >
-                    <Icon name="x" size={13} />
-                    {busy === "gate-undo" ? "Reopening…" : `Withdraw the ${lastApproved} sign-off`}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-
           {/* ------------------------------------------------------- gates */}
-          <div className="panel-body" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)" }}>
+          <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
             <div className="stack-xs">
               {workflow.gates.map((g) => {
                 /* The sign-off lives per file in the audit state for every kind
@@ -1271,8 +1388,8 @@ function StateColumn({
                   : !!g.approved;
                 return (
                   <div key={g.name} className="stack-xs">
-                    <div className="rowflex" style={{ gap: 8, fontSize: 12 }}>
-                      <span className="grow" style={{ fontWeight: 500 }}>{g.label}</span>
+                    <div className="rowflex gap-2 text-small">
+                      <span className="grow font-medium">{g.label}</span>
                       <span className={done ? "pill pill-ok" : "pill"}>
                         {done ? "approved" : "not approved"}
                       </span>
@@ -1280,20 +1397,18 @@ function StateColumn({
                     {g.blockers.map((b) => (
                       <span
                         key={b}
-                        className="rowflex"
-                        style={{ gap: 6, fontSize: 11, alignItems: "flex-start", color: "var(--bad)" }}
+                        className="rowflex gap-1.5 text-cap items-start text-(--bad)"
                       >
-                        <span className="sev sev-bad" style={{ marginTop: 5 }} />
+                        <span className="sev sev-bad mt-1.5" />
                         <span>{b}</span>
                       </span>
                     ))}
                     {g.warnings.map((w) => (
                       <span
                         key={w}
-                        className="rowflex"
-                        style={{ gap: 6, fontSize: 11, alignItems: "flex-start", color: "var(--ink-3)" }}
+                        className="rowflex gap-1.5 text-cap items-start text-(--ink-3)"
                       >
-                        <span className="sev sev-warn" style={{ marginTop: 5 }} />
+                        <span className="sev sev-warn mt-1.5" />
                         <span>{w}</span>
                       </span>
                     ))}
@@ -1304,27 +1419,28 @@ function StateColumn({
           </div>
 
           {/* ---------------------------------------------- what you can do */}
-          <div className="panel-body" style={{ padding: "10px 16px", borderTop: "1px solid var(--line)" }}>
-            <div className="rowflex" style={{ gap: 7, flexWrap: "wrap" }}>
-              {signed ? (
+          <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+            <div className="rowflex gap-2 flex-wrap">
+              {pageSigned ? (
                 <button
                   type="button"
                   className="btn btn-line btn-sm"
-                  disabled={busy !== null}
+                  disabled={busy !== null || (!perIssue && !here)}
                   onClick={() => onApprove(false)}
                 >
-                  <Icon name="x" size={13} />Withdraw the sign-off
+                  <Icon name="x" size={13} />
+                  {perIssue ? "Withdraw the sign-off" : "Withdraw this page's sign-off"}
                 </button>
               ) : (
                 <button
                   type="button"
                   className="btn btn-sm"
-                  disabled={busy !== null || blocked}
-                  title={blocked ? "Clear what is listed above first." : undefined}
+                  disabled={busy !== null || blocked || (!perIssue && !here)}
+                  title={blocked ? "Clear the blocking findings on this page first." : undefined}
                   onClick={() => onApprove(true)}
                 >
                   <Icon name="check" size={13} />
-                  {busy === "approve" ? "Saving…" : "Sign off the writing"}
+                  {busy === "approve" ? "Saving…" : perIssue ? "Sign off the writing" : "Sign off this page"}
                 </button>
               )}
               <button
@@ -1410,26 +1526,24 @@ function StateColumn({
             {/* The override, and only where there is something to override. It
                 is deliberately not the same button as the sign-off: signing off
                 over a contradiction is a different decision from signing off. */}
-            {blocked && !signed ? (
+            {blocked && !pageSigned ? (
               <button
                 type="button"
-                className="btn btn-bad btn-sm"
-                style={{ marginTop: 8 }}
+                className="btn btn-bad btn-sm mt-2"
                 disabled={busy !== null}
                 onClick={() => onApprove(true, true)}
               >
                 <Icon name="alert" size={13} />
-                Sign off anyway, over {auditGate!.blockers.length} objection
-                {auditGate!.blockers.length === 1 ? "" : "s"}
+                Sign off anyway, over {objections} objection
+                {objections === 1 ? "" : "s"}
               </button>
             ) : null}
 
             {detail?.resumable ? (
-              <div className="rowflex" style={{ gap: 7, marginTop: 9, flexWrap: "wrap" }}>
+              <div className="rowflex gap-2 mt-2.5 flex-wrap">
                 <span className="label">Resume</span>
                 <select
-                  className="input"
-                  style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
+                  className="input w-auto py-1.5 px-2 text-small"
                   value={from}
                   onChange={(e) => setFrom(e.target.value)}
                 >
@@ -1437,8 +1551,7 @@ function StateColumn({
                 </select>
                 <span className="label">through</span>
                 <select
-                  className="input"
-                  style={{ width: "auto", padding: "5px 8px", fontSize: 12 }}
+                  className="input w-auto py-1.5 px-2 text-small"
                   value={stopAt}
                   onChange={(e) => setStopAt(e.target.value)}
                 >
@@ -1455,20 +1568,26 @@ function StateColumn({
                 </button>
               </div>
             ) : (
-              <p className="hint" style={{ marginTop: 9 }}>
+              <p className="hint mt-2.5">
                 A {(detail?.kindLabel ?? "file").toLowerCase()} is written in one pass, so
                 there is no stage to pick it up at. Rewriting is how it changes.
               </p>
             )}
 
             {workflow.lastError ? (
-              <div className="fail" style={{ marginTop: 9, fontSize: 12 }}>
-                <Icon name="alert" size={14} />
-                <span>
-                  The last run stopped
-                  {workflow.lastError.stage ? ` during ${workflow.lastError.stage}` : ""}:{" "}
-                  {workflow.lastError.message}
-                </span>
+              <div className="mt-2.5">
+                <RunError
+                  stage={workflow.lastError.stage}
+                  message={workflow.lastError.message}
+                  {...(workflow.lastError.stopped ? { stopped: true } : {})}
+                  {...(workflow.lastError.at ? { at: workflow.lastError.at } : {})}
+                  {...(detail?.resumable ? { later: {
+                    id: `${detail.kind}:${detail.id}`,
+                    label: detail.title,
+                    url: `/api/v1/publications/${encodeURIComponent(detail.id)}/resume`,
+                    body: { from: workflow.lastError.stage ?? from, stopAt },
+                  } } : {})}
+                />
               </div>
             ) : null}
           </div>
@@ -1480,21 +1599,21 @@ function StateColumn({
           times and still wrong" is a per-page fact, and a production total
           cannot say it — nine rewrites spread over seventeen pages and nine
           rewrites of this one are the same number and a different problem. */}
-      <div className="panel-body" style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
-        <div className="label" style={{ marginBottom: 8 }}>
+      <div className="panel-body py-3 px-4 border-t border-t-(--line)">
+        <div className="label mb-2">
           <span>{here ? `This page · ${pageName}` : "This page"}</span>
         </div>
         {here ? (
           <>
             <div className="stats">
-              <span><b>{here.audit.reads ?? 0}</b><em>reads</em></span>
-              <span><b>{here.audit.revisions ?? 0}</b><em>rewrites</em></span>
-              <span><b>{here.audit.deslops ?? 0}</b><em>de-AI</em></span>
-              <span><b>{here.audit.notes ?? 0}</b><em>notes</em></span>
-              <span><b>{here.audit.restyles ?? 0}</b><em>styled</em></span>
+              <span><b><Num value={here.audit.reads ?? 0} /></b><em>reads</em></span>
+              <span><b><Num value={here.audit.revisions ?? 0} /></b><em>rewrites</em></span>
+              <span><b><Num value={here.audit.deslops ?? 0} /></b><em>de-AI</em></span>
+              <span><b><Num value={here.audit.notes ?? 0} /></b><em>notes</em></span>
+              <span><b><Num value={here.audit.restyles ?? 0} /></b><em>styled</em></span>
               <span><b className={counts.open ? "is-bad" : "is-ok"}>{counts.open}</b><em>open</em></span>
             </div>
-            <div className="rowflex" style={{ gap: 10, marginTop: 10, fontSize: 11 }}>
+            <div className="rowflex gap-2.5 mt-2.5 text-cap">
               <span className="dim">last read {when(here.audit.checked)}</span>
               <span className="dim">·</span>
               <span className="dim">last rewrite {when(here.audit.rewritten)}</span>
@@ -1515,25 +1634,25 @@ function StateColumn({
       </div>
 
       {/* ---------------------------------------------------------- checks */}
-      <div className="panel-head" style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+      <div className="panel-head py-3 px-4 border-t border-t-(--line)">
         <span className="grow">
-          <span className="rowflex" style={{ gap: 10, alignItems: "baseline" }}>
-            <span className="numeral" style={{ fontSize: 24 }}>
+          <span className="rowflex gap-2.5 items-baseline">
+            <span className="numeral text-h3">
               {String(counts.open).padStart(2, "0")}
             </span>
-            <span style={{ fontSize: 13.5, fontWeight: 600 }}>
+            <span className="text-body font-semibold">
               finding{counts.open === 1 ? "" : "s"}
             </span>
           </span>
-          <span className="dim" style={{ fontSize: 11, display: "block", marginTop: 2, overflowWrap: "anywhere" }}>
+          <span className="dim text-cap block mt-0.5 wrap-anywhere">
             {pageName ? `on ${pageName}` : "pick a page on the left"}
           </span>
         </span>
-        <span className="dim" style={{ fontSize: 11 }}>j / k</span>
+        <span className="dim text-cap">j / k</span>
       </div>
 
-      <div className="panel-body" style={{ padding: "8px 12px 2px" }}>
-        <div className="rowflex" style={{ gap: 6, flexWrap: "wrap" }}>
+      <div className="panel-body px-3 pt-2 pb-0.5">
+        <div className="rowflex gap-1.5 flex-wrap">
           {pills.map((p) => (
             <button
               key={p.value}
@@ -1551,7 +1670,7 @@ function StateColumn({
         </div>
       </div>
 
-      <div className="panel-body" style={{ padding: 8 }}>
+      <div className="panel-body p-2">
         {/* Three states, not two. A page nobody has read and a page that was
             read and came back clean both used to say "Nothing is open", which
             is a claim about writing that had never been looked at.
@@ -1581,7 +1700,7 @@ function StateColumn({
                 aria-current={at?.id === f.id}
                 onClick={() => onPick(f.id)}
               >
-                <span className="rowflex" style={{ gap: 8, flexWrap: "nowrap" }}>
+                <span className="rowflex gap-2 flex-nowrap">
                   <span className={settled ? "sev sev-ok" : SEV_CLASS[f.severity]} />
                   <span className="grow">
                     <b>{f.title}</b>
@@ -1591,7 +1710,7 @@ function StateColumn({
                   </span>
                   {settled ? (
                     <span className="pill pill-ok">
-                      {f.state === "accepted" ? "taken" : "left"}
+                      {f.state === "accepted" ? "taken" : f.state === "fixed" ? "rewritten" : "left"}
                     </span>
                   ) : f.severity === "blocking" ? (
                     <span className="pill pill-bad">blocks</span>
@@ -1602,6 +1721,88 @@ function StateColumn({
           })
         )}
       </div>
+
+      {/* Your verdict and the stages, last: they are what you do once the
+          page above has been read. */}
+      {detail && here ? (
+        <div className="panel-body py-3 px-4 border-t border-t-(--line)">
+          <div className="label mb-2"><span>Your verdict on this page</span></div>
+          <Verdict
+            key={here.path}
+            surface="content"
+            refTo={{ type: detail.kind, id: detail.id, ...(unitOf(here) !== null ? { unit: unitOf(here)! } : {}) }}
+            target={here.path}
+            source="page"
+          />
+        </div>
+      ) : null}
+
+      {workflow && showState ? (
+        <>
+          {/* --------------------------------------------------- the run --
+              Where the pipeline itself is. Everything above is read off the
+              files on disk; this is read off the run. */}
+          {pipeRun ? (
+            <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+              <div className="rowflex gap-2 text-small items-baseline">
+                <span className="dim text-cap">Run</span>
+                <span className="mono grow text-cap">{pipeRun.stage}</span>
+                <span className="pill">{pipeRun.status}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {/* ------------------------------------------------ the three gates --
+              Every gate this kind of work has, whether or not the run has got
+              there, each one signable at any time. */}
+          {declared?.gates?.length ? (
+            <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+              <div className="stack-xs">
+                {declared.gates.map((g) => {
+                  const state = pipeRun?.gates[g]?.state ?? null;
+                  const steps = g === "design"
+                    ? `${(declared.design ?? []).join(" → ")} · ComfyUI / Canva`
+                    : g === "build"
+                      ? `${(declared.build ?? []).join(" → ")}${declared.build?.includes("layout") ? " · Affinity" : ""}`
+                      : "the text, page by page";
+                  return (
+                    <div key={g} className="rowflex gap-2 text-small items-baseline">
+                      <span className="w-16 font-medium">{GATE_WORDS[g] ?? g}</span>
+                      <span className="grow dim trunc text-cap" title={steps}>{steps}</span>
+                      <span className={
+                        state === "approved" ? "pill pill-ok"
+                          : state === "rejected" ? "pill pill-bad" : "pill"
+                      }>
+                        {state === "approved" ? "signed off"
+                          : state === "waiting" ? "not signed"
+                            : state === "rejected" ? "sent back" : "not reached"}
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-line btn-sm"
+                        disabled={busy !== null}
+                        onClick={() => onGate(state === "approved" ? "withdraw" : "approve", g)}
+                      >
+                        {state === "approved" ? "Withdraw" : "Sign off"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+              {(!pipeRun || pipeRun.stage.startsWith("content.")) && declared.gates.length > 1 ? (
+                <div className="rowflex gap-2 mt-2.5 flex-wrap">
+                  <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={onStart}>
+                    <Icon name="play" size={13} />
+                    {busy === "start"
+                      ? "Starting…"
+                      : `Start ${(GATE_WORDS[declared.gates[1]!] ?? declared.gates[1]!).toLowerCase()}`}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
 
       </div>
     </div>
@@ -1626,7 +1827,7 @@ function PageColumn({
   path, name, text, loading, findings, current, onPick,
   mode, onMode, draft, onDraft, onSave, saving,
   note, onNote, onRevise, reviseBusy,
-  history, busy, onAccept, onIgnore,
+  history, busy, onAccept, onIgnore, onRewrite, heat, reading, onReader,
 }: {
   readonly path: string | null;
   readonly name: string;
@@ -1649,6 +1850,11 @@ function PageColumn({
   readonly busy: boolean;
   readonly onAccept: () => void;
   readonly onIgnore: () => void;
+  readonly onRewrite: () => void;
+  /** The reader map for this page, paragraph by paragraph. */
+  readonly heat: Heat;
+  readonly reading: boolean;
+  readonly onReader: () => void;
 }) {
   /* Above the early return: a hook cannot sit behind a condition. */
   const [full, setFull] = useState(false);
@@ -1665,8 +1871,8 @@ function PageColumn({
 
   if (!path) {
     return (
-      <div className="dark crop" style={{ height: "100%", display: "grid", placeItems: "center", padding: 32 }}>
-        <p className="muted" style={{ fontSize: 14, maxWidth: "42ch", textAlign: "center" }}>
+      <div className="dark crop h-full grid place-items-center p-8">
+        <p className="muted text-body text-center max-w-narrow">
           Pick a page on the left and it appears here whole, in the book&rsquo;s own
           type, with every objection marked in it.
         </p>
@@ -1679,24 +1885,24 @@ function PageColumn({
 
   return (
     <div className="dark crop colpanel reads" data-tabscope>
-      <span className="disc dots dots-light" aria-hidden="true"
-            style={{ width: 210, height: 210, right: -90, bottom: -104 }} />
+      <span className="disc dots dots-light w-52.5 h-52.5 -right-22.5 -bottom-26" aria-hidden="true"
+ />
 
-      <div className="readhead" style={{ position: "relative", flex: "none" }}>
-        <div className="spread readcol" style={{ alignItems: "flex-start", gap: 12 }}>
-          <div style={{ minWidth: 0 }}>
+      <div className="readhead relative flex-none">
+        <div className="spread readcol items-start gap-3">
+          <div className="min-w-0">
             <div className="label">{placeOf(path)}</div>
             {/* Truncates rather than breaking: `overflow-wrap: anywhere` put
                 `0007.md` down the column one character per line as soon as the
                 pane got narrow. A file name is one token. */}
-            <h3 className="trunc" style={{ fontSize: 17, marginTop: 5 }} title={name}>{name}</h3>
+            <h3 className="trunc text-lead mt-1.5" title={name}>{name}</h3>
           </div>
           {/* No `flex` here. It carried `none`, which is an inline style and
               so beat the container query that drops this row under the name
               when the pane is too narrow to hold both - so instead of
               wrapping, the row ran off the right edge of the panel. The
               stylesheet owns when it wraps. */}
-          <div className="rowflex" style={{ gap: 9 }}>
+          <div className="rowflex gap-2.5">
             {/* The whole page, out of the app or read to you. They belong to
                 the page, not to one mode of looking at it, so they sit with
                 the page's own controls and act on whichever text is in front
@@ -1717,6 +1923,18 @@ function PageColumn({
               <Icon name="copy" size={15} />
             </button>
             <ReadAloud dark iconOnly text={pageText} label="Read the whole page" />
+            {/* Where would a reader stop? Two simulated readers read the page
+                and the paragraphs where they drift are tinted (19 §5c). */}
+            <button
+              type="button"
+              className="btn btn-quiet btn-sm"
+              disabled={reading || !pageText.trim()}
+              aria-label="Where would a reader stop?"
+              title={reading ? "The readers are reading…" : "Where would a reader stop? Marks where attention falls"}
+              onClick={onReader}
+            >
+              <Icon name="pulse" size={15} />
+            </button>
             <ReadingSize dark />
             <span className="pill">
               {findings.filter((f) => f.state === "open").length} open
@@ -1736,13 +1954,13 @@ function PageColumn({
 
       {mode === "read" ? (
         <>
-          <div className="grows readbody" style={{ position: "relative" }}>
+          <div className="grows readbody relative">
             {loading ? (
-              <p className="muted" style={{ fontSize: 14 }}>Opening the page…</p>
+              <p className="muted text-body">Opening the page…</p>
             ) : text ? (
-              <MarkedText text={text} findings={findings} current={current} onPick={onPick} />
+              <MarkedText text={text} findings={findings} current={current} onPick={onPick} heat={heat} />
             ) : (
-              <p className="muted" style={{ fontSize: 14 }}>
+              <p className="muted text-body">
                 This page has nothing in it yet.
               </p>
             )}
@@ -1751,18 +1969,15 @@ function PageColumn({
           {/* The one you are on, and the two verdicts for it. Everything else
               about the page is above; this strip is about a single objection. */}
           {current ? (
-            <div style={{
-              padding: "13px 22px", position: "relative", flex: "none",
-              borderTop: "1px solid var(--line-char)",
-            }}>
-              <div className="label" style={{ marginBottom: 5 }}>
+            <div className="py-3.5 px-5.5 relative flex-none border-t border-t-(--line-char)">
+              <div className="label mb-1.5">
                 <span>{current.category}{current.severity === "blocking" ? " · blocks approval" : ""}</span>
               </div>
-              <b style={{ fontSize: 14 }}>{current.title}</b>
-              <p className="muted" style={{ fontSize: 13, marginTop: 5 }}>
+              <b className="text-body">{current.title}</b>
+              <p className="muted text-small mt-1.5">
                 {current.fix ? `Proposes: ${current.fix}` : current.suggestion}
               </p>
-              <div className="rowflex" style={{ gap: 8, marginTop: 10 }}>
+              <div className="rowflex gap-2 mt-2.5">
                 {current.fix ? (
                   <button type="button" className="btn btn-sm" disabled={busy} onClick={onAccept}>
                     <Icon name="check" size={14} />Accept the fix
@@ -1772,6 +1987,19 @@ function PageColumn({
                     <Icon name="pencil" size={14} />Write it yourself
                   </button>
                 )}
+                {/* The third hand: the writer redoes only the marked words.
+                    A finding about the whole page has none to mark. */}
+                {current.quote ? (
+                  <button
+                    type="button"
+                    className="btn btn-line btn-sm"
+                    disabled={busy}
+                    onClick={onRewrite}
+                    title="The writer rewrites only the marked words"
+                  >
+                    Rewrite it
+                  </button>
+                ) : null}
                 <button type="button" className="btn btn-line btn-sm" disabled={busy} onClick={onIgnore}>
                   Leave it
                 </button>
@@ -1793,7 +2021,7 @@ function PageColumn({
               Settings button is the stylesheet's job now, and only at the
               widths where the column actually reaches that corner. */}
           <div className="revisebar">
-            <div className="rowflex readcol" style={{ gap: 8 }}>
+            <div className="rowflex readcol gap-2">
               <input
                 className="input grow"
                 value={note}
@@ -1811,7 +2039,7 @@ function PageColumn({
               </button>
             </div>
             {history ? (
-              <p className="hint readcol" style={{ marginTop: 7, color: "var(--on-char-2)" }}>
+              <p className="hint readcol mt-2 text-(--on-char-2)">
                 So far: {history}.
               </p>
             ) : null}
@@ -1819,26 +2047,15 @@ function PageColumn({
         </>
       ) : (
         <>
-          <div className="grows readbody" style={{ position: "relative" }}>
-            <div className="readcol" style={{
-              border: "1.5px solid var(--vermilion)",
-              borderRadius: "var(--r-card)",
-              background: "var(--char-2)",
-              padding: "14px 16px",
-              height: "100%",
-              display: "flex",
-            }}>
+          <div className="grows readbody relative">
+            <div className="readcol edit-frame py-3.5 px-4 h-full flex">
               <textarea
-                className="read-field"
+                className="read-field text-(--on-char) flex-1"
                 /* No `--rm: 100%` here any more. Filling the column looked
                    like using the space and read as 34 characters a line in a
                    dragged-in column and 122 in a wide one; the stylesheet's
                    measure holds it near 75 either way. */
-                style={{
-                  color: "var(--on-char)",
-                  ...(chosen ? { "--rs": `${chosen}px` } : {}),
-                  flex: 1,
-                } as React.CSSProperties}
+                style={{ ...(chosen ? { "--rs": `${chosen}px` } : {}) } as React.CSSProperties}
                 aria-label="Edit the page"
                 value={draft}
                 onChange={(e) => onDraft(e.target.value)}
@@ -1851,7 +2068,7 @@ function PageColumn({
               other two are glyphs everyone already knows — an X closes, four
               corner brackets mean full screen — and spelling them out was
               three sentences of chrome under a page of prose. */}
-          <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
+          <div className="read-actions mt-0 flex-none">
             <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
               <Icon name="check" size={16} />
               {saving ? "Saving…" : "Save"}
@@ -1875,7 +2092,7 @@ function PageColumn({
               <Icon name="expand" size={16} />
             </button>
             <span className="grow" />
-            <span className="dim mono" style={{ fontSize: 11 }}>
+            <span className="dim mono text-cap">
               {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
             </span>
           </div>
@@ -1945,12 +2162,12 @@ function FullScreenEditor({
       onCancel={(e) => { e.preventDefault(); onClose(); }}
       onClose={onClose}
     >
-      <div className="spread readcol" style={{ alignItems: "flex-start", gap: 12, flex: "none" }}>
-        <div style={{ minWidth: 0 }}>
+      <div className="spread readcol items-start gap-3 flex-none">
+        <div className="min-w-0">
           <div className="label">{place}</div>
-          <h3 style={{ fontSize: 17, marginTop: 5, overflowWrap: "anywhere" }}>{name}</h3>
+          <h3 className="text-lead mt-1.5 wrap-anywhere">{name}</h3>
         </div>
-        <div className="rowflex" style={{ gap: 9, flex: "none" }}>
+        <div className="rowflex gap-2.5 flex-none">
           <ReadAloud dark iconOnly text={draft} label="Read the whole page" />
           <ReadingSize dark />
           <button
@@ -1965,26 +2182,14 @@ function FullScreenEditor({
         </div>
       </div>
 
-      <div className="readcol" style={{
-        border: "1.5px solid var(--vermilion)",
-        borderRadius: "var(--r-card)",
-        background: "var(--char-2)",
-        padding: "16px 20px",
-        flex: 1,
-        minHeight: 0,
-        display: "flex",
-      }}>
+      <div className="readcol edit-frame py-4 px-5 flex-1 min-h-0 flex">
         <textarea
-          className="read-field"
+          className="read-field text-(--on-char) flex-1"
           /* `--rs: 16.5px` and `--rm: 78ch` were hardcoded here, which is why
              this editor rendered an identical 760px column of 16.5px type at
              1024px and at 3440px. The dialog is its own container now and
              sizes itself; only a chosen size overrides it. */
-          style={{
-            color: "var(--on-char)",
-            ...(chosen ? { "--rs": `${chosen}px` } : {}),
-            flex: 1,
-          } as React.CSSProperties}
+          style={{ ...(chosen ? { "--rs": `${chosen}px` } : {}) } as React.CSSProperties}
           aria-label="Edit the page"
           value={draft}
           onChange={(e) => onDraft(e.target.value)}
@@ -1995,14 +2200,14 @@ function FullScreenEditor({
           already closes, and a second way out sitting next to the primary
           action only makes a person read both to find out which one keeps
           their work. */}
-      <div className="verdict" style={{ marginTop: 0, flex: "none" }}>
-        <div className="rowflex readcol" style={{ gap: 10 }}>
+      <div className="read-actions mt-0 flex-none">
+        <div className="rowflex readcol gap-2.5">
           <button type="button" className="btn" disabled={saving || !draft.trim()} onClick={onSave}>
             <Icon name="check" size={16} />
             {saving ? "Saving…" : "Save"}
           </button>
           <span className="grow" />
-          <span className="dim mono" style={{ fontSize: 11 }}>
+          <span className="dim mono text-cap">
             {draft.trim() ? draft.trim().split(/\s+/).length : 0} words
           </span>
         </div>
@@ -2051,13 +2256,21 @@ export function titleOf(slug: string): string {
     .join(" ");
 }
 
+/** Below this a simulated reader is drifting (core `READER_COLD`). */
+const COLD = 0.35;
+
+/** Per paragraph, the coldest reader there and what they said. */
+type Heat = ReadonlyMap<number, { readonly attention: number; readonly reason: string; readonly stop: boolean }>;
+
 function MarkedText({
-  text, findings, current, onPick,
+  text, findings, current, onPick, heat,
 }: {
   readonly text: string;
   readonly findings: ReadonlyArray<Finding>;
   readonly current: Finding | null;
   readonly onPick: (id: string) => void;
+  /** The reader map, when one has been run on this page. */
+  readonly heat?: Heat;
 }) {
   // Set once for the whole app, so the size survives moving between pages.
   const { chosen } = useReadingSize();
@@ -2066,42 +2279,64 @@ function MarkedText({
     .filter((f) => f.start >= 0 && f.end > f.start && f.end <= text.length)
     .sort((a, b) => a.start - b.start);
 
-  let at = 0;
-  for (const f of located) {
-    if (f.start < at) continue; // overlaps the one before it; do not double-mark
-    if (f.start > at) parts.push(text.slice(at, f.start));
-    parts.push(
-      <mark
-        key={f.id}
-        aria-current={current?.id === f.id}
-        className={
-          f.state !== "open" ? "m-ok"
-            : f.severity === "blocking" ? "m-bad"
-              : f.severity === "warning" ? "m-warn" : ""
-        }
-        onClick={() => onPick(f.id)}
-        title={f.state === "open" ? f.title : `${f.title} — settled`}
-      >
-        {text.slice(f.start, f.end)}
-      </mark>,
-    );
-    at = f.end;
+  /* Paragraph by paragraph, numbered the way findings count them, so the
+     reader map can tint the ones where attention fell. A mark stays inside
+     its paragraph. */
+  const blocks: Array<readonly [number, number]> = [];
+  let from = 0;
+  for (const m of text.matchAll(/\n\s*\n/g)) {
+    blocks.push([from, m.index]);
+    from = m.index + m[0].length;
   }
-  if (at < text.length) parts.push(text.slice(at));
+  blocks.push([from, text.length]);
+
+  let next = 0;
+  blocks.forEach(([a, b], para) => {
+    if (para > 0) parts.push(text.slice(blocks[para - 1]![1], a));
+    const inner: React.ReactNode[] = [];
+    let at = a;
+    while (next < located.length && located[next]!.start < b) {
+      const f = located[next]!;
+      next += 1;
+      if (f.start < at) continue; // overlaps the one before it; do not double-mark
+      const end = Math.min(f.end, b);
+      if (f.start > at) inner.push(text.slice(at, f.start));
+      inner.push(
+        <mark
+          key={f.id}
+          aria-current={current?.id === f.id}
+          className={
+            f.state !== "open" ? "m-ok"
+              : f.severity === "blocking" ? "m-bad"
+                : f.severity === "warning" ? "m-warn" : ""
+          }
+          onClick={() => onPick(f.id)}
+          title={f.state === "open" ? f.title : `${f.title} — settled`}
+        >
+          {text.slice(f.start, end)}
+        </mark>,
+      );
+      at = end;
+    }
+    if (at < b) inner.push(text.slice(at, b));
+    const h = heat?.get(para);
+    parts.push(h && (h.attention < COLD || h.stop) ? (
+      <span key={`p${para}`} className={h.stop ? "cold cold-stop" : "cold"} title={h.reason}>{inner}</span>
+    ) : (
+      <Fragment key={`p${para}`}>{inner}</Fragment>
+    ));
+  });
 
   return (
     <div
-      className="read"
+      className="read text-(--on-char)"
       /* The measure is the stylesheet's, not this element's. A `--rm: 66ch`
          used to be pinned here, which overrode it - and `66ch` in Literata is
          an 89-character line, so the manuscript ran that wide at every size no
          matter what the stylesheet said. */
-      style={{
-        color: "var(--on-char)",
-        ...(chosen ? { "--rs": `${chosen}px` } : {}),
-      } as React.CSSProperties}
+      style={{ ...(chosen ? { "--rs": `${chosen}px` } : {}) } as React.CSSProperties}
     >
-      <p style={{ whiteSpace: "pre-wrap" }}>{parts}</p>
+      <p className="whitespace-pre-wrap">{parts}</p>
     </div>
   );
 }

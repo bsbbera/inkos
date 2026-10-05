@@ -48,7 +48,7 @@ import {
   PlusIcon,
   SquareIcon,
   XIcon,
-} from "lucide-react";
+} from "../ui/glyphs";
 import { nanoid } from "nanoid";
 import type {
   ChangeEvent,

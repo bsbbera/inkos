@@ -367,11 +367,27 @@ export function markRunningToolsFailed(
   }));
 }
 
+/*
+ * A restored step is named in the app's language, not in the transcript's.
+ *
+ * The transcript stores whatever label the run wrote, and the table that
+ * writes it (`session-transcript-restore.ts`) has Chinese only — so reopening
+ * an English conversation turned "Confirm action" into "确认动作". The tool
+ * name is the durable fact; the label is a translation of it, made here.
+ */
+function relabel(executions: ToolExecution[]): ToolExecution[] {
+  return executions.map((execution) => {
+    if (!execution?.tool) return execution;
+    const label = resolveToolLabel(execution.tool, (execution as { agent?: string }).agent);
+    return label === execution.tool ? execution : { ...execution, label };
+  });
+}
+
 function extractSessionToolExecutions(message: SessionMessage): ToolExecution[] | undefined {
   const direct = (message as any).toolExecutions;
-  if (Array.isArray(direct)) return direct as ToolExecution[];
+  if (Array.isArray(direct)) return relabel(direct as ToolExecution[]);
   const legacy = (message as any).legacyDisplay?.toolExecutions;
-  return Array.isArray(legacy) ? legacy as ToolExecution[] : undefined;
+  return Array.isArray(legacy) ? relabel(legacy as ToolExecution[]) : undefined;
 }
 
 type ProposalResolution = "confirmed" | "rejected";

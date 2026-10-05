@@ -3,7 +3,7 @@ import {
   Search,
   FileOutput,
   TrendingUp,
-} from "lucide-react";
+} from "../ui/glyphs";
 
 export interface QuickActionsProps {
   readonly onAction: (command: string, requestedIntent?: "write_next") => void;

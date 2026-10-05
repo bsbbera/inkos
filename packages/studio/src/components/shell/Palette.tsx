@@ -142,7 +142,7 @@ export function Palette({
           />
           <span className="kbd">Esc</span>
         </div>
-        <div className="grp scroll-y" style={{ maxHeight: "52vh" }}>
+        <div className="grp scroll-y max-h-[52vh]">
           {hits.length === 0 ? (
             <div className="label">Nothing matches “{q}”.</div>
           ) : (
@@ -163,7 +163,7 @@ export function Palette({
                       <Icon name={e.icon} size={16} />
                       {e.label}
                       {e.hint ? (
-                        <span className="dim" style={{ marginLeft: 6 }}>
+                        <span className="dim ml-1.5">
                           {e.hint}
                         </span>
                       ) : null}

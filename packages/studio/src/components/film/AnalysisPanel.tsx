@@ -2,6 +2,7 @@ import { useApi } from "../../hooks/use-api";
 import { useColors } from "../../hooks/use-colors";
 import { tr } from "../../lib/app-language";
 import type { Theme } from "../../hooks/use-theme";
+import { Failed, Loading, Empty } from "../ui/states";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,7 +106,7 @@ function arcToPolylinePoints(arc: Arc): string {
 
 function IssuesList({ report, c }: { report: AnalysisReport; c: Colors }) {
   return (
-    <div className="border border-border rounded p-3" data-testid="validation-panel">
+    <div className="well" data-testid="validation-panel">
       <div className={`text-sm font-medium ${c.muted}`}>
         {tr("校验", "Validation")}{report.ok ? "" : tr("（有阻断问题）", " (blocking issues)")}
       </div>
@@ -135,10 +136,10 @@ function EmotionArcChart({ arcs, c }: { arcs: EmotionArcs; c: Colors }) {
   const baselineY = SVG_PAD_Y + (SVG_H - 2 * SVG_PAD_Y) / 2;
 
   return (
-    <div data-testid="emotion-arc" className="border border-border rounded p-3">
+    <div data-testid="emotion-arc" className="well">
       <div className={`text-sm font-medium mb-2 ${c.muted}`}>{tr("情感曲线", "Emotion arcs")}</div>
       {displayArcs.length === 0 ? (
-        <div className={`text-sm ${c.muted}`}>{tr("暂无可分析路径", "No paths to analyze")}</div>
+        <Empty compact icon="chart" title={tr("故事有了走到结局的路径后，情感曲线显示在这里。", "Emotion arcs show here once the story has a path to an ending.")} />
       ) : (
         <>
           <svg
@@ -213,7 +214,7 @@ function PathDistributionPanel({
   const maxHistCount = Math.max(...histEntries.map((e) => e.count), 1);
 
   return (
-    <div data-testid="path-distribution" className="border border-border rounded p-3">
+    <div data-testid="path-distribution" className="well">
       <div className={`text-sm font-medium mb-2 ${c.muted}`}>{tr("路径分布", "Path distribution")}</div>
 
       {distribution.truncated && (
@@ -223,7 +224,7 @@ function PathDistributionPanel({
       )}
 
       {endingEntries.length === 0 ? (
-        <div className={`text-sm ${c.muted}`}>{tr("暂无路径数据", "No path data")}</div>
+        <Empty compact icon="branch" title={tr("结局分布在故事有了完整路径后显示。", "How paths split across endings shows once there is a complete path.")} />
       ) : (
         <div className="space-y-1.5 mb-4">
           {endingEntries.map(([endingId, count]) => {
@@ -295,15 +296,15 @@ export function AnalysisPanel({
   );
 
   if (loading) {
-    return <div className={`p-4 text-sm ${c.muted}`}>{tr("正在加载分析结果…", "Loading analysis…")}</div>;
+    return <Loading what={tr("正在加载分析结果…", "Reading the analysis…")} />;
   }
 
   if (error) {
-    return <div className="p-4 text-sm text-destructive">{tr("加载失败：", "Load failed: ")}{error}</div>;
+    return <Failed what={tr("分析结果加载失败。", "Could not load the analysis.")} detail={error} />;
   }
 
   if (!data) {
-    return <div className={`p-4 text-sm ${c.muted}`}>{tr("暂无分析数据", "No analysis data")}</div>;
+    return <Empty compact icon="chart" title={tr("分析结果在运行分析后显示在这里。", "The analysis shows here once it has been run.")} />;
   }
 
   return (

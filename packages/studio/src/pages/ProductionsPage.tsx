@@ -9,11 +9,14 @@
  * they are the same question ("what have I got, and what needs me") and two
  * near-identical grids would drift apart within a month.
  */
+import { useArrivals } from "../hooks/use-arrivals";
+import { vtName } from "../lib/view-transition";
 import { useMemo, useState } from "react";
 import { useApi } from "../hooks/use-api";
 import type { BookSummary } from "../shared/contracts";
 import type { PublicationSummary } from "../hooks/use-shell-data";
 import { Icon } from "../components/ui/icon";
+import { Failed } from "../components/ui/states";
 
 type Filter = "all" | "drafting" | "waiting" | "done";
 
@@ -168,6 +171,7 @@ export function ProductionsPage({
   }, [kind, books.data, pubs.data, walk.data, nav]);
 
   const shown = filter === "all" ? items : items.filter((i) => i.state === filter);
+  const tiles = useArrivals(shown, (p) => p.id);
   const waiting = items.filter((i) => i.state === "waiting").length;
   const loading = kind === "books" ? (books.loading || walk.loading) : pubs.loading;
   const error = kind === "books" ? books.error : pubs.error;
@@ -183,7 +187,7 @@ export function ProductionsPage({
   return (
     <div className="stack-lg">
       <section>
-        <div className="spread" style={{ marginBottom: 18, alignItems: "flex-end" }}>
+        <div className="spread mb-4.5 items-end">
           <div>
             <h2 className="h-page">{loading ? "Reading the shelf…" : headline}</h2>
           </div>
@@ -202,11 +206,11 @@ export function ProductionsPage({
           </div>
         </div>
 
-        {error ? <div className="fail">{error}</div> : null}
+        {error ? <Failed what="That did not work." detail={error} /> : null}
 
         <div className="tiles">
-          {shown.map((p) => (
-            <button key={p.id} type="button" className="tile crop" onClick={p.open}>
+          {tiles.map(({ item: p, motion }) => (
+            <button key={p.id} type="button" className={`tile crop${motion ? ` ${motion}` : ""}`} onClick={p.open}>
               <span className={`mark ${p.mark}`}>
                 <span className="d1" />
                 <span className="d2" />
@@ -214,7 +218,7 @@ export function ProductionsPage({
               <span className="top">
                 <span className={p.badge.tone}>{p.badge.label}</span>
               </span>
-              <h4>{p.title}</h4>
+              <h4 style={vtName(p.id)}>{p.title}</h4>
               <span className="who">{p.detail}</span>
             </button>
           ))}
@@ -224,13 +228,13 @@ export function ProductionsPage({
             <span className="arrow" aria-hidden="true">
               <Icon name="plus" size={18} />
             </span>
-            <span style={{ fontSize: 14, fontWeight: 600 }}>Start something</span>
+            <span className="text-body font-semibold">Start something</span>
             <span className="hint">book · storybook · short · script</span>
           </button>
         </div>
 
         {shown.length === 0 && items.length > 0 ? (
-          <p className="dim" style={{ marginTop: 14 }}>
+          <p className="dim mt-3.5">
             Nothing is {filter} right now.
           </p>
         ) : null}

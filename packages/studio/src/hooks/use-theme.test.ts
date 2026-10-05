@@ -29,7 +29,7 @@ describe("readStoredMode", () => {
     const only = (key: string, value: string) => ({
       getItem: (k: string) => (k === key ? value : null),
     });
-    expect(readStoredMode(only("inkos:studio:theme", "dark"))).toBe("dark");
+    expect(readStoredMode(only("quire:studio:theme", "dark"))).toBe("dark");
     // The new key wins when both are present: it is the more recent choice.
     expect(
       readStoredMode({

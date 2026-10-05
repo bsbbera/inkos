@@ -7,10 +7,13 @@ import {
   Save,
   Sparkles,
   Trash2,
-} from "lucide-react";
+} from "./ui/glyphs";
 import type { TFunction } from "../hooks/use-i18n";
 import { fetchJson, useApi } from "../hooks/use-api";
+import { ask } from "./ConfirmDialog";
 
+import { Spinner } from "./ui/working";
+import { Failed, Loading } from "./ui/states";
 interface ChapterVersion {
   readonly id: string;
   readonly source: "manual" | "agent" | "revision" | "regeneration" | "restore";
@@ -116,8 +119,8 @@ export function ChapterWorkspacePanel({
     }
   };
 
-  const restoreVersion = (versionId: string) => {
-    if (!window.confirm(t("reader.restoreConfirm"))) return;
+  const restoreVersion = async (versionId: string) => {
+    if (!(await ask({ title: "Restore this version?", message: t("reader.restoreConfirm"), confirmLabel: "Restore" }))) return;
     void runAction("restore", async () => {
       await fetchJson(
         `/books/${bookId}/chapters/${chapterNumber}/versions/${versionId}/restore`,
@@ -129,8 +132,8 @@ export function ChapterWorkspacePanel({
     });
   };
 
-  const deleteChapter = () => {
-    if (!window.confirm(t("reader.deleteChapterConfirm"))) return;
+  const deleteChapter = async () => {
+    if (!(await ask({ title: "Delete the latest chapter?", message: t("reader.deleteChapterConfirm"), confirmLabel: "Delete", danger: true }))) return;
     void runAction("delete", async () => {
       await fetchJson(`/books/${bookId}/chapters/${chapterNumber}`, { method: "DELETE" });
       onChapterDeleted();
@@ -143,7 +146,7 @@ export function ChapterWorkspacePanel({
   };
 
   return (
-    <section className="rounded-2xl border border-primary/20 bg-card/80 p-5 md:p-7 shadow-sm space-y-6">
+    <section className="panel space-y-6">
       <header className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-xl font-serif font-semibold text-foreground">
@@ -157,7 +160,7 @@ export function ChapterWorkspacePanel({
             type="button"
             onClick={deleteChapter}
             disabled={busy !== null}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2 text-xs font-bold text-destructive transition-colors hover:bg-destructive hover:text-white disabled:opacity-50"
+            className="btn btn-bad btn-sm inline-flex items-center justify-center gap-2"
           >
             <Trash2 size={14} />
             {t("reader.deleteChapter")}
@@ -166,10 +169,7 @@ export function ChapterWorkspacePanel({
       </header>
 
       {loading && !data ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <RefreshCw size={15} className="animate-spin" />
-          {t("common.loading")}
-        </div>
+        <Loading what="Reading this chapter…" />
       ) : (
         <>
           <label className="block space-y-2">
@@ -179,7 +179,7 @@ export function ChapterWorkspacePanel({
               onChange={(event) => setBrief(event.target.value)}
               placeholder={t("reader.chapterBriefPlaceholder")}
               rows={5}
-              className="w-full resize-y rounded-xl border border-border/70 bg-background/70 px-4 py-3 text-sm leading-6 text-foreground outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
+              className="input w-full resize-y"
             />
           </label>
 
@@ -188,7 +188,7 @@ export function ChapterWorkspacePanel({
               type="button"
               onClick={() => void saveBrief()}
               disabled={busy !== null}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary px-4 py-2 text-xs font-bold text-foreground transition hover:border-primary/30 hover:text-primary disabled:opacity-50"
+              className="btn btn-line btn-sm inline-flex items-center gap-2"
             >
               <Save size={14} />
               {t("reader.saveBrief")}
@@ -197,16 +197,16 @@ export function ChapterWorkspacePanel({
               type="button"
               onClick={() => void rewrite()}
               disabled={busy !== null}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-primary-foreground shadow-sm transition hover:brightness-105 disabled:opacity-50"
+              className="btn btn-sm inline-flex items-center gap-2"
             >
-              <RefreshCw size={14} className={busy === "rewrite" ? "animate-spin" : ""} />
+              {busy === "rewrite" ? <Spinner /> : <RefreshCw size={14} />}
               {busy === "rewrite" ? t("reader.rewriting") : t("reader.rewriteFromBrief")}
             </button>
             <button
               type="button"
               onClick={() => void drawInspiration()}
               disabled={busy !== null}
-              className="inline-flex items-center gap-2 rounded-xl border border-warning/25 bg-warning/10 px-4 py-2 text-xs font-bold text-amber-700 transition hover:bg-warning/15 dark:text-amber-300 disabled:opacity-50"
+              className="btn btn-line btn-sm inline-flex items-center gap-2"
             >
               <Lightbulb size={14} />
               {busy === "inspiration" ? t("reader.drawing") : t("reader.inspiration")}
@@ -216,23 +216,21 @@ export function ChapterWorkspacePanel({
       )}
 
       {(error || actionError) && (
-        <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          {error || actionError}
-        </div>
+        <Failed what="That did not work." detail={error || actionError} />
       )}
       {notice && (
-        <div className="rounded-xl border border-success/20 bg-success/5 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+        <div className="pass block text-sm">
           {notice}
         </div>
       )}
 
       {inspiration && (
-        <article className="rounded-xl border border-warning/20 bg-warning/5 p-4">
+        <article className="notice">
           <div className="whitespace-pre-wrap text-sm leading-6 text-foreground">{inspiration}</div>
           <button
             type="button"
             onClick={addInspirationToBrief}
-            className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-amber-700 hover:text-warning dark:text-amber-300"
+            className="btn btn-quiet btn-sm mt-3"
           >
             <Lightbulb size={13} />
             {t("reader.addToBrief")}
@@ -240,8 +238,8 @@ export function ChapterWorkspacePanel({
         </article>
       )}
 
-      <details className="rounded-xl border border-border/60 bg-background/50 px-4 py-3">
-        <summary className="cursor-pointer text-sm font-bold text-foreground">
+      <details className="well">
+        <summary className="cursor-pointer label">
           {t("reader.generatedPlan")}
         </summary>
         <pre className="mt-4 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-xs leading-6 text-muted-foreground">
@@ -250,7 +248,7 @@ export function ChapterWorkspacePanel({
       </details>
 
       <div className="space-y-3">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+        <h3 className="label flex items-center gap-2">
           <History size={15} className="text-primary" />
           {t("reader.versionHistory")}
         </h3>
@@ -259,7 +257,7 @@ export function ChapterWorkspacePanel({
             {data.versions.map((version) => (
               <div
                 key={version.id}
-                className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/50 px-4 py-3 md:flex-row md:items-center md:justify-between"
+                className="well flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
               >
                 <div className="text-xs text-muted-foreground">
                   <span className="font-bold text-foreground">{version.source}</span>
@@ -272,7 +270,7 @@ export function ChapterWorkspacePanel({
                   <button
                     type="button"
                     onClick={() => void previewVersion(version.id)}
-                    className="rounded-lg px-3 py-1.5 text-xs font-bold text-muted-foreground transition hover:bg-secondary hover:text-foreground"
+                    className="btn btn-quiet btn-sm"
                   >
                     {t("reader.viewVersion")}
                   </button>
@@ -280,7 +278,7 @@ export function ChapterWorkspacePanel({
                     type="button"
                     onClick={() => restoreVersion(version.id)}
                     disabled={busy !== null}
-                    className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold text-primary transition hover:bg-primary/10 disabled:opacity-50"
+                    className="btn btn-line btn-sm"
                   >
                     <RotateCcw size={13} />
                     {t("reader.restoreVersion")}
@@ -295,7 +293,7 @@ export function ChapterWorkspacePanel({
       </div>
 
       {versionPreview && (
-        <div className="rounded-xl border border-primary/15 bg-background p-4">
+        <div className="well">
           <pre className="max-h-96 overflow-auto whitespace-pre-wrap font-serif text-sm leading-7 text-foreground/90">
             {versionPreview.content}
           </pre>

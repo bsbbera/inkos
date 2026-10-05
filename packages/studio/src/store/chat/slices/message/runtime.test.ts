@@ -220,6 +220,36 @@ describe("deserializeMessages", () => {
     expect(messages[0]?.toolExecutions?.[0]?.tool).toBe("interactive_film_create");
     expect(messages[0]?.parts?.[0]?.type).toBe("tool");
   });
+
+  it("names a restored step in the app's language, not the transcript's", () => {
+    // The transcript keeps a Chinese label for every known tool, so reopening
+    // an English conversation used to show 确认动作 over an English card.
+    setAppLanguage("en");
+    const messages = deserializeMessages([
+      {
+        role: "assistant",
+        content: "",
+        timestamp: 1,
+        toolExecutions: [exec({ id: "p1", tool: "propose_action", label: "确认动作" })],
+      } as any,
+    ]);
+
+    expect(messages[0]?.toolExecutions?.[0]?.label).toBe("Confirm action");
+  });
+
+  it("leaves a tool it has no name for alone", () => {
+    setAppLanguage("en");
+    const messages = deserializeMessages([
+      {
+        role: "assistant",
+        content: "",
+        timestamp: 1,
+        toolExecutions: [exec({ id: "p2", tool: "some_other_tool", label: "Whatever it said" })],
+      } as any,
+    ]);
+
+    expect(messages[0]?.toolExecutions?.[0]?.label).toBe("Whatever it said");
+  });
 });
 
 describe("withToolExecutions", () => {

@@ -55,7 +55,7 @@ export function Topbar({
 
       <div className="crumbs grow">
         {crumbs.map((c, i) => (
-          <span key={`${c.label}-${i}`} style={{ display: "contents" }}>
+          <span key={`${c.label}-${i}`} className="contents">
             {i > 0 ? <span className="sep">/</span> : null}
             {i === last || !c.route ? (
               <h1>{c.label}</h1>

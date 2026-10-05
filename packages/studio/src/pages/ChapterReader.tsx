@@ -7,14 +7,17 @@
  *
  * Charcoal, because this is the work itself. Everything around it stays putty.
  */
+import { vtName } from "../lib/view-transition";
 import { useEffect, useMemo, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import type { TFunction } from "../hooks/use-i18n";
 import type { ChapterSummary } from "../shared/contracts";
 import { ChapterWorkspacePanel } from "../components/ChapterWorkspacePanel";
 import { Icon } from "../components/ui/icon";
+import { Spinner } from "../components/ui/working";
 import { toast } from "../components/ui/vermilion";
 import { READING_SIZES, useReadingPrefs } from "../hooks/use-reading-prefs";
+import { Failed } from "../components/ui/states";
 
 interface ChapterData {
   readonly chapterNumber: number;
@@ -86,7 +89,7 @@ export function ChapterReader({
   if (loading && !data) {
     return (
       <div className="empty">
-        <span className="spin" />
+        <Spinner />
         <h3>{t("reader.openingManuscript")}</h3>
       </div>
     );
@@ -94,16 +97,11 @@ export function ChapterReader({
 
   if (error) {
     return (
-      <div className="fail">
-        <div>
-          <b>That chapter would not open.</b>
-          <p style={{ marginTop: 4 }}>{error}</p>
-          <button type="button" className="btn btn-line btn-sm" style={{ marginTop: 10 }}
-                  onClick={() => nav.toBook(bookId)}>
-            Back to the book
-          </button>
-        </div>
-      </div>
+      <Failed what="That chapter would not open." detail={error}>
+        <button type="button" className="btn btn-line btn-sm" onClick={() => nav.toBook(bookId)}>
+          Back to the book
+        </button>
+      </Failed>
     );
   }
   if (!data) return null;
@@ -153,12 +151,12 @@ export function ChapterReader({
   return (
     <div className="wrap-read">
       <div className="dark crop" style={{ paddingBottom: editing ? 0 : 30 }}>
-        <span className="disc dots dots-light" style={{ width: 230, height: 230, left: -96, bottom: -110 }} />
-        <span className="disc stroke" style={{ width: 132, height: 132, right: -58, top: -62, opacity: 0.45 }} />
+        <span className="disc dots dots-light w-57.5 h-57.5 -left-24 -bottom-27.5" />
+        <span className="disc stroke w-33 h-33 -right-14.5 -top-15.5 opacity-45" />
 
         <div className="readhead">
           <div className="grow">
-            <h2 className="dual" style={{ fontSize: 27.5 }}>
+            <h2 className="dual text-h2" style={vtName(`${bookId}-ch${chapterNumber}`)}>
               <span className="provenance">
                 {[book?.book.title, meta ? `${meta.wordCount.toLocaleString()} words` : null]
                   .filter(Boolean)
@@ -167,7 +165,7 @@ export function ChapterReader({
               {title}
             </h2>
           </div>
-          <div className="numeral" style={{ fontSize: 68 }}>
+          <div className="numeral text-d3">
             {String(chapterNumber).padStart(2, "0")}
           </div>
         </div>
@@ -226,7 +224,7 @@ export function ChapterReader({
           {editing ? (
             <>
               <button type="button" className="btn btn-sm" disabled={saving} onClick={() => void save()}>
-                {saving ? <span className="spin" /> : <Icon name="check" size={14} />}
+                {saving ? <Spinner /> : <Icon name="check" size={14} />}
                 {saving ? t("book.saving") : t("book.save")}
               </button>
               <button type="button" className="btn btn-quiet btn-sm" onClick={() => setEditing(false)}>
@@ -248,17 +246,17 @@ export function ChapterReader({
           )}
         </div>
 
-        <div style={{ padding: "26px 26px 0" }}>
+        <div className="px-6.5 pt-6.5 pb-0">
           {editing ? (
             <textarea
-              className="read-field"
-              style={{ ...vars, minHeight: "60vh" } as React.CSSProperties}
+              className="read-field min-h-[60vh]"
+              style={{ ...vars } as React.CSSProperties}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               autoFocus
             />
           ) : (
-            <div className="read" style={{ ...vars, color: "var(--on-char)" } as React.CSSProperties}>
+            <div className="read text-(--on-char)" style={{ ...vars } as React.CSSProperties}>
               {paragraphs.map((para, i) => (
                 <p key={i} className={i === 0 ? "lead" : undefined}>
                   {para}
@@ -272,7 +270,7 @@ export function ChapterReader({
             means scrolling back up to find the control. Only drawn when there
             is actually a decision to make. */}
         {atTheGate && !editing ? (
-          <div className="verdict">
+          <div className="read-actions">
             <button type="button" className="btn" disabled={busy} onClick={() => void decide("approve")}>
               <Icon name="check" size={16} />
               {t("reader.approve")}
@@ -286,14 +284,14 @@ export function ChapterReader({
               {note.trim() ? "Reject with this note" : "Reject"}
             </button>
             <span className="grow" />
-            <span className="muted" style={{ fontSize: 11 }}>
+            <span className="muted text-cap">
               Approving settles the chapter and starts chapter {chapterNumber + 1}.
             </span>
           </div>
         ) : null}
       </div>
 
-      <div className="rowflex" style={{ justifyContent: "space-between", marginTop: 16 }}>
+      <div className="rowflex justify-between mt-4">
         <span className="hint">
           Reading settings are yours, not the book’s. They follow you into every chapter.
         </span>
@@ -316,12 +314,12 @@ export function ChapterReader({
       {/* The note is the instruction for the rewrite, so it is written rather
           than chosen from a list of reasons. Only shown when it can be used. */}
       {atTheGate ? (
-        <div className="panel" style={{ marginTop: 16 }}>
+        <div className="panel mt-4">
           <h3 className="h-panel">If you reject it</h3>
-          <p className="note" style={{ fontSize: 14 }}>
+          <p className="note text-body">
             The note is the instruction for the rewrite. The draft stays on disk either way.
           </p>
-          <div className="field" style={{ marginTop: 12 }}>
+          <div className="field mt-3">
             <label htmlFor="reject-note">What is wrong with it</label>
             <textarea
               className="input"
@@ -334,7 +332,7 @@ export function ChapterReader({
         </div>
       ) : null}
 
-      <div style={{ marginTop: 16 }}>
+      <div className="mt-4">
         <ChapterWorkspacePanel
           key={`${chapterNumber}-${workspaceRevision}`}
           bookId={bookId}

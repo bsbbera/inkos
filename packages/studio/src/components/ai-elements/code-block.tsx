@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CopyIcon } from "../ui/glyphs";
 import type { ComponentProps, CSSProperties, HTMLAttributes } from "react";
 import {
   createContext,
@@ -312,13 +312,9 @@ export const CodeBlockContainer = ({
     className={cn(
       "group relative w-full overflow-hidden rounded-md border bg-background text-foreground",
       className
-    )}
+    , "[contain-intrinsic-size:auto_--spacing(50)] [content-visibility:auto]")}
     data-language={language}
-    style={{
-      containIntrinsicSize: "auto 200px",
-      contentVisibility: "auto",
-      ...style,
-    }}
+    style={{ ...style }}
     {...props}
   />
 );

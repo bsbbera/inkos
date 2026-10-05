@@ -8,7 +8,6 @@ import { ChapterReader } from "./pages/ChapterReader";
 import { Analytics } from "./pages/Analytics";
 import { ServiceListPage } from "./pages/ServiceListPage";
 import { ServiceDetailPage } from "./pages/ServiceDetailPage";
-import { ProjectSettings } from "./pages/ProjectSettings";
 import { TruthFiles } from "./pages/TruthFiles";
 import { DaemonControl } from "./pages/DaemonControl";
 import { LogViewer } from "./pages/LogViewer";
@@ -18,15 +17,17 @@ import { TranslationManager } from "./pages/TranslationManager";
 import { ImportManager } from "./pages/ImportManager";
 import { RadarView } from "./pages/RadarView";
 import { DoctorView } from "./pages/DoctorView";
-import { McpPage } from "./pages/McpPage";
 import { SetupPage } from "./pages/SetupPage";
 import { AuditPage } from "./pages/AuditPage";
+import { GalleryPage } from "./pages/GalleryPage";
+import { TastePage } from "./pages/TastePage";
 import { PublicationDetail } from "./pages/PublicationDetail";
 import { StoryPlayer } from "./pages/StoryPlayer";
 import { StoryGraphTree } from "./pages/StoryGraphTree";
 import { ProductionsPage } from "./pages/ProductionsPage";
 import { StartPage } from "./pages/StartPage";
 import { RunPage } from "./pages/RunPage";
+import { AuditPacks } from "./pages/AuditPacks";
 import { StyleGuide } from "./pages/StyleGuide";
 const FlowView = lazy(() => import("./pages/FlowView"));
 const FilmWizard = lazy(() => import("./pages/FilmWizard"));
@@ -42,6 +43,7 @@ import { Shell, type ShellVariant } from "./components/shell/Shell";
 import { crumbsFor } from "./components/shell/crumbs";
 import { useShellData, deriveActiveRun } from "./hooks/use-shell-data";
 import { useJobs, jobLabel, jobDetail } from "./hooks/use-jobs";
+import { Failed, Loading } from "./components/ui/states";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -103,7 +105,7 @@ export function App() {
   const [showLanguageSelector, setShowLanguageSelector] = useState(false);
   const [ready, setReady] = useState(false);
 
-  const { books, publications, waiting, tails, modelLabel, paletteExtra } = useShellData();
+  const { books, publications, waiting, tails, modelLabel, paletteExtra } = useShellData(sse);
   /*
    * The queue, held here so it outlives every screen.
    *
@@ -186,7 +188,13 @@ export function App() {
   const railRun = useMemo(() => {
     const job = jobs.live[0];
     if (job) {
-      return { what: jobLabel(job), where: jobDetail(job), more: jobs.live.length - 1 };
+      return {
+        what: jobLabel(job),
+        where: jobDetail(job),
+        more: jobs.live.length - 1,
+        others: jobs.live.slice(1).map((j) => ({ what: jobLabel(j), where: jobDetail(j) })),
+        ...(job.status === "running" && job.startedAt ? { startedAt: Date.parse(job.startedAt) } : {}),
+      };
     }
     return activeRun ? { what: activeRun.what, where: activeRun.where } : null;
   }, [jobs.live, activeRun]);
@@ -203,24 +211,14 @@ export function App() {
   if (startupGate === "error") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6">
-        <div className="max-w-md w-full rounded-2xl border border-destructive/30 bg-destructive/5 p-6 space-y-4">
-          <div>
-            <h1 className="text-lg font-semibold text-destructive">无法加载项目配置 / Failed to load project config</h1>
-            <p className="mt-2 text-sm text-muted-foreground break-all">{projectError}</p>
-          </div>
-          {/* 项目配置没加载出来，语言未知，所以这屏中英双语并排展示。 */}
-          <p className="text-sm text-muted-foreground">
-            请检查项目根目录下的 inkos.json 是否存在且为合法 JSON，然后重试。
-            <br />
-            Check that inkos.json in the project root exists and is valid JSON, then retry.
-          </p>
-          <button
-            type="button"
-            onClick={() => refetchProject()}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            重试 / Retry
-          </button>
+        {/* 项目配置没加载出来，语言未知，所以这屏中英双语并排展示。 */}
+        <div className="max-w-md w-full">
+          <Failed
+            what="无法加载项目配置 / Failed to load project config"
+            detail={projectError}
+            kept="请检查项目根目录下的 quire.json 是否存在且为合法 JSON。 Check that quire.json in the project root exists and is valid JSON."
+            retry={() => refetchProject()}
+          />
         </div>
       </div>
     );
@@ -229,7 +227,7 @@ export function App() {
   if (startupGate === "loading") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin" />
+        <span className="spin-ring" role="status" aria-label="Loading" />
       </div>
     );
   }
@@ -265,7 +263,7 @@ export function App() {
         * the stream by itself, so this says so and then clears itself.
         */}
       {sse.lost ? (
-        <div role="status" className="fail" style={{ marginBottom: 16 }}>
+        <div role="status" className="caution mb-4">
           Lost the connection to Quire. Anything already running keeps going; this reconnects on its own.
         </div>
       ) : null}
@@ -278,6 +276,7 @@ export function App() {
       {route.page === "new" && <StartPage nav={nav} />}
       {route.page === "run" && <RunPage sse={sse} run={activeRun} jobs={jobs} />}
       {route.page === "styleguide" && <StyleGuide />}
+      {route.page === "audit-packs" && <AuditPacks />}
 
       {isBookCreateChatRoute(route) && (
         <ChatPage mode="book-create" nav={nav} theme={theme} t={t} sse={sse} />
@@ -300,7 +299,7 @@ export function App() {
       )}
       {route.page === "analytics" && <Analytics bookId={route.bookId} t={t} />}
       {route.page === "services" && <ServiceListPage nav={nav} />}
-      {route.page === "project-settings" && <ProjectSettings nav={nav} theme={theme} t={t} />}
+      {route.page === "project-settings" && <SetupPage nav={nav} tab="project" theme={theme} t={t} />}
       {route.page === "service-detail" && <ServiceDetailPage serviceId={route.serviceId} nav={nav} />}
       {route.page === "truth" && <TruthFiles bookId={route.bookId} t={t} />}
       {route.page === "daemon" && <DaemonControl t={t} sse={sse} />}
@@ -311,21 +310,30 @@ export function App() {
       {route.page === "import" && <ImportManager nav={nav} theme={theme} t={t} initialTab={route.tab} />}
       {route.page === "radar" && <RadarView nav={nav} theme={theme} t={t} />}
       {route.page === "doctor" && <DoctorView t={t} />}
-      {route.page === "setup" && <SetupPage nav={nav} {...(route.tab ? { tab: route.tab } : {})} />}
-      {route.page === "mcp" && <McpPage nav={nav} theme={theme} t={t} />}
+      {route.page === "setup" && <SetupPage nav={nav} theme={theme} t={t} {...(route.tab ? { tab: route.tab } : {})} />}
+      {route.page === "mcp" && <SetupPage nav={nav} tab="mcp" theme={theme} t={t} />}
       {route.page === "audit" && <AuditPage sse={sse} />}
+      {route.page === "gallery" && (
+        <GalleryPage
+          {...(route.type ? { type: route.type } : {})}
+          {...(route.id ? { id: route.id } : {})}
+          onPick={(type, id) => setRoute({ page: "gallery", type, id })}
+          jobs={jobs}
+        />
+      )}
+      {route.page === "taste" && <TastePage />}
       {route.page === "publication" && (
         <PublicationDetail issueId={route.issueId} nav={nav} />
       )}
       {route.page === "play" && <StoryPlayer projectId={route.projectId} nav={nav} theme={theme} t={t} />}
       {route.page === "film" && <StoryGraphTree projectId={route.projectId} nav={nav} theme={theme} t={t} />}
       {route.page === "film-studio" && (
-        <Suspense fallback={<div className="p-6 text-sm">{tr("加载创作向导…", "Loading creation wizard…")}</div>}>
+        <Suspense fallback={<Loading what={tr("加载创作向导…", "Opening the creation wizard…")} />}>
           <FilmWizard projectId={route.projectId} nav={nav} theme={theme} t={t} sse={sse} />
         </Suspense>
       )}
       {route.page === "flow" && (
-        <Suspense fallback={<div className="p-6 text-sm">{tr("加载流程图…", "Loading flow view…")}</div>}>
+        <Suspense fallback={<Loading what={tr("加载流程图…", "Opening the flow view…")} />}>
           <FlowView projectId={route.projectId} nav={nav} theme={theme} t={t} />
         </Suspense>
       )}

@@ -87,16 +87,16 @@ function messageChips(
 }
 
 export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions> = (set, get) => {
-  const abortPreviousChatRound = (nextSessionId: string | null): void => {
-    const previousSessionId = get().activeSessionId;
-    if (!previousSessionId || previousSessionId === nextSessionId) return;
-    if (!get().sessions[previousSessionId]?.isChatStreaming) return;
-    void get().abortSession(previousSessionId, "chat");
-  };
-
   return {
+    /*
+     * Reading another conversation is not a decision to throw work away.
+     *
+     * This used to abort the round you were leaving, which meant a confirmed
+     * magazine (or any answer being written) died seconds after it started and
+     * left nothing behind but an aborted line in the transcript. A round now
+     * ends only when it finishes, or when the person presses Stop.
+     */
     activateSession: (sessionId) => {
-      abortPreviousChatRound(sessionId);
       set({ activeSessionId: sessionId });
     },
 
@@ -248,7 +248,6 @@ export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions>
   },
 
   createSession: async (bookId, sessionKind, playMode) => {
-    abortPreviousChatRound(null);
     const data = await fetchJson<SessionResponse>("/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -287,7 +286,6 @@ export const createMessageSlice: StateCreator<ChatStore, [], [], MessageActions>
   },
 
   createDraftSession: (bookId, sessionKind, playMode) => {
-    abortPreviousChatRound(null);
     // 前端生成 sessionId（与后端 createBookSession 同格式），暂不持久化到磁盘，
     // 也暂不写入 sessionIdsByBook——侧边栏看不到这条 draft。
     // 发送第一条消息时 sendMessage 会调 POST /sessions { sessionId, bookId } 落盘

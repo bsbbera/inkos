@@ -11,8 +11,9 @@
  * same postMessage bridge the Updates entry already uses.
  */
 import { useCallback, useEffect, useState } from "react";
-import { FolderOpen } from "lucide-react";
+import { FolderOpen } from "../components/ui/glyphs";
 import { shimGet, shimPost } from "../lib/shim";
+import { ErrorLine } from "../components/ui/states";
 
 interface Workspace {
   readonly path: string;
@@ -90,20 +91,20 @@ export function WorkspaceFolder() {
   };
 
   return (
-    <section className="q-crop rounded-2xl border border-border/60 bg-card p-6 shadow-sm sm:p-7">
+    <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden>
+        <span className="icon-ring" aria-hidden>
           <FolderOpen size={18} />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="q-title text-lg">Location</h2>
-          <p className="q-note mt-1.5">The folder Quire keeps your books, worlds and magazines in.</p>
+          <h2 className="h-panel">Location</h2>
+          <p className="note mt-1.5">The folder Quire keeps your books, worlds and magazines in.</p>
         </div>
       </header>
 
       <div className="relative mt-6 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full border px-2 py-0.5 text-xs ${
+          <span className={`pill border ${
             current?.initialized ? "border-primary/50 text-primary" : "border-border/60 text-muted-foreground"
           }`}>
             {current ? (current.initialized ? "in use" : "new") : "—"}
@@ -121,10 +122,10 @@ export function WorkspaceFolder() {
           </p>
         ) : null}
 
-        {error && current ? <p className="text-xs text-destructive">{error}</p> : null}
+        {error && current ? <ErrorLine>{error}</ErrorLine> : null}
 
         {pending ? (
-          <div className="rounded-xl border border-border/60 bg-secondary/20 p-3 space-y-2">
+          <div className="well space-y-2">
             <div className="font-mono text-sm break-all">{pending.path}</div>
             <p className="text-xs text-muted-foreground">{describe(pending)}</p>
             <p className="text-xs text-muted-foreground">
@@ -136,11 +137,11 @@ export function WorkspaceFolder() {
                 type="button"
                 disabled={busy || !usable(pending)}
                 onClick={() => { void apply(); }}
-                className="q-btn q-btn-fill text-sm disabled:opacity-40"
+                className="btn text-sm disabled:opacity-40"
               >
                 Use this folder and restart
               </button>
-              <button type="button" onClick={() => setPending(null)} className="q-btn q-btn-line text-sm">
+              <button type="button" onClick={() => setPending(null)} className="btn btn-line text-sm">
                 Keep the current one
               </button>
             </div>
@@ -150,7 +151,7 @@ export function WorkspaceFolder() {
             type="button"
             disabled={busy}
             onClick={() => { void browse(); }}
-            className="q-btn q-btn-line text-sm disabled:opacity-40"
+            className="btn btn-line text-sm disabled:opacity-40"
           >
             Change folder…
           </button>

@@ -1,3 +1,4 @@
+import { Empty } from "../ui/states";
 /**
  * What the conversation is about — the mock's left column.
  *
@@ -13,8 +14,9 @@
  * there is no book, and only a chat that has made nothing yet falls back to
  * naming the shelf.
  */
+import { vtName } from "../../lib/view-transition";
 import { useEffect, useState } from "react";
-import { Book, ChevronDown, FileText, Layers, MessageSquare, Trash2, Users } from "lucide-react";
+import { Book, ChevronDown, FileText, Layers, MessageSquare, Trash2, Users } from "../ui/glyphs";
 import { fetchJson } from "../../hooks/use-api";
 import { useChatStore } from "../../store/chat";
 import { foundationFileLabel, roleFromPath } from "../../lib/truth-display";
@@ -160,15 +162,15 @@ function Conversations() {
 
         if (confirming === session.sessionId) {
           return (
-            <div key={session.sessionId} className="row" style={{ padding: "8px 4px", display: "block" }}>
-              <div className="name trunc" style={{ fontSize: 13 }}>
+            <div key={session.sessionId} className="row py-2 px-1 block">
+              <div className="name trunc text-small">
                 Delete “{session.title ?? "Untitled"}”?
               </div>
-              <div className="meta" style={{ fontSize: 11, whiteSpace: "normal", marginTop: 2 }}>
+              <div className="meta text-cap whitespace-normal mt-0.5">
                 The transcript goes for good. Chapters, shorts and issues it
                 wrote stay on disk — delete those from Books or Audit.
               </div>
-              <div className="rowflex" style={{ gap: 6, marginTop: 8 }}>
+              <div className="rowflex gap-1.5 mt-2">
                 <button
                   type="button"
                   className="btn btn-bad btn-sm"
@@ -187,24 +189,22 @@ function Conversations() {
         return (
           <div
             key={session.sessionId}
-            className="row"
+            className="row py-2 px-1"
             aria-current={here ? "true" : undefined}
-            style={{ padding: "8px 4px" }}
           >
             <button
               type="button"
-              className="grow"
-              style={{ background: "transparent", border: 0, padding: 0, textAlign: "left", cursor: "pointer", minWidth: 0 }}
+              className="grow bg-transparent border-0 p-0 text-left cursor-pointer min-w-0"
               onClick={() => {
                 if (here) return;
                 activateSession(session.sessionId);
                 void loadSessionDetail(session.sessionId);
               }}
             >
-              <span className="name trunc" style={{ display: "block" }}>
+              <span className="name trunc block">
                 {session.title ?? "Untitled"}
               </span>
-              <span className="meta trunc" style={{ fontSize: 11, display: "block" }}>
+              <span className="meta trunc text-cap block">
                 {[kind, whenLabel(session.updatedAt)].filter(Boolean).join(" · ")}
               </span>
             </button>
@@ -372,8 +372,8 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
           <span className="subj-mark">
             {subject ? <TypeMark kind={subject.kind} size={17} /> : <Book size={16} aria-hidden="true" />}
           </span>
-          <span className="grow" style={{ minWidth: 0 }}>
-            <span className="subj-title">{subject?.title ?? "This project"}</span>
+          <span className="grow min-w-0">
+            <span className="subj-title" {...(subject ? { style: vtName(subject.id) } : {})}>{subject?.title ?? "This project"}</span>
             {/* The line that answers "which one is this": the mono id is the
                 name the person typed and the one every path on screen agrees
                 with. The title alone matched nothing. */}
@@ -404,18 +404,17 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={ch.number}
                     type="button"
-                    className="row"
-                    style={{ padding: "8px 4px" }}
+                    className="row py-2 px-1"
                     onClick={() => onReference?.(`chapter ${ch.number}`)}
                   >
-                    <span className="num tnum" style={{ width: "1.9em" }}>
+                    <span className="num tnum">
                       {String(ch.number).padStart(2, "0")}
                     </span>
-                    <span className="grow" style={{ minWidth: 0 }}>
+                    <span className="grow min-w-0">
                       <span className="name trunc">{ch.title}</span>
                     </span>
                     {ch.wants ? (
-                      <span className="sev sev-warn" style={{ width: 6, height: 6, borderRadius: "50%" }} />
+                      <span className="sev sev-warn w-1.5 h-1.5 rounded-full" />
                     ) : null}
                   </button>
                 ))}
@@ -428,11 +427,10 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={person.key}
                     type="button"
-                    className="row"
-                    style={{ padding: "8px 4px" }}
+                    className="row py-2 px-1"
                     onClick={() => onReference?.(person.name)}
                   >
-                    <span className="grow" style={{ minWidth: 0 }}>
+                    <span className="grow min-w-0">
                       <span className="name trunc">{person.name}</span>
                       <span className="meta trunc">{person.note}</span>
                     </span>
@@ -447,14 +445,13 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={file.key}
                     type="button"
-                    className="row"
-                    style={{ padding: "8px 4px" }}
+                    className="row py-2 px-1"
                     onClick={() => onReference?.(file.name)}
                   >
-                    <span className="grow" style={{ minWidth: 0 }}>
-                      <span className="name mono trunc" style={{ fontSize: 11 }}>{file.name}</span>
+                    <span className="grow min-w-0">
+                      <span className="name mono trunc text-cap">{file.name}</span>
                     </span>
-                    <span className="pill" style={{ fontSize: 11 }}>{file.label}</span>
+                    <span className="pill text-cap">{file.label}</span>
                   </button>
                 ))}
               </Group>
@@ -463,18 +460,15 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
         ) : (
           <Group label="Books" icon={<Book size={12} aria-hidden="true" />}>
             {books.length === 0 ? (
-              <p className="hint" style={{ fontSize: 11, padding: "2px 4px" }}>
-                Nothing started yet.
-              </p>
+              <Empty compact icon="book" title="Books you start show here." action={<a className="btn btn-line btn-sm" href="#/new">Start one</a>} />
             ) : books.slice(0, 8).map((book) => (
               <button
                 key={book.id}
                 type="button"
-                className="row"
-                style={{ padding: "8px 4px" }}
+                className="row py-2 px-1"
                 onClick={() => onReference?.(book.title ?? book.id)}
               >
-                <span className="grow" style={{ minWidth: 0 }}>
+                <span className="grow min-w-0">
                   <span className="name trunc">{book.title ?? book.id}</span>
                 </span>
               </button>

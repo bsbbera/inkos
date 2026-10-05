@@ -8,7 +8,7 @@ describe("Studio skill endpoints", () => {
   let root: string;
 
   beforeEach(async () => {
-    root = await mkdtemp(join(tmpdir(), "inkos-studio-skills-"));
+    root = await mkdtemp(join(tmpdir(), "quire-studio-skills-"));
   });
 
   afterEach(async () => {
@@ -46,6 +46,20 @@ describe("Studio skill endpoints", () => {
       body: "Track evidence before twists.",
     }));
     expect(json.skills.find((skill) => skill.id === "detective-play")).not.toHaveProperty("whenToUse");
+  });
+
+  it("serves one skill on its own, and 404s for one that is not there", async () => {
+    const app = createStudioServer({} as never, root);
+
+    const one = await app.request("/api/v1/skills/quire-magazine-page");
+    expect(one.status).toBe(200);
+    const { skill } = await one.json() as { skill: { id: string; source: string; body: string } };
+    expect(skill.id).toBe("quire-magazine-page");
+    expect(skill.source).toBe("builtin");
+    // The body is the point of asking for one rather than the list.
+    expect(skill.body).toContain("writing bar");
+
+    expect((await app.request("/api/v1/skills/no-such-skill")).status).toBe(404);
   });
 
   it("lets an imported project skill override a built-in skill", async () => {

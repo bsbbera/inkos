@@ -6,7 +6,7 @@ import { useChatStore } from "../../store/chat";
 import { useResizable } from "../../hooks/use-resizable";
 import { fetchJson } from "../../hooks/use-api";
 import { tr } from "../../lib/app-language";
-import { PanelRightClose, PanelRightOpen, ArrowLeft, Loader2, Pencil, Save, X } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, ArrowLeft, Loader2, Pencil, Save, X } from "../ui/glyphs";
 import { Streamdown } from "streamdown";
 import { cjk } from "@streamdown/cjk";
 import { ProgressSection } from "../sidebar/ProgressSection";
@@ -27,6 +27,7 @@ import {
   type TruthFrontmatter,
 } from "../../lib/truth-display";
 
+import { Spinner } from "../ui/working";
 export interface BookSidebarProps {
   readonly bookId: string;
   readonly theme: Theme;
@@ -59,7 +60,7 @@ function renderTruthBody(
   if (file === "current_state.md") {
     const { isEmpty, body: stateBody } = presentCurrentState(content);
     return isEmpty ? (
-      <p className="text-[14px] leading-6 text-muted-foreground/60 italic">
+      <p className="text-body leading-6 text-muted-foreground/60 italic">
         还没有运行状态。开始写作后，每写完一章这里会自动记录最新的故事进展。
       </p>
     ) : (
@@ -68,7 +69,7 @@ function renderTruthBody(
   }
   if (file === "emotional_arcs.md" && !hasTableRows(content)) {
     return (
-      <p className="text-[14px] leading-6 text-muted-foreground/60 italic">
+      <p className="text-body leading-6 text-muted-foreground/60 italic">
         还没有情感弧线记录。开始写作后，这里会记录角色在各章的情绪变化。
       </p>
     );
@@ -161,17 +162,17 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
           onClick={closeArtifact}
           aria-label={tr("返回", "Back")}
           title={tr("返回", "Back")}
-          className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+          className="btn btn-quiet btn-icon w-6 h-6 flex items-center justify-center"
         >
           <ArrowLeft size={14} />
         </button>
-        <span className="text-[15px] leading-6 font-medium truncate flex-1">{label}</span>
+        <span className="text-body leading-6 font-medium truncate flex-1">{label}</span>
         {!loading && content !== null && !editing && (
           <button
             onClick={handleEdit}
             aria-label={tr("编辑", "Edit")}
             title={tr("编辑", "Edit")}
-            className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+            className="btn btn-quiet btn-icon w-6 h-6 flex items-center justify-center"
           >
             <Pencil size={12} />
           </button>
@@ -183,15 +184,15 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
               disabled={saving}
               aria-label={tr("保存", "Save")}
               title={tr("保存", "Save")}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-success hover:bg-success/10 transition-colors"
+              className="btn btn-quiet btn-icon w-6 h-6 flex items-center justify-center"
             >
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+              {saving ? <Spinner /> : <Save size={12} />}
             </button>
             <button
               onClick={() => setEditing(false)}
               aria-label={tr("取消", "Cancel")}
               title={tr("取消", "Cancel")}
-              className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              className="btn btn-quiet btn-icon w-6 h-6 flex items-center justify-center"
             >
               <X size={12} />
             </button>
@@ -201,18 +202,18 @@ function ArtifactView({ bookId }: { readonly bookId: string }) {
       <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-8">
-            <Loader2 size={16} className="text-muted-foreground animate-spin" />
+            <Spinner className="text-muted-foreground" />
           </div>
         ) : content === null ? (
-          <p className="text-[14px] leading-6 text-muted-foreground/50 italic px-4 py-3">文件不存在</p>
+          <p className="text-body leading-6 text-muted-foreground/50 italic px-4 py-3">文件不存在</p>
         ) : editing ? (
           <textarea
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
-            className="w-full h-full min-h-[300px] bg-transparent text-[15px] leading-7 px-4 py-3 resize-none outline-none border-0 font-mono"
+            className="w-full h-full min-h-75 bg-transparent text-body leading-7 px-4 py-3 resize-none outline-none border-0 font-mono"
           />
         ) : (
-          <div className="px-4 py-3 text-[15px] leading-7">
+          <div className="px-4 py-3 text-body leading-7">
             {renderTruthBody(isChapter ? null : artifactFile, content, frontmatter, body)}
           </div>
         )}
@@ -254,9 +255,9 @@ function PanelView({ bookId, theme: _theme, t, sse }: BookSidebarProps) {
   return (
     <div className="flex flex-col gap-2 p-3">
       {activeOp && (
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/10">
-          <Loader2 size={12} className="text-primary animate-spin shrink-0" />
-          <span className="text-[14px] leading-5 text-primary font-medium">
+        <div className="notice flex items-center gap-2">
+          <Spinner className="text-primary shrink-0" />
+          <span className="text-body leading-5 text-primary font-medium">
             {OP_LABELS[activeOp] ?? activeOp}
           </span>
         </div>
@@ -322,25 +323,26 @@ export function BookSidebarToggle({ bookId, theme, t, sse }: BookSidebarProps) {
         onClick={() => setOpen(true)}
         aria-label={tr("打开书籍信息", "Show book details")}
         title={tr("打开书籍信息", "Show book details")}
-        className="fixed right-3 top-[72px] z-20 lg:hidden w-8 h-8 rounded-lg bg-card border border-border/40 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+        className="btn btn-quiet btn-icon fixed right-3 top-18 z-20 lg:hidden w-8 h-8 flex items-center justify-center"
       >
         <PanelRightOpen size={14} />
       </button>
 
       {open && (
         <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" />
+          <div className="absolute inset-0 bg-(--char)/20 backdrop-blur-sm" />
           <aside
-            className="absolute right-0 top-0 h-full w-[420px] max-w-[85vw] bg-background border-l border-border/20 overflow-y-auto"
+            className="absolute right-0 top-0 h-full w-105 max-w-[85vw] bg-background border-l border-border/20 overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-3 py-2 border-b border-border/20">
-              <span className="text-[15px] leading-6 font-medium text-muted-foreground">{tr("书籍信息", "Book details")}</span>
+              <span className="text-body leading-6 font-medium text-muted-foreground">{tr("书籍信息", "Book details")}</span>
               <button
                 onClick={() => setOpen(false)}
+                data-esc
                 aria-label={tr("关闭", "Close")}
                 title={tr("关闭", "Close")}
-                className="text-muted-foreground hover:text-foreground"
+                className="btn btn-quiet btn-icon"
               >
                 <PanelRightClose size={14} />
               </button>

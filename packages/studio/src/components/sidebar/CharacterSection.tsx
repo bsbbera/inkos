@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Users, ChevronDown } from "lucide-react";
+import { Users, ChevronDown } from "../ui/glyphs";
 import { useChatStore } from "../../store/chat";
 import { fetchJson } from "../../hooks/use-api";
 import { SidebarCard } from "./SidebarCard";
@@ -36,13 +36,13 @@ const ROLE_COLORS: Record<string, string> = {
   "主角": "bg-warning/15 text-warning text-warning",
   "反派": "bg-destructive/15 text-destructive dark:text-destructive",
   "盟友": "bg-success/15 text-success text-success",
-  "配角": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  "提及": "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400",
+  "配角": "bg-(--putty-2) text-(--ink-2) ",
+  "提及": "bg-(--putty-2) text-(--ink-3) ",
   "protagonist": "bg-warning/15 text-warning text-warning",
   "antagonist": "bg-destructive/15 text-destructive dark:text-destructive",
   "ally": "bg-success/15 text-success text-success",
-  "minor": "bg-blue-500/15 text-blue-600 dark:text-blue-400",
-  "mentioned": "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400",
+  "minor": "bg-(--putty-2) text-(--ink-2) ",
+  "mentioned": "bg-(--putty-2) text-(--ink-3) ",
 };
 
 function getRoleColor(role: string): string {
@@ -50,13 +50,13 @@ function getRoleColor(role: string): string {
   for (const [key, color] of Object.entries(ROLE_COLORS)) {
     if (lower.includes(key)) return color;
   }
-  return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
+  return "bg-(--putty-2) text-(--ink-3) ";
 }
 
 // label 在渲染时经 tr() 取当前语言，不能在模块加载时就固定成一种语言。
 const TIER_BADGE: Record<RoleRef["tier"], { zh: string; en: string; color: string }> = {
   major: { zh: "主要", en: "Major", color: "bg-warning/15 text-warning text-warning" },
-  minor: { zh: "次要", en: "Minor", color: "bg-blue-500/15 text-blue-600 dark:text-blue-400" },
+  minor: { zh: "次要", en: "Minor", color: "bg-(--putty-2) text-(--ink-2) " },
 };
 
 // Phase 5 layout: one file per character under roles/. Each entry opens the
@@ -70,10 +70,10 @@ function RoleEntry({ role }: { readonly role: RoleRef }) {
       className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors text-left"
     >
       <Users size={16} className="shrink-0 text-muted-foreground/60" />
-      <span className="text-[15px] leading-6 font-medium text-foreground q-title flex-1 truncate">
+      <span className="text-body leading-6 font-medium text-foreground title flex-1 truncate">
         {role.name}
       </span>
-      <span className={cn("text-[12px] px-1.5 py-0.5 rounded-full shrink-0", badge.color)}>
+      <span className={cn("text-small px-1.5 py-0.5 rounded-full shrink-0", badge.color)}>
         {tr(badge.zh, badge.en)}
       </span>
     </button>
@@ -93,11 +93,11 @@ function CharacterCard({ char }: { readonly char: CharacterInfo }) {
         className="w-full flex items-center gap-2 px-2.5 py-2 text-left"
       >
         <Users size={16} className="shrink-0 text-muted-foreground/60" />
-        <span className="text-[15px] leading-6 font-medium text-foreground q-title flex-1 truncate">
+        <span className="text-body leading-6 font-medium text-foreground title flex-1 truncate">
           {char.name}
         </span>
         {role && (
-          <span className={cn("text-[12px] px-1.5 py-0.5 rounded-full shrink-0", getRoleColor(role))}>
+          <span className={cn("text-small px-1.5 py-0.5 rounded-full shrink-0", getRoleColor(role))}>
             {role.split("/")[0].trim()}
           </span>
         )}
@@ -106,15 +106,15 @@ function CharacterCard({ char }: { readonly char: CharacterInfo }) {
       {expanded && (
         <div className="px-2.5 pb-2.5 space-y-1">
           {tags && (
-            <p className="text-[14px] leading-6 text-muted-foreground"><span className="text-muted-foreground/60">{tr("标签", "Tags")}</span> {tags}</p>
+            <p className="text-body leading-6 text-muted-foreground"><span className="text-muted-foreground/60">{tr("标签", "Tags")}</span> {tags}</p>
           )}
           {current && (
-            <p className="text-[14px] leading-6 text-muted-foreground"><span className="text-muted-foreground/60">{tr("当前", "Current")}</span> {current}</p>
+            <p className="text-body leading-6 text-muted-foreground"><span className="text-muted-foreground/60">{tr("当前", "Current")}</span> {current}</p>
           )}
           {Object.entries(char.fields)
             .filter(([k]) => !["定位", "Role", "标签", "Tags", "当前", "Current"].includes(k))
             .map(([key, val]) => (
-              <p key={key} className="text-[14px] leading-6 text-muted-foreground">
+              <p key={key} className="text-body leading-6 text-muted-foreground">
                 <span className="text-muted-foreground/60">{key}</span> {val}
               </p>
             ))}

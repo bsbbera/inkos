@@ -1,0 +1,167 @@
+/* ═══════════════════════════════════════════════════════════════════ MOTION
+   The whole motion language, in one file.
+
+   Grammar (design/vermilion-redesign-plan.md §5):
+     one easing          --ease   cubic-bezier(.16, 1, .3, 1)
+     three durations     --fast   150ms   a control answering the pointer
+                         --med    300ms   anything that moves layout
+                         --slow   640ms   the one moment meant to be noticed
+     transform and opacity only, so nothing reflows while it moves.
+
+   The tokens live with the others at the top of vermilion.css. Tailwind's
+   `transition`, `duration-*` and `ease-*` utilities are pointed at the same
+   values in index.css, so a page cannot pick a fifth duration by accident.
+
+   Beyond the grammar there are exactly four working states, one shape each,
+   used wherever that state occurs (components/ui/working.tsx):
+     searching   a sweep along a track    - looking across many places
+     planning    steps filling in order   - deciding what comes next
+     thinking    three dots / a caret     - composing; text is arriving
+     generating  a ring, or a spinning arc - making something you will see
+   None of them is ever drawn in or beside the reading column.
+
+   No page-load choreography: this is a tool someone opens forty times a day.
+   Reveals are for the front door only. */
+
+/* ── Hover and press: one answer for every control ─────────────────────── */
+button, [role="button"], a, summary, input, textarea, select,
+[role="tab"], [role="option"], [role="menuitem"] {
+  transition:
+    background-color var(--fast) var(--ease),
+    border-color     var(--fast) var(--ease),
+    color            var(--fast) var(--ease),
+    box-shadow       var(--fast) var(--ease),
+    opacity          var(--fast) var(--ease);
+}
+button:not(:disabled):active,
+[role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.97);
+  transition: transform var(--fast) var(--ease);
+}
+
+/* ── Arrivals ───────────────────────────────────────────────────────────── */
+/* A route arrives rather than snapping in. Keyed on the route in App, so it
+   replays on every navigation and not just the first paint. */
+.route-enter { animation: q-rise var(--med) var(--ease) both; }
+/* Something that appeared while you were looking elsewhere. */
+.fade-in { animation: q-rise var(--med) var(--ease) both; }
+/* The run panel: the one arrival that has to earn a glance. */
+.panel-in { animation: q-pop var(--slow) var(--ease) both; }
+
+@keyframes q-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes q-pop {
+  from { opacity: 0; transform: translateY(12px) scale(.96); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ── The four working states ───────────────────────────────────────────── */
+.ws {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-size: var(--fs-small); color: var(--ink-2);
+}
+.dark .ws, .on-char .ws { color: var(--on-char-2); }
+
+/* Searching. */
+.ws-search {
+  position: relative; flex: none; overflow: hidden;
+  width: 56px; height: 3px; border-radius: 2px; background: var(--line);
+}
+.dark .ws-search, .on-char .ws-search { background: var(--line-char); }
+.ws-search::after {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 40%;
+  border-radius: 2px; background: var(--vermilion);
+}
+
+/* Planning. Four steps; the base state is the plan half made. */
+.ws-plan { display: inline-flex; align-items: flex-end; gap: 3px; height: 12px; flex: none; }
+.ws-plan > i {
+  display: block; width: 5px; height: 100%; border-radius: 1.5px;
+  background: var(--vermilion); transform-origin: bottom;
+}
+.ws-plan > i:nth-child(n+3) { opacity: .3; transform: scaleY(.45); }
+
+/* Thinking: `.thinking` dots. Writing: `.caret`. Generating: `.spin` or a
+   `.arc` with a value. All four are drawn in vermilion.css with the rest of
+   the run surface; only their movement is here. */
+
+@media (prefers-reduced-motion: no-preference) {
+  .thinking i { animation: q-bob 1.1s var(--ease) infinite; }
+  .thinking i:nth-child(2) { animation-delay: .13s; }
+  .thinking i:nth-child(3) { animation-delay: .26s; }
+  .caret { animation: q-blink 1.05s steps(1) infinite; }
+  .spin, .spin-ring { animation: q-rot .85s linear infinite; }
+  .st.now i, .tab[aria-selected="true"] i { animation: q-halo 1.5s var(--ease) infinite; }
+  .skel::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--paper) 78%, transparent), transparent);
+    animation: q-sweep 1.5s linear infinite;
+  }
+  .ws-search::after { animation: q-search 1.2s var(--ease) infinite; }
+  .ws-plan > i { animation: q-step 1.6s var(--ease) infinite; }
+  .ws-plan > i:nth-child(2) { animation-delay: .2s; }
+  .ws-plan > i:nth-child(3) { animation-delay: .4s; }
+  .ws-plan > i:nth-child(4) { animation-delay: .6s; }
+  /* A list item added or removed while you watch (hooks/use-arrivals). */
+  .arrive { animation: q-rise var(--med) var(--ease) both; }
+  .leave  { animation: q-leave var(--med) var(--ease) both; pointer-events: none; }
+  /* Toasts: in with the run panel's pop, out with a short drop. */
+  .toast:not(.out) { animation: q-pop var(--med) var(--ease) both; }
+  .toast.out { animation: q-leave var(--fast) var(--ease) both; }
+  /* A stage finishing while you watch: its dot fills with a pop, not a swap. */
+  .st.done.just i { animation: q-tick var(--slow) var(--ease) both; }
+  /* Numbers that change while you look (components/ui/num.tsx). */
+  .num-roll { display: inline-block; animation: q-roll var(--med) var(--ease) both; }
+  .reveal { opacity: 0; transform: translateY(16px); }
+  .reveal.in { opacity: 1; transform: none; transition: opacity var(--slow) var(--ease), transform var(--slow) var(--ease); }
+}
+
+@keyframes q-leave  { to { opacity: 0; transform: translateX(-10px) scale(.98); } }
+@keyframes q-tick   { 0% { transform: scale(.4); } 60% { transform: scale(1.35); } 100% { transform: none; } }
+@keyframes q-roll   { from { opacity: .2; transform: translateY(40%); } to { opacity: 1; transform: none; } }
+
+/* ── Between screens: View Transitions (lib/view-transition.ts) ────────────
+   The old screen fades out as the new one rises in; anything named the same
+   on both - a tile's title and its page's title - travels between them. */
+::view-transition-group(*) { animation-duration: var(--med); animation-timing-function: var(--ease); }
+::view-transition-old(root) { animation: var(--fast) var(--ease) both q-leave-fade; }
+::view-transition-new(root) { animation: var(--med) var(--ease) both q-rise; }
+@keyframes q-leave-fade { to { opacity: 0; } }
+
+@keyframes q-bob    { 0%,62%,100% { transform: translateY(0); opacity: .4; } 31% { transform: translateY(-5px); opacity: 1; } }
+@keyframes q-blink  { 50% { opacity: 0; } }
+@keyframes q-rot    { to { transform: rotate(360deg); } }
+@keyframes q-sweep  { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes q-search { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@keyframes q-step {
+  0%       { opacity: .3; transform: scaleY(.45); }
+  35%, 70% { opacity: 1;  transform: scaleY(1); }
+  100%     { opacity: .3; transform: scaleY(.45); }
+}
+@keyframes q-halo {
+  0%       { box-shadow: 0 0 0 0 color-mix(in oklab, var(--vermilion) 55%, transparent); }
+  70%,100% { box-shadow: 0 0 0 6px transparent; }
+}
+
+/* ── Reduced motion: every animation ends where it was going ──────────────
+   Each working state also carries a word ("Searching the web…"), so a
+   still shape never reads as a hung app. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn:hover, .tile:hover, .finding:hover, .cand:hover, .pg:hover .sheet,
+  .panel[data-go]:hover, .gate[data-go]:hover, .col-sec[data-go]:hover,
+  .chip:hover, .railrun:hover, .pg:hover .folio, .cand:hover .plate,
+  .tab:hover i, .wordmark:hover svg,
+  .tile:hover .mark > *, [data-go]:hover > .mark > * { transform: none; }
+  .row:hover > * { transform: none; }
+  .row .act { opacity: 1; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

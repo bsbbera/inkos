@@ -10,14 +10,14 @@ describe("project settings form model", () => {
   it("preserves webhook event filters when round-tripping notification channels", () => {
     const draft = notifyDraftFromChannel({
       type: "webhook",
-      url: "https://hooks.example.com/inkos",
+      url: "https://hooks.example.com/quire",
       secret: "s1",
       events: ["chapter-complete", "pipeline-error"],
     });
 
     expect(buildNotifyChannel(draft)).toEqual({
       type: "webhook",
-      url: "https://hooks.example.com/inkos",
+      url: "https://hooks.example.com/quire",
       secret: "s1",
       events: ["chapter-complete", "pipeline-error"],
     });

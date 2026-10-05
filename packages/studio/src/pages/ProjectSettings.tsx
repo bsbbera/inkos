@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Bell, Bot, FileText, FolderUp, MessageSquare, Radar, RotateCcw, Search, Settings2, Plus, Trash2 } from "lucide-react";
+import { Bell, Bot, FileText, FolderUp, MessageSquare, Radar, RotateCcw, Search, Settings2, Plus, Trash2 } from "../components/ui/glyphs";
 import { fetchJson, postApi, putApi, useApi } from "../hooks/use-api";
 import { usePreferencesStore } from "../store/preferences";
 import { useTheme, type Theme, type ThemeMode } from "../hooks/use-theme";
@@ -25,6 +25,7 @@ import {
   groupPromptPacksForDisplay,
   type PromptPacksResponse,
 } from "./prompt-pack-ui-state";
+import { Failed, Empty } from "../components/ui/states";
 
 interface Nav {
   toDashboard: () => void;
@@ -75,19 +76,19 @@ function SettingsCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="q-crop space-y-5 rounded-2xl border border-border/60 bg-card p-5 shadow-sm sm:p-6">
-      <span className="q-disc q-disc-fill" aria-hidden="true"
-            style={{ width: 150, height: 150, right: -64, top: -70, opacity: .1 }} />
+    <section className="panel crop space-y-5">
+      <span className="disc fill w-37.5 h-37.5 -right-16 -top-17.5 opacity-10" aria-hidden="true"
+ />
       <div className="relative flex items-start gap-3.5">
         <span
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary"
+          className="icon-ring"
           aria-hidden="true"
         >
           {icon}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="q-title text-lg">{title}</h2>
-          <p className="q-note mt-1.5 leading-relaxed">{description}</p>
+          <h2 className="h-panel">{title}</h2>
+          <p className="note mt-1.5 leading-relaxed">{description}</p>
         </div>
       </div>
       <div className="relative space-y-4">{children}</div>
@@ -97,7 +98,7 @@ function SettingsCard({
 
 const fieldClass = "w-full text-sm";
 
-export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunction }) {
+export function ProjectSettings({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t: TFunction; embedded?: boolean }) {
   const c = useColors(theme);
   const isZh = t("nav.connected") === "\u5DF2\u8FDE\u63A5";
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -194,28 +195,21 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
 
   return (
     <div className="space-y-8">
-      <header className="q-head">
-        <p className="q-label flex items-center gap-2">
-          <Settings2 size={13} aria-hidden="true" />
-          {t("bread.home")}
-        </p>
-        <h1 className="mt-3">{t("settings.title")}</h1>
-        <p>{t("settings.subtitle")}</p>
-      </header>
+      {embedded ? null : (
+        <header className="head">
+          <p className="label flex items-center gap-2">
+            <Settings2 size={13} aria-hidden="true" />
+            {t("bread.home")}
+          </p>
+          <h1 className="h-page mt-3">{t("settings.title")}</h1>
+          <p>{t("settings.subtitle")}</p>
+        </header>
+      )}
 
       {notice && (
-        <div
-          role="status"
-          className={`flex items-center gap-2.5 rounded-xl border px-4 py-3 text-sm animate-[panelIn_var(--dur-med)_var(--ease-out-quart)_both] ${
-            notice.tone === "error"
-              ? "border-destructive/40 bg-destructive/10 text-destructive"
-              : notice.tone === "info"
-                ? "border-border/60 bg-secondary text-muted-foreground"
-                : "border-success/40 bg-success/10 text-success"
-          }`}
-        >
-          {notice.message}
-        </div>
+        notice.tone === "error"
+          ? <div className="panel-in"><Failed what="Not saved." detail={notice.message} /></div>
+          : <div role="status" className={`${notice.tone === "info" ? "notice" : "pass block"} panel-in`}>{notice.message}</div>
       )}
 
       {/*
@@ -232,7 +226,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
         icon={<Settings2 size={18} />}
       >
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="q-field">
+          <div className="field">
             <label>{t("settings.theme")}</label>
             <Seg<ThemeMode>
               options={[
@@ -244,7 +238,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
               onChange={setThemeMode}
             />
           </div>
-          <div className="q-field">
+          <div className="field">
             <label>{t("settings.language")}</label>
             <Seg<"en" | "zh">
               options={[
@@ -278,7 +272,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
       >
         <div className="space-y-3">
           {skillsData?.diagnostics?.length ? (
-            <div className="rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <div className="caution text-xs">
               <div className="font-semibold">{isZh ? "部分外部 Skill 未加载" : "Some external skills were not loaded"}</div>
               {skillsData.diagnostics.slice(0, 8).map((item, index) => (
                 <div key={`${item.path ?? "skill"}-${index}`} className="mt-1 break-all">
@@ -287,7 +281,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
               ))}
             </div>
           ) : null}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/60 bg-secondary/20 p-3">
+          <div className="well flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-semibold">{isZh ? "导入外部 Skill" : "Import external skill"}</div>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -300,7 +294,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
               type="button"
               onClick={() => skillFolderInputRef.current?.click()}
               disabled={saving === "skill-import"}
-              className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary disabled:opacity-40"
+              className="btn btn-line flex items-center gap-2"
             >
               <FolderUp size={16} />
               {saving === "skill-import"
@@ -320,20 +314,25 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
             />
           </div>
           {skills.length === 0 ? (
-            <p className="text-xs text-muted-foreground italic">{isZh ? "还没有 Skill。" : "No skills yet."}</p>
+            <Empty
+              compact
+              icon="skill"
+              title={isZh ? "导入的 Skill 会列在这里。" : "Skills you import are listed here."}
+              action={<button type="button" className="btn btn-line btn-sm" onClick={() => skillFolderInputRef.current?.click()}>{isZh ? "导入文件夹" : "Import a folder"}</button>}
+            />
           ) : (
             <div className="grid gap-2 md:grid-cols-2">
               {skills.map((skill) => (
-                <div key={skill.id} className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+                <div key={skill.id} className="well">
                   <div className="flex items-start gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <div className="truncate text-sm font-semibold">{skill.name}</div>
-                        <span className="rounded-full bg-background px-2 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="pill">
                           {skill.source ?? "skill"}
                         </span>
                       </div>
-                      <div className="mt-0.5 font-mono text-[11px] text-muted-foreground/70">@{skill.id}</div>
+                      <div className="mt-0.5 font-mono text-small text-muted-foreground/70">@{skill.id}</div>
                       <p className="mt-1 text-xs leading-5 text-muted-foreground">{skill.description || (isZh ? "无说明" : "No description")}</p>
                     </div>
                     {skill.editable ? (
@@ -343,7 +342,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                           await fetchJson(`/skills/${encodeURIComponent(skill.id)}`, { method: "DELETE" });
                           await refetchSkills();
                         }, isZh ? "Skill 已删除" : "Skill deleted")}
-                        className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                        className="btn btn-quiet btn-icon shrink-0"
                         aria-label={isZh ? `删除 ${skill.name}` : `Delete ${skill.name}`}
                       >
                         <Trash2 size={14} />
@@ -363,19 +362,17 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
         icon={<FileText size={18} />}
       >
         <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-          <div className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+          <div className="well">
             {promptGroups.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">
-                {isZh ? "没有可编辑提示词。" : "No prompt packs available."}
-              </p>
+              <Empty compact icon="file" title={isZh ? "可编辑的提示词会列在这里。" : "Editable prompt packs are listed here."} />
             ) : (
               <div className="space-y-4">
                 {promptGroups.map((group) => (
                   <div key={group.id} className="space-y-2">
                     <div>
-                      <div className="q-label">{group.title}</div>
+                      <div className="label">{group.title}</div>
                       {group.description ? (
-                        <p className="mt-1 text-[11px] leading-4 text-muted-foreground/80">{group.description}</p>
+                        <p className="mt-1 text-small leading-4 text-muted-foreground/80">{group.description}</p>
                       ) : null}
                     </div>
                     <div className="space-y-1">
@@ -387,21 +384,18 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                             setSelectedPromptId(prompt.id);
                             setPromptDraft(prompt.content ?? "");
                           }}
-                          className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                            selectedPromptId === prompt.id
-                              ? "border-primary/50 bg-primary/10 text-primary"
-                              : "border-border/50 bg-background/40 text-foreground hover:border-primary/30 hover:bg-primary/5"
-                          }`}
+                          aria-pressed={selectedPromptId === prompt.id}
+                          className="well w-full px-3 py-2 text-left"
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="truncate text-sm font-semibold">{prompt.title}</span>
                             {prompt.overridden ? (
-                              <span className="shrink-0 rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                              <span className="pill shrink-0 text-primary">
                                 {isZh ? "已改" : "custom"}
                               </span>
                             ) : null}
                           </div>
-                          <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/75">{prompt.id}</div>
+                          <div className="mt-0.5 truncate font-mono text-small text-muted-foreground/75">{prompt.id}</div>
                         </button>
                       ))}
                     </div>
@@ -411,7 +405,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
             )}
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-secondary/20 p-3">
+          <div className="well">
             {selectedPrompt ? (
               <div className="space-y-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -431,7 +425,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                         await refetchPromptPacks();
                       }, isZh ? "提示词已恢复默认" : "Prompt reset to default")}
                       disabled={saving === `reset-prompt:${selectedPrompt.id}` || !selectedPrompt.overridden}
-                      className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold ${c.btnSecondary} disabled:opacity-40`}
+                      className="btn btn-line inline-flex items-center gap-1.5"
                     >
                       <RotateCcw size={14} />
                       {isZh ? "恢复默认" : "Reset"}
@@ -443,7 +437,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                         await refetchPromptPacks();
                       }, isZh ? "提示词已保存" : "Prompt saved")}
                       disabled={saving === `prompt:${selectedPrompt.id}` || !promptDirty}
-                      className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
+                      className="btn"
                     >
                       {saving === `prompt:${selectedPrompt.id}` ? t("config.saving") : t("config.save")}
                     </button>
@@ -455,10 +449,10 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
                   onChange={(e) => setPromptDraft(e.target.value)}
                   rows={12}
                   spellCheck={false}
-                  className={`${fieldClass} min-h-[260px] resize-y font-mono leading-6`}
+                  className={`${fieldClass} min-h-65 resize-y font-mono leading-6`}
                 />
 
-                <details className="rounded-xl border border-border/50 bg-background/50 p-3">
+                <details className="well">
                   <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
                     {isZh ? "查看内置默认" : "View built-in default"}
                   </summary>
@@ -484,19 +478,19 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
             <p className="text-xs text-muted-foreground italic">{t("settings.noChannels")}</p>
           )}
           {notifyChannels.map((ch, i) => (
-            <div key={i} className="rounded-xl border border-border/60 bg-secondary/20 p-3 space-y-2">
+            <div key={i} className="well space-y-2">
               <div className="flex items-center gap-2">
                 <select
                   value={ch.type}
                   onChange={(e) => updateChannel(i, { type: e.target.value as NotifyType })}
-                  className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm outline-none"
+                  className="input w-auto py-1.5 px-2.5 text-small"
                 >
                   {NOTIFY_TYPES.map((nt) => <option key={nt.value} value={nt.value}>{nt.label}</option>)}
                 </select>
                 <div className="flex-1" />
                 <button
                   onClick={() => setNotifyChannels((prev) => prev.filter((_, j) => j !== i))}
-                  className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                  className="btn btn-quiet btn-icon"
                   aria-label="remove"
                 >
                   <Trash2 size={15} />
@@ -523,7 +517,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
         <div className="flex gap-2">
           <button
             onClick={() => setNotifyChannels((prev) => [...prev, { type: "feishu" }])}
-            className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium ${c.btnSecondary}`}
+            className="btn btn-line flex items-center gap-1.5"
           >
             <Plus size={14} /> {t("settings.addChannel")}
           </button>
@@ -533,7 +527,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
               await refetchNotify();
             }, t("settings.saved"))}
             disabled={saving === "notify"}
-            className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
+            className="btn"
           >
             {saving === "notify" ? t("config.saving") : t("config.save")}
           </button>
@@ -593,7 +587,7 @@ export function ProjectSettings({ nav, theme, t }: { nav: Nav; theme: Theme; t: 
             await refetchDetection();
           }, t("settings.saved"))}
           disabled={saving === "detection"}
-          className={`rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
+          className="btn"
         >
           {saving === "detection" ? t("config.saving") : t("config.save")}
         </button>

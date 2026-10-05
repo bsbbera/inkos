@@ -16,9 +16,9 @@ import type { ActiveRun } from "../hooks/use-shell-data";
 import { jobDetail, jobLabel, type JobsView } from "../hooks/use-jobs";
 import { Icon } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
+import { Ring } from "../components/ui/working";
 import { copyText } from "../lib/clipboard";
 
-const RING = 2 * Math.PI * 19;
 
 function clock(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
@@ -37,9 +37,9 @@ function line(m: SSEMessage): string {
   return keys.length ? keys.map((k) => `${k}: ${String(d[k])}`).join(" · ") : m.event;
 }
 
-interface Stage {
+export interface Stage {
   readonly name: string;
-  readonly state: "done" | "now" | "queued" | "failed";
+  readonly state: "done" | "now" | "queued" | "failed" | "skipped";
   readonly took: string;
 }
 
@@ -77,6 +77,49 @@ export function deriveStages(messages: readonly SSEMessage[], since: number): St
       state: end.ok ? ("done" as const) : ("failed" as const),
       took: begin ? clock(end.at - begin) : "done",
     };
+  });
+}
+
+/** A run's own graph, as `pipeline.json` and the registry state it. */
+export interface RunGraph {
+  readonly sequence: ReadonlyArray<string>;
+  readonly stage: string;
+  readonly status: string;
+  /**
+   * Steps this kind of work walks past, and why.
+   *
+   * Every kind declares the whole spine, so the strip draws every step for
+   * every kind. A novel still shows "fact-check" — greyed, with the reason —
+   * rather than leaving a hole where a step should be.
+   */
+  readonly skipped?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The stages from the run's state file, which is the truth (14 §1.2).
+ *
+ * The event-derived list above only knows stages that announced themselves
+ * since the page loaded; this knows every stage the run will walk, where it is
+ * standing, and which sign-offs are still ahead.
+ */
+export function stagesFromGraph(graph: RunGraph): Stage[] {
+  const at = graph.stage === "done" ? graph.sequence.length : graph.sequence.indexOf(graph.stage);
+  return graph.sequence.map((name, i) => {
+    const gate = name.startsWith("gate:");
+    const label = gate ? `${name.slice(5)} sign-off` : name.replace(".", " · ");
+    // A skipped step is never "done": nothing was done. It reads as skipped
+    // wherever the run happens to be standing.
+    const why = graph.skipped?.[name];
+    if (why) return { name: label, state: "skipped" as const, took: why };
+    if (i < at) return { name: label, state: "done" as const, took: "done" };
+    if (i === at) {
+      return {
+        name: label,
+        state: graph.status === "failed" ? ("failed" as const) : ("now" as const),
+        took: gate ? "waiting on you" : graph.status,
+      };
+    }
+    return { name: label, state: "queued" as const, took: "" };
   });
 }
 
@@ -123,7 +166,49 @@ export function RunPage({
     () => sse.messages.filter((m) => m.event !== "ping" && m.timestamp >= since).slice(-60),
     [sse.messages, since],
   );
-  const stages = useMemo(() => deriveStages(sse.messages, since), [sse.messages, since]);
+  /*
+   * The run's graph, when the thing running is a pipeline run. Re-read on
+   * every pipeline event rather than kept in step by hand: the state file is
+   * small and it is the only account that survives a reload.
+   */
+  const runRef = lead?.ref ?? null;
+  const [graph, setGraph] = useState<RunGraph | null>(null);
+  const pipelineTicks = useMemo(
+    () => sse.messages.filter((m) => m.event === "pipeline:stage").length,
+    [sse.messages],
+  );
+  useEffect(() => {
+    if (!runRef) {
+      setGraph(null);
+      return;
+    }
+    let live = true;
+    const base = `/api/v1/productions`;
+    void Promise.all([
+      fetch(`${base}/${encodeURIComponent(runRef.type)}/${encodeURIComponent(runRef.id)}/pipeline`)
+        .then((r) => r.json()).catch(() => null),
+      fetch(base).then((r) => r.json()).catch(() => null),
+    ]).then(([run, all]) => {
+      const state = (run as { state?: { stage?: string; status?: string } } | null)?.state;
+      const spec = (all as {
+        productions?: Array<{
+          id: string;
+          pipeline?: { sequence?: string[]; skip?: Record<string, string> } | null;
+        }>;
+      } | null)?.productions?.find((p) => p.id === runRef.type)?.pipeline;
+      const sequence = spec?.sequence;
+      if (!live) return;
+      setGraph(state?.stage && Array.isArray(sequence)
+        ? { sequence, stage: state.stage, status: state.status ?? "", ...(spec?.skip ? { skipped: spec.skip } : {}) }
+        : null);
+    });
+    return () => { live = false; };
+  }, [runRef?.type, runRef?.id, pipelineTicks]);
+
+  const stages = useMemo(
+    () => (graph ? stagesFromGraph(graph) : deriveStages(sse.messages, since)),
+    [graph, sse.messages, since],
+  );
 
   const done = stages.filter((s) => s.state === "done").length;
   const pct = stages.length ? Math.round((done / stages.length) * 100) : 0;
@@ -142,19 +227,18 @@ export function RunPage({
   }
 
   return (
-    <div className="cols cols-a" style={{ alignItems: "start" }}>
-      <div className="dark crop" style={{ padding: "22px 24px 24px" }}>
+    <div className="cols cols-a items-start">
+      <div className="dark crop px-6 pt-5.5 pb-6">
         <span
-          className="disc stroke"
-          style={{ width: 150, height: 150, right: -62, top: -68, opacity: 0.4 }}
+          className="disc stroke w-37.5 h-37.5 -right-15.5 -top-17 opacity-40"
         />
 
-        <div className="spread" style={{ marginBottom: 20, position: "relative" }}>
+        <div className="spread mb-5 relative">
           <div>
             <div className="label">
               {stages.length ? `Stage ${Math.min(done + 1, stages.length)} of ${stages.length}` : "Working"}
             </div>
-            <h3 style={{ fontSize: 17.5, marginTop: 7 }}>
+            <h3 className="text-lead mt-2">
               {head.what}
               {head.where ? ` · ${head.where}` : ""}
             </h3>
@@ -162,13 +246,13 @@ export function RunPage({
           <span className="pill">{clock(Date.now() - head.startedAt)}</span>
         </div>
 
-        <div className="thread" style={{ position: "relative" }}>
+        <div className="thread relative">
           {transcript.map((m) => (
             <div className="msg" key={m.seq}>
               <span className="who-av model">Q</span>
               <div className="body">
                 <div className="tag">{m.event.replace(/:/g, " · ")}</div>
-                <p style={{ fontSize: 14, lineHeight: 1.6 }}>{line(m)}</p>
+                <p className="text-body leading-relaxed">{line(m)}</p>
               </div>
             </div>
           ))}
@@ -181,7 +265,7 @@ export function RunPage({
           ) : null}
         </div>
 
-        <div className="rowflex" style={{ marginTop: 22, position: "relative" }}>
+        <div className="rowflex mt-5.5 relative">
           <button
             type="button"
             className="btn btn-quiet btn-sm"
@@ -210,20 +294,20 @@ export function RunPage({
         {jobs.live.length > 0 ? (
           <div className="panel">
             <h3 className="h-panel">In hand</h3>
-            <p className="hint" style={{ marginTop: 3 }}>
+            <p className="hint mt-1">
               {jobs.live.length === 1
                 ? "One stage, running now."
                 : `${jobs.live.length} stages. They run one at a time.`}
             </p>
-            <div className="rows" style={{ marginTop: 12 }}>
+            <div className="rows mt-3">
               {jobs.live.map((job) => (
-                <div className="row" style={{ padding: "9px 4px", gap: 9 }} key={job.id}>
-                  <span className={job.status === "running" ? "st now" : "st"} style={{ gap: 9 }}>
+                <div className="row py-2.5 px-1 gap-2.5" key={job.id}>
+                  <span className={`${job.status === "running" ? "st now" : "st"} gap-2.5`}>
                     <i />
                     {jobLabel(job)}
                   </span>
                   <span className="grow" />
-                  <span className="meta" style={{ maxWidth: 220 }}>{jobDetail(job)}</span>
+                  <span className="meta max-w-55">{jobDetail(job)}</span>
                   <button
                     type="button"
                     className="btn btn-quiet btn-sm"
@@ -238,33 +322,29 @@ export function RunPage({
         ) : null}
 
         <div className="panel">
-          <div className="spread" style={{ alignItems: "flex-start" }}>
+          <div className="spread items-start">
             <div>
               <h3 className="h-panel">Where it is</h3>
-              <p className="hint" style={{ marginTop: 3 }}>
-                Stages, as this run reports them.
+              <p className="hint mt-1">
+                {graph ? "Every stage this run walks, from its state file." : "Stages, as this run reports them."}
               </p>
             </div>
-            <div className="rowflex" style={{ gap: 9 }}>
-              <svg className="ring" viewBox="0 0 44 44" aria-hidden="true">
-                <circle className="t" cx="22" cy="22" r="19" />
-                <circle
-                  className="v"
-                  cx="22"
-                  cy="22"
-                  r="19"
-                  style={{ strokeDasharray: RING, strokeDashoffset: RING * (1 - pct / 100) }}
-                />
-              </svg>
+            <div className="rowflex gap-2.5">
+              <Ring value={pct / 100} />
               <span className="pct">{pct}%</span>
             </div>
           </div>
-          <div className="rows" style={{ marginTop: 12 }}>
+          <div className="rows mt-3">
             {stages.map((s) => (
-              <div className="row" style={{ padding: "9px 4px" }} key={s.name}>
+              <div className="row py-2.5 px-1" key={s.name}>
                 <span
-                  className={s.state === "done" ? "st done" : s.state === "now" ? "st now" : "st"}
-                  style={{ gap: 9 }}
+                  className={`${s.state === "done"
+                    ? "st done"
+                    : s.state === "now"
+                      ? "st now"
+                      : s.state === "skipped"
+                        ? "st skip"
+                        : "st"} gap-2.5`}
                 >
                   <i />
                   {s.name}

@@ -17,7 +17,7 @@ import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import type { UIMessage } from "ai";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon } from "../ui/glyphs";
 import type { ComponentProps, HTMLAttributes, ReactElement } from "react";
 import {
   createContext,
@@ -332,7 +332,7 @@ export const MessageResponse = memo(
         // face: the single thing that made the app look unfinished. The
         // manuscript face is the right answer for prose in either script, and
         // the CJK plugin still handles Chinese glyph selection.
-        "size-full text-[17px] leading-[1.72] font-serif [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p+p]:mt-4",
+        "size-full text-lead leading-[1.72] font-serif [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 [&>p+p]:mt-4",
         className
       )}
       plugins={streamdownPlugins}

@@ -70,7 +70,10 @@ describe("chat message actions", () => {
     (globalThis as any).EventSource = originalEventSource;
   });
 
-  it("aborts only the previous chat round when activating another session", async () => {
+  it("leaves a running chat round alone when another session is activated", async () => {
+    // Reading another conversation is not a decision to throw work away. This
+    // used to abort the round being left, which killed confirmed production
+    // runs seconds after they started.
     const store = createTestStore();
     const previousId = store.getState().createDraftSession(null, "chat");
     const nextId = store.getState().createDraftSession(null, "chat");
@@ -93,17 +96,18 @@ describe("chat message actions", () => {
 
     expect(store.getState().activeSessionId).toBe(nextId);
     expect(store.getState().sessions[previousId]).toMatchObject({
-      isStreaming: false,
-      isChatStreaming: false,
-      stream: null,
+      isStreaming: true,
+      isChatStreaming: true,
+      stream,
     });
-    expect(stream.closed).toBe(true);
-    await vi.waitFor(() => {
-      expect(fetchJson).toHaveBeenCalledWith(`/sessions/${previousId}/abort?scope=chat`, { method: "POST" });
-    });
+    expect(stream.closed).toBe(false);
+    expect(fetchJson).not.toHaveBeenCalledWith(
+      `/sessions/${previousId}/abort?scope=chat`,
+      { method: "POST" },
+    );
   });
 
-  it("keeps a background production task alive when navigation aborts its parallel chat round", async () => {
+  it("leaves a background production task alone when another session is activated", async () => {
     const store = createTestStore();
     const previousId = store.getState().createDraftSession(null, "short");
     const nextId = store.getState().createDraftSession(null, "chat");
@@ -137,19 +141,15 @@ describe("chat message actions", () => {
 
     store.getState().activateSession(nextId);
 
-    expect(store.getState().sessions[previousId]).toMatchObject({
-      isStreaming: true,
-      isChatStreaming: false,
-      stream,
-    });
     expect(store.getState().sessions[previousId]?.messages[0]?.toolExecutions?.[0]).toMatchObject({
       status: "running",
       background: true,
     });
     expect(stream.closed).toBe(false);
-    await vi.waitFor(() => {
-      expect(fetchJson).toHaveBeenCalledWith(`/sessions/${previousId}/abort?scope=chat`, { method: "POST" });
-    });
+    expect(fetchJson).not.toHaveBeenCalledWith(
+      `/sessions/${previousId}/abort?scope=chat`,
+      { method: "POST" },
+    );
   });
 
   it("keeps play mode local for draft sessions until the first message persists them", () => {

@@ -5,6 +5,7 @@ import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { visibleChoices, applyEffects, initVarState, type VarState } from "@actalk/quire-core/interactive-film/evaluator";
 import type { StoryGraph, Choice } from "@actalk/quire-core/interactive-film/graph-schema";
+import { Failed, Loading } from "../components/ui/states";
 
 interface Nav { toDashboard: () => void }
 
@@ -41,26 +42,26 @@ export function StoryPlayer({
     setStarted(true);
   }, [graph, startId]);
 
-  if (loading) return <div className={c.muted}>{t("common.loading")}</div>;
-  if (error) return <div className="text-destructive">{t("common.error")}: {error}</div>;
+  if (loading) return <Loading what="Reading the story…" />;
+  if (error) return <Failed what="Could not open the story." detail={error} />;
   if (!graph) return null;
 
   if (!started || !currentId) {
     return (
       <div className="space-y-6" data-testid="player-start-screen">
         {!embedded && <button onClick={nav.toDashboard} className={c.link} data-testid="player-back">← {t("bread.books")}</button>}
-        <h1 className="text-2xl font-semibold">{graph.title}</h1>
+        <h1 className="h-page">{graph.title}</h1>
         <button
           onClick={reset}
           data-testid="player-start"
-          className={`px-6 py-3 rounded-lg ${c.btnPrimary}`}
+          className="btn"
         >开始游玩</button>
       </div>
     );
   }
 
   const node = graph.nodes.find((n) => n.id === currentId);
-  if (!node) return <div className="text-destructive">节点缺失：{currentId}</div>;
+  if (!node) return <Failed what={`节点缺失 / Missing scene: ${currentId}`} />;
 
   const isEnding = node.type === "ending";
   const choices = visibleChoices(node, vars);
@@ -77,7 +78,7 @@ export function StoryPlayer({
   return (
     <div className="space-y-6 relative" data-testid="player-screen">
       {!embedded && <button onClick={nav.toDashboard} className={c.link} data-testid="player-back">← {t("bread.books")}</button>}
-      <h2 className="text-xl font-medium" data-testid="player-node-title">{node.title}</h2>
+      <h2 className="h-panel" data-testid="player-node-title">{node.title}</h2>
 
       {node.imageSlot?.assetRef && (
         <img
@@ -103,7 +104,7 @@ export function StoryPlayer({
       )}
 
       {isEnding ? (
-        <div className="border rounded-xl p-8 text-center space-y-4" data-testid="player-ending">
+        <div className="panel text-center space-y-4" data-testid="player-ending">
           <div className="text-xs uppercase tracking-widest text-primary" data-testid="player-ending-type">
             {graph.endings.find((e) => e.nodeId === node.id)?.type ?? "ending"}
           </div>
@@ -113,7 +114,7 @@ export function StoryPlayer({
           <div className={c.muted} data-testid="player-unlocked">
             已解锁结局 {unlocked.length} / {graph.endings.length}
           </div>
-          <button onClick={reset} data-testid="player-restart" className={`px-5 py-2 rounded ${c.btnSecondary}`}>
+          <button onClick={reset} data-testid="player-restart" className="btn btn-line">
             重新开始
           </button>
         </div>
@@ -124,17 +125,17 @@ export function StoryPlayer({
               key={choice.id}
               data-testid={`choice-${choice.id}`}
               onClick={() => onChoose(choice.targetNodeId, choice.effects)}
-              className="w-full text-left px-5 py-4 border border-border rounded-xl hover:bg-muted/40 transition-colors"
+              className="well w-full text-left"
             >
               {choice.text}
             </button>
           ))}
-          {choices.length === 0 && <div className="text-destructive" data-testid="player-deadend">此路不通</div>}
+          {choices.length === 0 && <p className="hint is-bad" data-testid="player-deadend">此路不通</p>}
         </div>
       )}
 
       {graph.variables.length > 0 && (
-        <div className="fixed bottom-6 right-6 border border-border rounded-lg px-4 py-3 bg-card/95 backdrop-blur-sm shadow-lg space-y-1" data-testid="player-hud">
+        <div className="pop fixed bottom-6 right-6 space-y-1" data-testid="player-hud">
           {graph.variables.map((v) => (
             <div key={v.name} className="flex justify-between gap-4 text-xs">
               <span className={c.muted}>{v.name}</span>

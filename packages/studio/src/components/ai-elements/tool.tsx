@@ -15,7 +15,7 @@ import {
   ClockIcon,
   WrenchIcon,
   XCircleIcon,
-} from "lucide-react";
+} from "../ui/glyphs";
 import type { ComponentProps, ReactNode } from "react";
 import { isValidElement } from "react";
 
@@ -59,11 +59,11 @@ const statusLabels: Record<ToolPart["state"], readonly [string, string]> = {
 
 const statusIcons: Record<ToolPart["state"], ReactNode> = {
   "approval-requested": <ClockIcon className="size-4 text-warning" />,
-  "approval-responded": <CheckCircleIcon className="size-4 text-blue-600" />,
-  "input-available": <ClockIcon className="size-4 animate-pulse" />,
+  "approval-responded": <CheckCircleIcon className="size-4 text-(--ink-2)" />,
+  "input-available": <ClockIcon className="size-4" />,
   "input-streaming": <CircleIcon className="size-4" />,
   "output-available": <CheckCircleIcon className="size-4 text-success" />,
-  "output-denied": <XCircleIcon className="size-4 text-orange-600" />,
+  "output-denied": <XCircleIcon className="size-4 text-(--warn)" />,
   "output-error": <XCircleIcon className="size-4 text-destructive" />,
 };
 
@@ -121,7 +121,7 @@ export type ToolInputProps = ComponentProps<"div"> & {
 
 export const ToolInput = ({ className, input, ...props }: ToolInputProps) => (
   <div className={cn("space-y-2 overflow-hidden", className)} {...props}>
-    <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+    <h4 className="label">
       Parameters
     </h4>
     <div className="rounded-md bg-muted/50">
@@ -157,7 +157,7 @@ export const ToolOutput = ({
 
   return (
     <div className={cn("space-y-2", className)} {...props}>
-      <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
+      <h4 className="label">
         {errorText ? "Error" : "Result"}
       </h4>
       <div

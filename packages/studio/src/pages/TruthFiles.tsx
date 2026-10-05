@@ -126,7 +126,7 @@ export function TruthFiles({ bookId, t }: { readonly bookId: string; readonly t:
 
   return (
     <div className="stack-lg">
-      <div className="head" style={{ marginBottom: 0 }}>
+      <div className="head mb-0">
         <h2 className="h-page">
           {files.length === 0
             ? t("truth.title")
@@ -138,12 +138,12 @@ export function TruthFiles({ bookId, t }: { readonly bookId: string; readonly t:
         </p>
       </div>
 
-      <section className="cols cols-b" style={{ alignItems: "start" }}>
+      <section className="cols cols-b items-start">
         <div className="panel panel-flush">
           <div className="panel-head">
             <h3 className="h-panel grow">Files</h3>
           </div>
-          <div className="panel-body" style={{ paddingTop: 2, paddingBottom: 10 }}>
+          <div className="panel-body pt-0.5 pb-2.5">
             {files.length === 0 ? (
               <p className="hint">{t("truth.empty")}</p>
             ) : (
@@ -205,10 +205,10 @@ export function TruthFiles({ bookId, t }: { readonly bookId: string; readonly t:
           </div>
           <div className="panel-body">
             {presentation.legacy ? (
-              <div data-testid="legacy-shim-warning" className="fail" style={{ marginBottom: 12 }}>
+              <div data-testid="legacy-shim-warning" className="caution mb-3">
                 <div>
                   <b>This file is a compatibility shim, and read-only.</b>
-                  <p style={{ marginTop: 4 }}>
+                  <p className="mt-1">
                     Edits belong in{" "}
                     <code className="mono">{SHIM_AUTHORITATIVE_PATH[selected ?? ""] ?? "outline/"}</code>
                     , which is what the runtime actually reads.
@@ -217,9 +217,9 @@ export function TruthFiles({ bookId, t }: { readonly bookId: string; readonly t:
               </div>
             ) : null}
             {presentation.readonlyReason === "runtime-diagnostic" ? (
-              <div data-testid="runtime-diagnostic-warning" className="panel" style={{ marginBottom: 12 }}>
+              <div data-testid="runtime-diagnostic-warning" className="panel mb-3">
                 <b>A runtime diagnostic, not a setting.</b>
-                <p className="note" style={{ marginTop: 4, fontSize: 14 }}>
+                <p className="note mt-1 text-body">
                   What the writer looked at for this chapter: the context it chose, what it
                   protected, what it was willing to compress, and the budget. Kept so a run can be
                   retraced; nothing here is editable.
@@ -235,15 +235,13 @@ export function TruthFiles({ bookId, t }: { readonly bookId: string; readonly t:
               <p className="hint">{t("truth.notFound")}</p>
             ) : editMode ? (
               <textarea
-                className="input mono"
-                style={{ minHeight: 360, resize: "none" }}
+                className="input mono min-h-90 resize-none"
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
               />
             ) : (
               <pre
-                className="mono scroll-y"
-                style={{ whiteSpace: "pre-wrap", fontSize: 11, lineHeight: 1.8, maxHeight: 520, margin: 0 }}
+                className="mono scroll-y whitespace-pre-wrap text-cap leading-relaxed max-h-130 m-0"
               >
                 {fileData.content}
               </pre>

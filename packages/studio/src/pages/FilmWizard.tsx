@@ -162,7 +162,7 @@ function WorldAnchorView({
           <ul className="space-y-2">
             {graph.characters.map((ch) => (
               <li key={ch.id} className="flex items-start gap-2">
-                <span className={`shrink-0 text-xs px-1.5 py-0.5 rounded border border-border ${c.muted}`}>
+                <span className="pill shrink-0">
                   {ch.role}
                 </span>
                 <span>
@@ -273,7 +273,7 @@ export default function FilmWizard({
                 data-testid={`wizard-step-${p}`}
                 onClick={() => handlePhaseClick(p)}
                 className={[
-                  "relative flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-all",
+                  "btn btn-sm relative flex items-center gap-1.5",
                   isActive ? c.btnPrimary : c.btnSecondary,
                 ].join(" ")}
               >
@@ -282,7 +282,7 @@ export default function FilmWizard({
                 )}
                 <span
                   className={[
-                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold tabular-nums",
+                    "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-small font-semibold tabular-nums",
                     status === "done"
                       ? "border-current bg-current/25"
                       : status === "partial"
@@ -304,7 +304,7 @@ export default function FilmWizard({
           data-testid="wizard-preview"
           onClick={handlePreviewToggle}
           className={[
-            "shrink-0 flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium",
+            "btn btn-sm shrink-0 flex items-center gap-1",
             showPreview ? c.btnPrimary : c.btnSecondary,
           ].join(" ")}
         >
@@ -322,7 +322,7 @@ export default function FilmWizard({
               data-testid={`wizard-subview-${sv.key}`}
               onClick={() => handleSubViewClick(sv.key)}
               className={[
-                "rounded px-3 py-1 text-sm font-medium transition-colors",
+                "btn btn-sm",
                 currentSubView === sv.key ? c.btnPrimary : c.btnSecondary,
               ].join(" ")}
             >

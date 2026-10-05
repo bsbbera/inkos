@@ -6,14 +6,32 @@
  * derived independently in the sidebar and on the dashboard, which is how the
  * sidebar could say a book was clear while the dashboard listed it as waiting.
  *
- * The waiting count is chapters pending review. When plan 14 lands its gates
- * API this becomes gates across every production type, and only this file
- * changes.
+ * The waiting count is the length of the list Home shows (`deriveGates`):
+ * sign-offs a run is stopped at, chapters to read, and works with unread or
+ * unsigned files.
  */
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useApi } from "./use-api";
+import { useNewSSEMessages, type SSEMessage } from "./use-sse";
+import { deriveGates, type Creation, type PipelineWaiting } from "../pages/Dashboard";
 import type { BookSummary } from "../shared/contracts";
 import type { PaletteEntry } from "../components/shell/Palette";
+
+/** Events after which the rail's numbers can no longer be trusted. */
+const COUNT_CHANGING_EVENTS: ReadonlySet<string> = new Set([
+  "agent:complete",
+  "book:created",
+  "book:deleted",
+  "tool:end",
+  "pipeline:stage",
+  // A run that starts may have just created the issue it is writing.
+  "job:started",
+  "job:done",
+  "job:failed",
+  "job:cancelled",
+]);
+
+const EMPTY_MESSAGES: ReadonlyArray<SSEMessage> = [];
 
 export interface PublicationSummary {
   readonly id: string;
@@ -29,20 +47,48 @@ export interface PublicationSummary {
   readonly pdf: string | null;
 }
 
-export function useShellData() {
-  const { data: booksData } = useApi<{ books: readonly BookSummary[] }>("/books");
-  const { data: pubData } = useApi<{ publications: readonly PublicationSummary[] }>("/publications");
+export function useShellData(sse?: { readonly messages: ReadonlyArray<SSEMessage> }) {
+  const { data: booksData, refetch: refetchBooks } = useApi<{ books: readonly BookSummary[] }>("/books");
+  const { data: pubData, refetch: refetchPublications } =
+    useApi<{ publications: readonly PublicationSummary[] }>("/publications");
   const { data: daemon } = useApi<{ running: boolean }>("/daemon");
   const { data: model } = useApi<{ service: string | null; defaultModel: string | null }>(
     "/project/default-model",
   );
 
+  const { data: workspace, refetch: refetchWorkspace } =
+    useApi<{ projects: ReadonlyArray<Creation> }>("/workspace/summary");
+  const { data: waitingData, refetch: refetchWaiting } =
+    useApi<{ waiting: PipelineWaiting[] }>("/productions/waiting");
+
   const books = booksData?.books ?? [];
   const publications = pubData?.publications ?? [];
 
+  /*
+   * These counts are fetched once a window, so they were only ever right at
+   * the moment the app opened: a magazine made, finished or deleted an hour
+   * ago left the rail showing the old number until a reload. Anything that
+   * finishes a run or changes a book refreshes them.
+   */
+  useNewSSEMessages(sse?.messages ?? EMPTY_MESSAGES, useCallback((message: SSEMessage) => {
+    if (COUNT_CHANGING_EVENTS.has(message.event)) {
+      void refetchBooks();
+      void refetchPublications();
+      void refetchWorkspace();
+      void refetchWaiting();
+    }
+  }, [refetchBooks, refetchPublications, refetchWorkspace, refetchWaiting]));
+
+  /*
+   * The same list Home shows, counted.
+   *
+   * This summed book chapters awaiting review and nothing else, so with two
+   * works stopped at a sign-off and no books at all the pill read "nothing
+   * waiting". Home already derives the full list; the pill is its length.
+   */
   const waiting = useMemo(
-    () => books.reduce((n, b) => n + (b.pendingReview ?? 0), 0),
-    [books],
+    () => deriveGates(books, publications, workspace?.projects ?? [], waitingData?.waiting ?? []).length,
+    [books, publications, workspace?.projects, waitingData?.waiting],
   );
 
   const tails = useMemo(

@@ -3,8 +3,10 @@ import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { fetchJson, useApi } from "../hooks/use-api";
-import { Download, FileText, Languages, Loader2, Play, Upload } from "lucide-react";
+import { Download, FileText, Languages, Loader2, Play, Upload } from "../components/ui/glyphs";
 
+import { Spinner } from "../components/ui/working";
+import { Failed, Loading } from "../components/ui/states";
 interface Nav { toDashboard: () => void }
 
 interface TranslationSummary {
@@ -259,8 +261,8 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
     <div className="space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="q-title text-3xl flex items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full border-[1.5px] border-primary text-primary" aria-hidden="true"><Languages size={19} /></span>
+          <h1 className="h-page flex items-center gap-3">
+            <span className="icon-ring icon-ring-lg" aria-hidden="true"><Languages size={19} /></span>
             {t("translation.title")}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -270,10 +272,10 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
-        <section className={`rounded-2xl border ${c.cardStatic} p-5 space-y-4`}>
+        <section className="panel space-y-4">
           <div className="flex items-center gap-2">
             <Upload size={18} className="text-primary" />
-            <h2 className="font-semibold">{t("translation.newProject")}</h2>
+            <h2 className="h-panel">{t("translation.newProject")}</h2>
           </div>
           <div className="space-y-3">
             <input
@@ -295,32 +297,32 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
             <button
               onClick={uploadFile}
               disabled={!file || busy === "upload"}
-              className={`w-full rounded-lg px-4 py-2 text-sm font-semibold ${c.btnSecondary} disabled:opacity-40`}
+              className="btn btn-line w-full"
             >
-              {busy === "upload" ? <Loader2 size={14} className="inline animate-spin mr-2" /> : null}
+              {busy === "upload" ? <Spinner className="mr-2" /> : null}
               {t("translation.upload")}
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <label className="label space-y-1">
               {t("translation.source")}
               <input
                 list="translation-source-language-options"
                 value={sourceLanguage}
                 onChange={(e) => setSourceLanguage(e.target.value)}
                 placeholder={t("translation.sourcePlaceholder")}
-                className="w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm normal-case text-foreground"
+                className="input w-full normal-case"
               />
             </label>
-            <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <label className="label space-y-1">
               {t("translation.target")}
               <input
                 list="translation-target-language-options"
                 value={targetLanguage}
                 onChange={(e) => setTargetLanguage(e.target.value)}
                 placeholder={t("translation.targetPlaceholder")}
-                className="w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm normal-case text-foreground"
+                className="input w-full normal-case"
               />
             </label>
             <datalist id="translation-source-language-options">
@@ -332,37 +334,37 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
               ))}
             </datalist>
           </div>
-          <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground block">
+          <label className="label space-y-1 block">
             {t("translation.projectTitle")}
-            <input value={title} onChange={(e) => setTitle(e.target.value)} className="w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm normal-case text-foreground" />
+            <input value={title} onChange={(e) => setTitle(e.target.value)} className="input w-full normal-case" />
           </label>
-          <label className="space-y-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground block">
+          <label className="label space-y-1 block">
             {t("translation.segmentMax")}
-            <input type="number" min={400} max={4000} value={segmentMaxChars} onChange={(e) => setSegmentMaxChars(Number(e.target.value) || 1200)} className="w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 text-sm normal-case text-foreground" />
+            <input type="number" min={400} max={4000} value={segmentMaxChars} onChange={(e) => setSegmentMaxChars(Number(e.target.value) || 1200)} className="input w-full normal-case" />
           </label>
           <button
             onClick={createProject}
             disabled={!uploaded || busy === "create"}
-            className={`w-full rounded-lg px-4 py-2 text-sm font-bold ${c.btnPrimary} disabled:opacity-40`}
+            className="btn w-full"
           >
-            {busy === "create" ? <Loader2 size={14} className="inline animate-spin mr-2" /> : null}
+            {busy === "create" ? <Spinner className="mr-2" /> : null}
             {t("translation.create")}
           </button>
         </section>
 
-        <section className={`rounded-2xl border ${c.cardStatic} p-5 space-y-5`}>
+        <section className="panel space-y-5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <FileText size={18} className="text-primary" />
-              <h2 className="font-semibold">{t("translation.projects")}</h2>
+              <h2 className="h-panel">{t("translation.projects")}</h2>
             </div>
-            <button onClick={() => refetch()} className={`rounded-lg px-3 py-1.5 text-xs ${c.btnSecondary}`}>{t("translation.refresh")}</button>
+            <button onClick={() => refetch()} className="btn btn-line btn-sm">{t("translation.refresh")}</button>
           </div>
 
-          {loading && <div className="text-sm text-muted-foreground">{t("common.loading")}</div>}
-          {error && <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+          {loading && <Loading what="Reading translations…" />}
+          {error && <Failed what="Could not list translations." detail={error} />}
           {!loading && translations.length === 0 && (
-            <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            <div className="well dim text-center border-dashed">
               {t("translation.empty")}
             </div>
           )}
@@ -372,37 +374,38 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 <button
                   key={item.projectId}
                   onClick={() => setSelectedId(item.projectId)}
-                  className={`rounded-xl border p-4 text-left transition-colors ${selected?.projectId === item.projectId ? "border-primary bg-primary/10" : "border-border bg-secondary/20 hover:bg-secondary/40"}`}
+                  aria-pressed={selected?.projectId === item.projectId}
+                  className="well text-left"
                 >
                   <div className="font-semibold line-clamp-1">{item.title}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{item.sourceLanguage} → {item.targetLanguage} · {item.chapters} {t("translation.chapters")}</div>
-                  <div className="mt-2 text-[11px] text-muted-foreground/70">{item.projectId}</div>
+                  <div className="mt-2 text-small text-muted-foreground/70">{item.projectId}</div>
                 </button>
               ))}
             </div>
           )}
 
           {selected && (
-            <div className="rounded-2xl border border-border bg-background/40 p-4 space-y-4">
+            <div className="well space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold">{selected.title}</div>
                   <div className="text-xs text-muted-foreground">{selected.projectId}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button onClick={runProject} disabled={busy === "run"} className={`rounded-lg px-3 py-2 text-sm font-semibold ${c.btnPrimary} disabled:opacity-40`}>
-                    {busy === "run" ? <Loader2 size={14} className="inline animate-spin mr-2" /> : <Play size={14} className="inline mr-2" />}
+                  <button onClick={runProject} disabled={busy === "run"} className="btn">
+                    {busy === "run" ? <Spinner className="mr-2" /> : <Play size={14} className="inline mr-2" />}
                     {t("translation.run")}
                   </button>
                   {(["md", "txt", "epub"] as const).map((format) => (
-                    <button key={format} onClick={() => exportProject(format)} disabled={busy === "export"} className={`rounded-lg px-3 py-2 text-sm ${c.btnSecondary} disabled:opacity-40`}>
+                    <button key={format} onClick={() => exportProject(format)} disabled={busy === "export"} className="btn btn-line">
                       <Download size={14} className="inline mr-2" />
                       {format.toUpperCase()}
                     </button>
                   ))}
                 </div>
               </div>
-              {detailLoading && <div className="text-sm text-muted-foreground">{t("common.loading")}</div>}
+              {detailLoading && <Loading what="Reading this translation…" rows={2} />}
               {detail?.manifest && (
                 <div className="grid gap-2 md:grid-cols-2">
                   {detail.manifest.chapters.map((chapter) => (
@@ -422,20 +425,20 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 <div className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <div className="q-label">{t("translation.preview")}</div>
+                      <div className="label">{t("translation.preview")}</div>
                       <div className="font-semibold">{previewChapter.title}</div>
                     </div>
                     <div className="text-xs text-muted-foreground">{previewChapter.status}</div>
                   </div>
-                  <div className="max-h-[560px] overflow-auto rounded-xl border border-border bg-background/50">
+                  <div className="well p-0 max-h-140 overflow-auto">
                     {previewChapter.segments.map((segment) => (
                       <div key={segment.index} className="grid gap-0 border-b border-border/70 last:border-b-0 lg:grid-cols-2">
                         <div className="space-y-2 p-4">
-                          <div className="text-[11px] font-bold uppercase tracking-wide text-muted-foreground">{t("translation.original")}</div>
+                          <div className="text-small font-bold uppercase tracking-wide text-muted-foreground">{t("translation.original")}</div>
                           <p className="whitespace-pre-wrap text-sm leading-7 text-muted-foreground">{segment.source}</p>
                         </div>
                         <div className="space-y-2 border-t border-border/70 bg-secondary/20 p-4 lg:border-l lg:border-t-0">
-                          <div className="text-[11px] font-bold uppercase tracking-wide text-primary">{t("translation.translated")}</div>
+                          <div className="text-small font-bold uppercase tracking-wide text-primary">{t("translation.translated")}</div>
                           <p className="whitespace-pre-wrap text-sm leading-7">{segment.target?.trim() || t("translation.untranslated")}</p>
                           {segment.notes?.trim() ? (
                             <p className="rounded-lg bg-background/70 px-3 py-2 text-xs leading-5 text-muted-foreground">{segment.notes}</p>
@@ -447,7 +450,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 </div>
               )}
               <div>
-                <div className="mb-2 q-label">{t("translation.report")}</div>
+                <div className="mb-2 label">{t("translation.report")}</div>
                 <pre className="max-h-80 overflow-auto rounded-xl bg-secondary/30 p-4 text-xs leading-6 whitespace-pre-wrap">
                   {detail?.report?.trim() || t("translation.noReport")}
                 </pre>
@@ -458,9 +461,9 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
       </div>
 
       {status && (
-        <div className={`rounded-xl px-4 py-3 text-sm ${status.startsWith("Error:") ? "bg-destructive/10 text-destructive" : "bg-success/10 text-success"}`}>
-          {status}
-        </div>
+        status.startsWith("Error:")
+          ? <Failed what="That did not work." detail={status.replace(/^Error:\s*/, "")} />
+          : <div className="pass block">{status}</div>
       )}
     </div>
   );

@@ -35,14 +35,14 @@ export function ExportBar({ projectId, theme }: ExportBarProps) {
   const htmlUrl = buildApiUrl(`/projects/${encodedProjectId}/export/html`) ?? "#";
 
   return (
-    <div className="border border-border bg-card rounded p-3" data-testid="export-bar">
+    <div className="well" data-testid="export-bar">
       <div className={`text-sm font-medium mb-2 ${c.muted}`}>导出 / 交付</div>
       <div className="flex flex-wrap gap-2">
         <a
           href={jsonUrl}
           download
           data-testid="export-json"
-          className={`inline-flex items-center rounded px-3 py-1.5 text-sm font-medium no-underline ${c.btnSecondary}`}
+          className="btn btn-line btn-sm no-underline"
         >
           导出 JSON
         </a>
@@ -50,7 +50,7 @@ export function ExportBar({ projectId, theme }: ExportBarProps) {
           href={inkUrl}
           download
           data-testid="export-ink"
-          className={`inline-flex items-center rounded px-3 py-1.5 text-sm font-medium no-underline ${c.btnSecondary}`}
+          className="btn btn-line btn-sm no-underline"
         >
           导出 Ink
         </a>
@@ -58,7 +58,7 @@ export function ExportBar({ projectId, theme }: ExportBarProps) {
           href={htmlUrl}
           download
           data-testid="export-html"
-          className={`inline-flex items-center rounded px-3 py-1.5 text-sm font-medium no-underline ${c.btnSecondary}`}
+          className="btn btn-line btn-sm no-underline"
         >
           导出可玩网页（HTML）
         </a>

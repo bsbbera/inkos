@@ -13,7 +13,7 @@ import {
   ChevronDown,
   Wrench,
   Check,
-} from "lucide-react";
+} from "../ui/glyphs";
 import { buildApiUrl } from "../../hooks/use-api";
 import { tr } from "../../lib/app-language";
 import { chatSelectors, useChatStore } from "../../store/chat";
@@ -23,34 +23,36 @@ import {
   getNarrativeForecastPreviewDetails,
 } from "./NarrativeForecastPreview";
 
+import { Spinner } from "../ui/working";
+import { Failed } from "../ui/states";
 // -- Status rendering helpers --
 
 function ExecStatusBadge({ status }: { status: ToolExecution["status"] }) {
   switch (status) {
     case "running":
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-primary">
-          <Loader2 size={12} className="animate-spin" />
+        <span className="inline-flex items-center gap-1 text-small text-primary">
+          <Spinner />
           <span>{tr("执行中", "Running")}</span>
         </span>
       );
     case "processing":
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-          <Loader2 size={12} className="animate-spin" style={{ animationDuration: "2s" }} />
+        <span className="inline-flex items-center gap-1 text-small text-muted-foreground">
+          <Spinner />
           <span>{tr("处理结果", "Processing result")}</span>
         </span>
       );
     case "completed":
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-success text-success">
+        <span className="inline-flex items-center gap-1 text-small text-success text-success">
           <CheckCircle2 size={12} />
           <span>{tr("已完成", "Completed")}</span>
         </span>
       );
     case "error":
       return (
-        <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
+        <span className="inline-flex items-center gap-1 hint is-bad">
           <XCircle size={12} />
           <span>{tr("失败", "Failed")}</span>
         </span>
@@ -61,9 +63,9 @@ function ExecStatusBadge({ status }: { status: ToolExecution["status"] }) {
 function StageIcon({ status }: { status: PipelineStage["status"] }) {
   switch (status) {
     case "pending":
-      return <span className="w-4 h-4 rounded-full border border-border/60 flex items-center justify-center shrink-0 text-[8px] text-muted-foreground/40">○</span>;
+      return <span className="w-4 h-4 rounded-full border border-border/60 flex items-center justify-center shrink-0 text-micro text-muted-foreground/40">○</span>;
     case "active":
-      return <Loader2 size={14} className="text-primary animate-spin shrink-0" />;
+      return <Spinner className="text-primary shrink-0" />;
     case "completed":
       return <CheckCircle2 size={14} className="text-success text-success shrink-0" />;
   }
@@ -215,10 +217,10 @@ function SkillUsagePreview({ exec }: { exec: ToolExecution }) {
   const skills = getExecutionSkillIds(exec);
   if (skills.length === 0) return null;
   return (
-    <div className="mx-3 mb-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+    <div className="mx-3 mb-2 flex flex-wrap items-center gap-1.5 text-small text-muted-foreground">
       <span className="font-semibold text-foreground/80">{tr("专业 Skill", "Professional skills")}</span>
       {skills.map((skill) => (
-        <span key={skill} className="rounded-full border border-border/50 bg-background/60 px-2 py-0.5 font-mono text-[11px]">
+        <span key={skill} className="pill">
           {skill}
         </span>
       ))}
@@ -291,11 +293,11 @@ function ChapterContextTracePreview({ exec }: { exec: ToolExecution }) {
   const traces = getChapterContextTraceDetails(exec);
   if (traces.length === 0) return null;
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-border/50 bg-background/55 px-3 py-2.5 text-[11px]">
+    <div className="well mx-3 mb-3 mt-1 text-small">
       <div className="font-semibold text-foreground">{tr("本轮参考依据", "Context used this turn")}</div>
       <div className="mt-2 space-y-2">
         {traces.map((trace) => (
-          <details key={`${trace.chapterNumber ?? 0}:${trace.tracePath}`} className="rounded-lg border border-border/40 px-2.5 py-2">
+          <details key={`${trace.chapterNumber ?? 0}:${trace.tracePath}`} className="well">
             <summary className="cursor-pointer select-none font-medium text-foreground">
               {trace.chapterNumber ? tr(`第 ${trace.chapterNumber} 章`, `Chapter ${trace.chapterNumber}`) : tr("章节", "Chapter")}
               {trace.retrievalEngine ? ` · ${trace.retrievalEngine}` : ""}
@@ -314,10 +316,10 @@ function ChapterContextTracePreview({ exec }: { exec: ToolExecution }) {
                 <div>{tr("语义压缩", "Semantic compaction")}: {trace.compressedSources.join(" · ")}</div>
               )}
               <div>{tr("完整来源", "All sources")}:</div>
-              <ul className="space-y-0.5 font-mono text-[11px]">
+              <ul className="space-y-0.5 font-mono text-small">
                 {trace.selectedSources.map((source) => <li key={source}>{source}</li>)}
               </ul>
-              <div className="font-mono text-[11px]">{trace.tracePath}</div>
+              <div className="font-mono text-small">{trace.tracePath}</div>
             </div>
           </details>
         ))}
@@ -405,9 +407,9 @@ function ChapterAuditIssues({
   if (issues.length === 0) return null;
   return (
     <div className="mt-2 space-y-1.5">
-      <div className="text-[13px] font-medium text-foreground">{title}</div>
+      <div className="text-body font-medium text-foreground">{title}</div>
       {issues.map((issue, index) => (
-        <div key={`${issue.category}:${index}`} className="rounded-lg border border-border/40 bg-background/55 px-2.5 py-2 text-[12px] leading-5 text-muted-foreground">
+        <div key={`${issue.category}:${index}`} className="well text-small leading-5 text-muted-foreground">
           <div className="font-medium text-foreground">[{issue.severity}] {issue.category}</div>
           <div>{issue.description}</div>
           {issue.suggestion && <div className="mt-0.5">{tr("建议", "Suggestion")}{tr("：", ": ")}{issue.suggestion}</div>}
@@ -424,13 +426,13 @@ function ChapterRevisionPreview({ exec }: { exec: ToolExecution }) {
   return (
     <div
       data-testid="chapter-revision-preview"
-      className={`mx-3 mb-3 mt-1 rounded-xl border px-3 py-2.5 ${passed ? "border-success/25 bg-success/5" : "border-warning/25 bg-warning/5"}`}
+      className={`${passed ? "pass" : "caution"} block mx-3 mb-3 mt-1`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[15px] font-semibold text-foreground">
+        <div className="text-body font-semibold text-foreground">
           {details.chapterNumber ? tr(`第 ${details.chapterNumber} 章修订`, `Chapter ${details.chapterNumber} revision`) : tr("章节修订", "Chapter revision")}
         </div>
-        <div className={`rounded-full px-2 py-0.5 text-[12px] font-semibold ${passed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+        <div className={`rounded-full px-2 py-0.5 text-small font-semibold ${passed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
           {!details.applied
             ? tr("保留原稿", "Original kept")
             : details.auditPassed
@@ -439,10 +441,10 @@ function ChapterRevisionPreview({ exec }: { exec: ToolExecution }) {
         </div>
       </div>
       {details.skippedReason && (
-        <div className="mt-2 text-[13px] leading-5 text-muted-foreground">{details.skippedReason}</div>
+        <div className="mt-2 text-body leading-5 text-muted-foreground">{details.skippedReason}</div>
       )}
       {details.fixedIssues.length > 0 && (
-        <div className="mt-2 text-[13px] leading-5 text-muted-foreground">
+        <div className="mt-2 text-body leading-5 text-muted-foreground">
           <span className="font-medium text-foreground">{tr("已处理", "Fixed")}{tr("：", ": ")}</span>
           {details.fixedIssues.join("；")}
         </div>
@@ -459,17 +461,17 @@ function ChapterStateResyncPreview({ exec }: { exec: ToolExecution }) {
   return (
     <div
       data-testid="chapter-state-resync-preview"
-      className={`mx-3 mb-3 mt-1 rounded-xl border px-3 py-2.5 ${passed ? "border-success/25 bg-success/5" : "border-warning/25 bg-warning/5"}`}
+      className={`${passed ? "pass" : "caution"} block mx-3 mb-3 mt-1`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-[15px] font-semibold text-foreground">
+        <div className="text-body font-semibold text-foreground">
           {details.chapterNumber ? tr(`第 ${details.chapterNumber} 章状态已同步`, `Chapter ${details.chapterNumber} state resynced`) : tr("章节状态已同步", "Chapter state resynced")}
         </div>
-        <div className={`rounded-full px-2 py-0.5 text-[12px] font-semibold ${passed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
+        <div className={`rounded-full px-2 py-0.5 text-small font-semibold ${passed ? "bg-success/15 text-success" : "bg-warning/15 text-warning"}`}>
           {passed ? tr("审稿通过", "Audit passed") : tr("仍需修订", "Revision required")}
         </div>
       </div>
-      {details.summary && <div className="mt-2 text-[13px] leading-5 text-muted-foreground">{details.summary}</div>}
+      {details.summary && <div className="mt-2 text-body leading-5 text-muted-foreground">{details.summary}</div>}
       <ChapterAuditIssues issues={details.auditIssues} title={tr("审稿问题", "Audit issues")} />
     </div>
   );
@@ -604,15 +606,15 @@ function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecut
   if (rows.length === 0 && !canOpenStudio && !target) return null;
   const [zh, en] = ARTIFACT_HEADINGS[details.kind];
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
+    <div className="notice mx-3 mb-3 mt-1">
       <div className="flex items-center justify-between gap-3">
-        <div className="text-[16px] leading-6 font-semibold text-primary">{tr(zh, en)}</div>
+        <div className="text-lead leading-6 font-semibold text-primary">{tr(zh, en)}</div>
         {canOpenStudio && (
           <button
             type="button"
             data-testid="open-film-studio"
             onClick={() => onOpenFilmStudio!(details.projectId!)}
-            className="shrink-0 rounded-lg bg-primary px-3 py-1 text-[13px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+            className="btn btn-sm shrink-0"
           >
             {tr("打开创作向导 →", "Open creation wizard →")}
           </button>
@@ -623,14 +625,14 @@ function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecut
           <button
             type="button"
             onClick={() => void sendMessage(activeSessionId!, `Run story_audit on ${target}.`)}
-            className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1 text-[12px] font-semibold text-primary transition hover:bg-primary/10"
+            className="btn btn-line btn-sm"
           >
             {tr("审校并修订", "Audit & revise")}
           </button>
           <button
             type="button"
             onClick={() => void sendMessage(activeSessionId!, `Run story_deslop on ${target}.`)}
-            className="rounded-lg border border-primary/30 bg-background/70 px-2.5 py-1 text-[12px] font-semibold text-primary transition hover:bg-primary/10"
+            className="btn btn-line btn-sm"
           >
             {tr("去 AI 味", "De-AI pass")}
           </button>
@@ -643,12 +645,12 @@ function GeneratedArtifactPreview({ exec, onOpenFilmStudio }: { exec: ToolExecut
               key={`${label}:${path}`}
               type="button"
               onClick={() => openProjectArtifact(path)}
-              className="group flex w-full items-start justify-between gap-3 rounded-lg border border-transparent px-2 py-1.5 text-left transition hover:border-primary/25 hover:bg-background/65"
+              className="row group flex w-full items-start justify-between gap-3 text-left"
             >
-              <span className="min-w-0 text-[13px] leading-5 text-muted-foreground break-all">
+              <span className="min-w-0 text-body leading-5 text-muted-foreground break-all">
                 <span className="font-medium text-foreground">{label}{tr("：", ": ")}</span>{path}
               </span>
-              <span className="mt-0.5 shrink-0 rounded-md border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary opacity-80 transition group-hover:opacity-100">
+              <span className="pill mt-0.5 shrink-0 font-semibold text-primary opacity-80 group-hover:opacity-100">
                 {tr("查看", "View")}
               </span>
             </button>
@@ -666,9 +668,7 @@ function ShortFictionResultPreview({ exec }: { exec: ToolExecution }) {
   if (!coverPath || !/\.(png|jpe?g|webp)$/iu.test(coverPath)) {
     if (!coverError) return null;
     return (
-      <div className="mx-3 mb-3 mt-1 rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
-        {tr("封面未生成：", "Cover not generated: ")}{coverError}
-      </div>
+      <div className="mx-3 mb-3 mt-1"><Failed what={tr("封面未生成。", "The cover was not made.")} detail={coverError} /></div>
     );
   }
 
@@ -677,14 +677,14 @@ function ShortFictionResultPreview({ exec }: { exec: ToolExecution }) {
   const title = details?.title ?? details?.storyId ?? tr("短篇封面", "Short fiction cover");
 
   return (
-    <div className="mx-3 mb-3 mt-1 overflow-hidden rounded-xl border border-border/40 bg-background/70">
+    <div className="well p-0 mx-3 mb-3 mt-1 overflow-hidden">
       <img
         src={coverUrl}
         alt={title}
-        className="block max-h-[360px] w-full object-contain bg-muted/20"
+        className="block max-h-90 w-full object-contain bg-muted/20"
         loading="lazy"
       />
-      <div className="border-t border-border/40 px-3 py-2 text-[11px] text-muted-foreground break-all">
+      <div className="border-t border-border/40 px-3 py-2 text-small text-muted-foreground break-all">
         {coverPath}
       </div>
     </div>
@@ -795,15 +795,15 @@ function PlaySceneImagePreview({ details }: { details: PlayToolDetails }) {
   if (!readyUrl) return null;
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border/40 bg-background/80">
+    <div className="well p-0 mt-3 overflow-hidden">
       <img
         src={readyUrl}
         alt={tr("本幕配图", "Scene illustration")}
-        className="block max-h-[420px] w-full object-contain bg-muted/20"
+        className="block max-h-105 w-full object-contain bg-muted/20"
         loading="lazy"
       />
       {details.turn != null && (
-        <div className="border-t border-border/40 px-3 py-2.5 text-[14px] leading-6 text-muted-foreground">
+        <div className="border-t border-border/40 px-3 py-2.5 text-body leading-6 text-muted-foreground">
           {tr(`第 ${Math.trunc(details.turn)} 幕配图`, `Scene ${Math.trunc(details.turn)} illustration`)}
         </div>
       )}
@@ -871,6 +871,10 @@ function ProposedActionPreview({
   onRejectProposedAction?: (details: ProposedActionDetails) => void;
 }) {
   const resolvedProposals = useChatStore((s) => s.resolvedProposals);
+  const proposalRuns = useChatStore((s) => s.proposalRuns);
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const activateSession = useChatStore((s) => s.activateSession);
   const isActiveSessionStreaming = useChatStore(chatSelectors.isActiveSessionStreaming);
   if (exec.tool !== "propose_action" || exec.status !== "completed") return null;
   const details = getProposedActionDetails(exec);
@@ -879,6 +883,8 @@ function ProposedActionPreview({
   // the production action can't be re-fired. While a run is in flight the
   // confirm button reflects "执行中…" instead of silently swallowing the click.
   const resolution = resolvedProposals[details.execId];
+  const runSessionId = proposalRuns[details.execId];
+  const run = runSessionId ? sessions[runSessionId] : undefined;
   const streaming = isActiveSessionStreaming;
   const locked = resolution !== undefined;
   const contractRows = getProposedActionContractRows(details);
@@ -887,29 +893,27 @@ function ProposedActionPreview({
        conversation, and the system draws every gate the same way — charcoal
        ground, vermilion edge, exactly one filled button. */
     <div
-      className={`gate${locked ? " is-done" : " is-open"}`}
-      style={{ background: "var(--char-2)", borderColor: "var(--vermilion-ink)" }}
+      className={`gate${locked ? " is-done" : " is-open"} bg-(--char-2) border-(--vermilion-ink)`}
     >
-      <span className="glyph" style={{ width: 32, height: 32, borderColor: "var(--vermilion)", color: "var(--vermilion-ink)" }}>
+      <span className="glyph w-8 h-8 border-(--vermilion) text-(--vermilion-ink)">
         <Pencil size={15} aria-hidden="true" />
       </span>
-      <span className="grow" style={{ minWidth: 0 }}>
-        <span className="what" style={{ display: "block", color: "var(--on-char)" }}>
+      <span className="grow min-w-0">
+        <span className="what block text-(--on-char)">
           {details.title ?? tr("确认执行", "Confirm action")}
         </span>
         {details.summary && (
-          <span className="when" style={{ display: "block", color: "var(--on-char-2)" }}>{details.summary}</span>
+          <span className="when block text-(--on-char-2)">{details.summary}</span>
         )}
       </span>
       {/* What it would actually run, and the terms it would run under. The
           mock's gate has neither because its example needs neither; a gate
           that hides the instruction it is asking permission for does not. */}
       {(details.instruction || contractRows.length > 0) && (
-        <div style={{ width: "100%" }}>
+        <div className="w-full">
           {details.instruction && (
             <div
-              className="whitespace-pre-wrap break-words"
-              style={{ background: "var(--char)", borderRadius: "var(--r-ctl)", padding: "9px 11px", fontSize: 14, color: "var(--on-char-2)" }}
+              className="whitespace-pre-wrap break-words bg-(--char) py-2.5 px-3 text-body text-(--on-char-2) rounded-sm"
             >
               {details.instruction}
             </div>
@@ -917,21 +921,52 @@ function ProposedActionPreview({
           {contractRows.map((row) => (
             <div
               key={row.label}
-              style={{ marginTop: 6, border: "1px solid var(--line-char)", borderRadius: "var(--r-ctl)", padding: "9px 11px" }}
+              className="well mt-1.5"
             >
               <div className="label">{row.label}</div>
-              <div className="whitespace-pre-wrap break-words" style={{ marginTop: 3, fontSize: 14, color: "var(--on-char-2)" }}>{row.value}</div>
+              <div className="whitespace-pre-wrap break-words mt-1 text-body text-(--on-char-2)">{row.value}</div>
             </div>
           ))}
         </div>
       )}
       {resolution === "confirmed" ? (
-        <div className="rowflex gap-1.5" style={{ fontSize: 14, color: "var(--vermilion-soft)" }}>
-          <Check size={15} className="shrink-0" />
-          {tr("已执行", "Executed")}
+        /* What the run is doing, not what the button did. The tick used to
+           appear the moment this was pressed and stayed there while the run
+           behind it failed, so the card said "Executed" over an empty disk. */
+        <div className="rowflex gap-2 text-body text-(--vermilion-soft)">
+          {run?.isStreaming ? (
+            <span className="rowflex gap-1.5">
+              <Spinner className="shrink-0" />
+              {tr("运行中", "Running")}
+            </span>
+          ) : run?.lastError ? (
+            <span className="rowflex gap-1.5 text-(--bad)">
+              <XCircle size={15} className="shrink-0" />
+              {tr("运行失败", "The run failed")}: {run.lastError}
+            </span>
+          ) : run ? (
+            <span className="rowflex gap-1.5">
+              <Check size={15} className="shrink-0" />
+              {tr("运行结束", "The run finished")}
+            </span>
+          ) : (
+            <span className="rowflex gap-1.5">
+              <Check size={15} className="shrink-0" />
+              {tr("已确认", "Confirmed")}
+            </span>
+          )}
+          {runSessionId && runSessionId !== activeSessionId ? (
+            <button
+              type="button"
+              className="btn btn-line btn-sm"
+              onClick={() => activateSession(runSessionId)}
+            >
+              {tr("打开运行", "Open the run")}
+            </button>
+          ) : null}
         </div>
       ) : resolution === "rejected" ? (
-        <div className="dim" style={{ fontSize: 14 }}>{tr("已取消", "Cancelled")}</div>
+        <div className="dim text-body">{tr("已取消", "Cancelled")}</div>
       ) : (
         <div className="rowflex gap-2">
           <button
@@ -969,11 +1004,11 @@ function PlayResultPreview({ exec }: { exec: ToolExecution }) {
         ? tr("已切换互动回合版本", "Switched play turn variant")
         : tr("互动世界已推进", "Interactive world advanced");
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-3">
-      <div className="mb-2 text-[16px] leading-6 font-semibold text-primary">
+    <div className="notice mx-3 mb-3 mt-1">
+      <div className="mb-2 text-lead leading-6 font-semibold text-primary">
         {label}
       </div>
-      <div className="whitespace-pre-wrap text-[14px] leading-7 text-foreground">{details.sceneText}</div>
+      <div className="whitespace-pre-wrap text-body leading-7 text-foreground">{details.sceneText}</div>
       <PlaySceneImagePreview details={details} />
     </div>
   );
@@ -992,9 +1027,9 @@ function PlayEditPreview({ exec }: { exec: ToolExecution }) {
       : "",
   ].filter(Boolean);
   return (
-    <div className="mx-3 mb-3 mt-1 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2.5">
-      <div className="text-[16px] leading-6 font-semibold text-primary">{tr("互动世界设定已更新", "Interactive world settings updated")}</div>
-      <div className="mt-1 text-[11px] leading-5 text-muted-foreground">
+    <div className="notice mx-3 mb-3 mt-1">
+      <div className="text-lead leading-6 font-semibold text-primary">{tr("互动世界设定已更新", "Interactive world settings updated")}</div>
+      <div className="mt-1 text-small leading-5 text-muted-foreground">
         {changes.length > 0 ? changes.join(" · ") : tr("已写入当前世界。", "Written to the current world.")}
       </div>
     </div>
@@ -1054,7 +1089,7 @@ export function PipelineResultDetails({ result, defaultOpen }: { result: string;
     <details
       key={defaultOpen ? "result-default-open" : "result-default-collapsed"}
       open={defaultOpen}
-      className="mx-3 mb-3 mt-1 rounded-lg border border-border/40 bg-background/60 px-2.5 py-2 text-[11px]"
+      className="well mx-3 mb-3 mt-1"
     >
       <summary className="cursor-pointer select-none font-medium text-muted-foreground hover:text-foreground">
         {tr("查看操作结果", "View result")}
@@ -1085,6 +1120,13 @@ function PipelineExecution({
   const [open, setOpen] = useState(isActive);
   const elapsedMs = useElapsedTimer(exec.startedAt, isActive);
   const toolDetailsDefaultOpen = usePreferencesStore((s) => s.toolDetailsDefaultOpen);
+  /* A proposal card is a question waiting for a person. Reporting it as
+     "Completed" in 0s described the drawing of the card, which read as though
+     the work it offers had been done. */
+  const proposalResolution = useChatStore((s) => s.resolvedProposals[
+    getProposedActionDetails(exec)?.execId ?? ""
+  ]);
+  const isProposal = exec.tool === "propose_action";
 
   useEffect(() => {
     if (exec.status === "running") setOpen(true);
@@ -1098,21 +1140,33 @@ function PipelineExecution({
   const forecastDetails = getNarrativeForecastPreviewDetails(exec);
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="rounded-xl border border-border/40 bg-card/60">
+    <Collapsible open={open} onOpenChange={setOpen} className="well p-0">
       <CollapsibleTrigger className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl hover:bg-card/80 transition-colors cursor-pointer">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-[16px] leading-6 font-medium text-foreground truncate">
+          <span className="text-lead leading-6 font-medium text-foreground truncate">
             {exec.label}
             {bookId && <span className="text-muted-foreground font-normal"> · {bookId}</span>}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[12px] text-muted-foreground/60">
-            {isActive
-              ? formatDuration(exec.startedAt, exec.startedAt + elapsedMs)
-              : exec.completedAt ? formatDuration(exec.startedAt, exec.completedAt) : ""}
+          <span className="text-small text-muted-foreground/60">
+            {isProposal
+              ? ""
+              : isActive
+                ? formatDuration(exec.startedAt, exec.startedAt + elapsedMs)
+                : exec.completedAt ? formatDuration(exec.startedAt, exec.completedAt) : ""}
           </span>
-          <ExecStatusBadge status={exec.status} />
+          {isProposal
+            ? (
+              <span className="inline-flex items-center gap-1 text-small text-muted-foreground">
+                {proposalResolution === "confirmed"
+                  ? tr("已确认", "Confirmed")
+                  : proposalResolution === "rejected"
+                    ? tr("已取消", "Cancelled")
+                    : tr("等待你确认", "Waiting for you")}
+              </span>
+            )
+            : <ExecStatusBadge status={exec.status} />}
           <ChevronDown size={16} className={`text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </CollapsibleTrigger>
@@ -1145,7 +1199,7 @@ function PipelineExecution({
                 <li
                   key={stage.label}
                   className={[
-                    "flex items-start gap-2 rounded-lg px-2 py-1.5 text-[11px]",
+                    "flex items-start gap-2 rounded-lg px-2 py-1.5 text-small",
                     stage.status === "active" ? "bg-primary/5 text-foreground" : "text-muted-foreground",
                   ].join(" ")}
                 >
@@ -1153,7 +1207,7 @@ function PipelineExecution({
                   <div className="min-w-0 flex-1">
                     <div className="truncate">{stage.label}</div>
                     {stage.progress && (
-                      <div className="mt-0.5 text-[10px] text-muted-foreground/70">
+                      <div className="mt-0.5 text-cap text-muted-foreground/70">
                         {formatProgress(stage.progress)}
                       </div>
                     )}
@@ -1169,7 +1223,7 @@ function PipelineExecution({
                 const isError = log.startsWith("[error]") || /error/i.test(log);
                 const isWarn = log.startsWith("[warning]") || /warning|警告/i.test(log);
                 return (
-                  <li key={i} className={`text-[11px] font-mono break-words ${isError ? "text-destructive" : isWarn ? "text-warning text-warning" : "text-muted-foreground"}`}>
+                  <li key={i} className={`text-small font-mono break-words ${isError ? "text-destructive" : isWarn ? "text-warning text-warning" : "text-muted-foreground"}`}>
                     {log}
                   </li>
                 );
@@ -1177,9 +1231,7 @@ function PipelineExecution({
             </ul>
           )}
           {exec.status === "error" && exec.error && (
-            <div className="mt-2 text-[11px] text-destructive bg-destructive/5 rounded-lg px-2.5 py-2">
-              {exec.error}
-            </div>
+            <div className="mt-2"><Failed what={tr("这一步失败了。", "This step failed.")} detail={exec.error} /></div>
           )}
         </div>
       </CollapsibleContent>
@@ -1197,7 +1249,7 @@ function UtilityExecStatusIcon({ status }: { status: ToolExecution["status"] }) 
       return <XCircle size={10} className="text-destructive shrink-0" />;
     case "running":
     case "processing":
-      return <Loader2 size={10} className="animate-spin text-primary shrink-0" />;
+      return <Spinner className="text-primary shrink-0" />;
   }
 }
 
@@ -1223,7 +1275,7 @@ export function UtilityExecutionRow({ exec }: { exec: ToolExecution }) {
         <UtilityExecStatusIcon status={exec.status} />
         <ChevronDown size={10} className="shrink-0 transition-transform group-open:rotate-180" />
       </summary>
-      <div className="mt-1 mb-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md border border-border/40 bg-background/60 px-2 py-1.5 leading-5">
+      <div className="well mt-1 mb-1 max-h-48 overflow-auto whitespace-pre-wrap break-words leading-5">
         {exec.result}
       </div>
     </details>
@@ -1247,7 +1299,7 @@ function toolMetric(exec: ToolExecution): string | null {
 
 function UtilityToolsGroup({ execs }: { execs: ToolExecution[] }) {
   return (
-    <div className="stack" style={{ gap: 7 }}>
+    <div className="stack gap-2">
       {execs.map((exec) => {
         const target = String(exec.args?.path ?? exec.args?.pattern ?? "");
         const metric = toolMetric(exec);
@@ -1257,11 +1309,11 @@ function UtilityToolsGroup({ execs }: { execs: ToolExecution[] }) {
               ? <XCircle size={14} className="shrink-0 text-destructive" aria-hidden="true" />
               : exec.status === "completed"
                 ? <CheckCircle2 size={14} className="tick shrink-0" aria-hidden="true" />
-                : <Loader2 size={14} className="shrink-0 animate-spin text-primary" aria-hidden="true" />}
+                : <Spinner className="shrink-0 text-primary" />}
             <span className="capitalize">{exec.tool.replace(/_/g, " ")}</span>
             {target ? <span className="mono trunc">{target}</span> : null}
             <span className="grow" />
-            {metric ? <span className="mono dim" style={{ fontSize: 11 }}>{metric}</span> : null}
+            {metric ? <span className="mono dim text-cap">{metric}</span> : null}
           </div>
         );
       })}

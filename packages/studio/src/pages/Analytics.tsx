@@ -86,12 +86,12 @@ export function Analytics({
 
   return (
     <div className="stack-lg">
-      <section className="crop" style={{ paddingBottom: 0 }}>
-        <span className="disc stroke" style={{ width: 190, height: 190, left: -88, top: -92, opacity: 0.3 }} />
+      <section className="crop pb-0">
+        <span className="disc stroke w-47.5 h-47.5 -left-22 -top-23 opacity-30" />
         <h2 className="h-page">Where the book actually is</h2>
       </section>
 
-      <section className="cols" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+      <section className="cols gap-3.5 grid-cols-3">
         <div className="panel">
           <div className="panel-body">
             <span className="label">{t("analytics.totalChapters")}</span>
@@ -102,7 +102,7 @@ export function Analytics({
           <div className="panel-body">
             <span className="label">{t("analytics.totalWords")}</span>
             <div className="numeral tnum">{data.totalWords.toLocaleString()}</div>
-            <p className="dim" style={{ fontSize: 11 }}>
+            <p className="dim text-cap">
               about {Math.round(data.totalWords / 285).toLocaleString()} printed pages
             </p>
           </div>
@@ -119,7 +119,7 @@ export function Analytics({
         <div className="panel-head">
           <span className="grow">
             <h3 className="h-panel">The shape of it</h3>
-            <span className="dim" style={{ fontSize: 11 }}>Every chapter, by what state it is in</span>
+            <span className="dim text-cap">Every chapter, by what state it is in</span>
           </span>
         </div>
         <div className="panel-body">
@@ -131,8 +131,7 @@ export function Analytics({
           ) : (
             <>
               <div
-                className="rowflex"
-                style={{ gap: 3, height: 22, alignItems: "stretch", borderRadius: 999, overflow: "hidden", marginBottom: 16 }}
+                className="rowflex gap-1 h-5.5 items-stretch rounded-full overflow-hidden mb-4"
               >
                 {bands
                   .filter((b) => b.count > 0)

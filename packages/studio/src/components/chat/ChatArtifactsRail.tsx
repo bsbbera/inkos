@@ -10,7 +10,7 @@
  */
 import { useResizable } from "../../hooks/use-resizable";
 import { useState } from "react";
-import { FileText, Activity, Pencil, X } from "lucide-react";
+import { FileText, Activity, Pencil, X } from "../ui/glyphs";
 import { useChatStore } from "../../store/chat";
 import { sessionFiles, whenAgo, type SessionFile } from "./chat-session-files";
 import { ledgerLines, ledgerTotal, type LedgerGrouping } from "./session-ledger-state";
@@ -18,7 +18,7 @@ import { ledgerLines, ledgerTotal, type LedgerGrouping } from "./session-ledger-
 function Glyph({ kind }: { readonly kind: SessionFile["kind"] }) {
   const Icon = kind === "audit" ? Activity : kind === "edit" ? Pencil : FileText;
   return (
-    <span className="glyph" style={{ width: 28, height: 28 }}>
+    <span className="glyph w-7 h-7">
       <Icon size={13} aria-hidden="true" />
     </span>
   );
@@ -68,9 +68,9 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
         className="subrail-grip subrail-grip-start"
       />
       <div className="subrail-head">
-        <div className="rowflex" style={{ justifyContent: "space-between" }}>
+        <div className="rowflex justify-between">
           <div className="label">Made in this session</div>
-          <button type="button" className="btn btn-quiet btn-sm" aria-label="Close" onClick={() => setOpen(false)}>
+          <button type="button" className="btn btn-quiet btn-sm" data-esc aria-label="Close" onClick={() => setOpen(false)}>
             <X size={14} aria-hidden="true" />
           </button>
         </div>
@@ -80,7 +80,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
         {files.length === 0 ? (
           // "Nothing yet" and "this panel does not exist" are different facts,
           // and a rail that hides itself when empty says the wrong one.
-          <p className="hint" style={{ fontSize: 11, padding: "4px 4px 0" }}>
+          <p className="hint text-cap px-1 pt-1 pb-0">
             Nothing written to disk yet.
           </p>
         ) : (
@@ -89,17 +89,16 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
               <button
                 key={file.path}
                 type="button"
-                className="row"
-                style={{ padding: "10px 4px" }}
+                className="row py-2.5 px-1"
                 onClick={() => (bookId ? openArtifact(file.path) : openProjectArtifact(file.path))}
               >
                 <Glyph kind={file.kind} />
-                <span className="grow" style={{ minWidth: 0 }}>
-                  <span className="name mono trunc" style={{ fontSize: 11 }}>{file.name}</span>
-                  <span className="meta" style={{ fontSize: 11 }}>{file.meta}</span>
+                <span className="grow min-w-0">
+                  <span className="name mono trunc text-cap">{file.name}</span>
+                  <span className="meta text-cap">{file.meta}</span>
                 </span>
                 {file.busy ? (
-                  <span className="sev sev-warn" style={{ width: 6, height: 6, borderRadius: "50%" }} />
+                  <span className="sev sev-warn w-1.5 h-1.5 rounded-full" />
                 ) : null}
               </button>
             ))}
@@ -107,9 +106,9 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
         )}
 
         <div className="grp">
-          <div className="rowflex" style={{ justifyContent: "space-between", padding: "0 4px 6px" }}>
+          <div className="rowflex justify-between px-1 pt-0 pb-1.5">
             <span className="label">This session</span>
-            <span className="seg" style={{ fontSize: 11 }}>
+            <span className="seg text-cap">
               {(["agent", "model"] as const).map((mode) => (
                 <button
                   key={mode}
@@ -124,33 +123,33 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
           </div>
 
           {lines.length === 0 ? (
-            <p className="hint" style={{ fontSize: 11, padding: "0 4px" }}>
+            <p className="hint text-cap py-0 px-1">
               Nothing has run in this session yet.
             </p>
           ) : (
-            <table className="spec" style={{ marginTop: 4 }}>
+            <table className="spec mt-1">
               <tbody>
                 {lines.map((line) => (
                   <tr key={line.key}>
-                    <td className="trunc" style={{ maxWidth: 96 }}>{line.who}</td>
+                    <td className="trunc max-w-24">{line.who}</td>
                     <td>
-                      <span className="mono trunc" style={{ display: "block", fontSize: 11 }}>
+                      <span className="mono trunc block text-cap">
                         {line.service ? `${line.service} · ` : ""}{line.model}
                       </span>
                       <span
-                        className="mono"
-                        style={{ fontSize: 11, fontStyle: line.reported ? undefined : "italic" }}
+                        className="mono text-cap"
+                        style={{ fontStyle: line.reported ? undefined : "italic" }}
                       >
                         {line.tokens}
                       </span>
-                      {line.note ? <span className="meta" style={{ fontSize: 11 }}>{line.note}</span> : null}
+                      {line.note ? <span className="meta text-cap">{line.note}</span> : null}
                     </td>
                   </tr>
                 ))}
                 {total ? (
                   <tr>
                     <td>{total.label}</td>
-                    <td className="mono" style={{ fontWeight: 600 }}>{total.tokens}</td>
+                    <td className="mono font-semibold">{total.tokens}</td>
                   </tr>
                 ) : null}
                 {/* The mock's own last line: when this conversation began. */}
@@ -164,7 +163,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
             </table>
           )}
 
-          <p className="hint" style={{ marginTop: 10, fontSize: 11, lineHeight: 1.45 }}>
+          <p className="hint mt-2.5 text-cap leading-normal">
             {total?.partial
               // Naming the gap is the difference between a figure and a claim.
               ? "Some providers report no token counts, so the total is a floor. "

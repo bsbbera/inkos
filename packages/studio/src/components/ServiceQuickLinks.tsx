@@ -1,4 +1,4 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink } from "./ui/glyphs";
 import { tr } from "../lib/app-language";
 
 interface ServiceQuickLink {
@@ -9,10 +9,10 @@ interface ServiceQuickLink {
 // 标签在调用时通过 tr() 解析语言，所以这里存 zh/en 对而不是最终字符串。
 const SERVICE_QUICK_LINKS: Record<string, ReadonlyArray<{ zh: string; en: string; href: string }>> = {
   kimicode: [
-    { zh: "官网", en: "Website", href: "https://www.kimi.com?aff=inkos" },
+    { zh: "官网", en: "Website", href: "https://www.kimi.com?aff=quire" },
   ],
   kimiCodingPlan: [
-    { zh: "官网", en: "Website", href: "https://www.kimi.com?aff=inkos" },
+    { zh: "官网", en: "Website", href: "https://www.kimi.com?aff=quire" },
   ],
   kkaiapi: [
     { zh: "官网", en: "Website", href: "https://kkaiapi.com/" },
@@ -20,7 +20,7 @@ const SERVICE_QUICK_LINKS: Record<string, ReadonlyArray<{ zh: string; en: string
     { zh: "模型/价格", en: "Models & pricing", href: "https://kkaiapi.com/models" },
   ],
   moonshot: [
-    { zh: "开放平台", en: "Developer platform", href: "https://platform.kimi.com?aff=inkos" },
+    { zh: "开放平台", en: "Developer platform", href: "https://platform.kimi.com?aff=quire" },
   ],
   openrouter: [
     { zh: "API Keys", en: "API Keys", href: "https://openrouter.ai/keys" },
@@ -53,7 +53,7 @@ export function ServiceQuickLinks({
     <div
       className={[
         "flex flex-wrap items-center gap-1.5 text-muted-foreground/70",
-        compact ? "text-[11px]" : "text-xs",
+        compact ? "text-small" : "text-xs",
         className,
       ].filter(Boolean).join(" ")}
     >

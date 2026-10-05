@@ -11,7 +11,7 @@ import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { BrainIcon, ChevronDownIcon } from "lucide-react";
+import { BrainIcon, ChevronDownIcon } from "../ui/glyphs";
 import type { ComponentProps, ReactNode } from "react";
 import {
   createContext,
@@ -25,7 +25,7 @@ import {
 } from "react";
 import { Streamdown } from "streamdown";
 
-import { Shimmer } from "./shimmer";
+import { Working } from "../ui/working";
 
 interface ReasoningContextValue {
   isStreaming: boolean;
@@ -156,7 +156,7 @@ export type ReasoningTriggerProps = ComponentProps<
 
 const defaultGetThinkingMessage = (isStreaming: boolean, duration?: number) => {
   if (isStreaming || duration === 0) {
-    return <Shimmer duration={1}>Thinking...</Shimmer>;
+    return <Working kind="thinking" label="Thinking…" />;
   }
   if (duration === undefined) {
     return <p>Thought for a few seconds</p>;
