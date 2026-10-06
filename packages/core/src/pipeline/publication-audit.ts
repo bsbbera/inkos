@@ -46,6 +46,13 @@ export interface PublicationAudit {
   readonly findings: ReadonlyArray<PublicationFinding>;
   /** How many revise-then-re-audit rounds ran. 0 means findings were only reported. */
   readonly rounds?: number;
+  /**
+   * False while the audit is part-way: it saves after every page it reads, so a
+   * stop or a failure keeps what was read and the next run resumes there.
+   */
+  readonly complete?: boolean;
+  /** Each page the model has read: a hash of the text it read, and what it found. */
+  readonly reviewed?: Readonly<Record<string, { readonly hash: string; readonly findings: ReadonlyArray<PublicationFinding> }>>;
 }
 
 /** English unless the copy is visibly not: the checks are language-specific. */

@@ -39,14 +39,14 @@ describe("publication stages run as agent sessions", () => {
   // session hands it the publication tool set rather than the chat one.
   it("runs on the session path with the publication kind and no book", async () => {
     ok('{"ok":true}');
-    await createPublicationAsk(base)("write page 7", "page-7");
+    await createPublicationAsk(base)("draw the web", "web");
 
     const [config, prompt] = runAgentSession.mock.calls[0];
     expect(config.sessionKind).toBe("publication");
     expect(config.bookId).toBeNull();
-    expect(config.sessionId).toBe("publication--issue-1--page-7");
+    expect(config.sessionId).toBe("publication--issue-1--web");
     expect(config.projectRoot).toBe("/root");
-    expect(prompt).toBe("write page 7");
+    expect(prompt).toBe("draw the web");
   });
 
   it("uses the pipeline's own client and model rather than resolving afresh", async () => {
@@ -95,8 +95,8 @@ describe("publication stages run as agent sessions", () => {
 
   it("surfaces an upstream model error against its stage", async () => {
     runAgentSession.mockResolvedValue({ responseText: "", messages: [], errorMessage: "429 rate limited" });
-    await expect(createPublicationAsk(base)("write it", "page-2"))
-      .rejects.toThrow("page-2: 429 rate limited");
+    await expect(createPublicationAsk(base)("plan it", "plan"))
+      .rejects.toThrow("plan: 429 rate limited");
   });
 
   it("does not start a stage that was already cancelled", async () => {
@@ -122,5 +122,14 @@ describe("publication stages run as agent sessions", () => {
     expect(model).toBe("devin/glm-5-2");
     expect(messages[0].content).toContain('"factcheck:extract:p3" stage');
     expect(messages[1].content).toBe("list claims");
+  });
+
+  // A page write carries its research in the prompt. Through the session agy
+  // timed out at nine minutes on a page the plain call wrote in four.
+  it.each(["page-8", "audit-8", "revise-8"])("runs %s with no tools", async (tag) => {
+    runWorkerAgent.mockResolvedValueOnce({ content: '{"body":"x"}' });
+    await expect(createPublicationAsk(base)("the page", tag)).resolves.toEqual({ body: "x" });
+    expect(runAgentSession).not.toHaveBeenCalled();
+    expect(runWorkerAgent.mock.calls[0][2][1].content).toBe("the page");
   });
 });

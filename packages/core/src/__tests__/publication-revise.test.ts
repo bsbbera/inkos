@@ -171,6 +171,31 @@ describe("the audit fixes what it finds", () => {
     expect(issue.audit?.findings.some((f) => f.description.includes("429"))).toBe(true);
   });
 
+  // The audit saves each page it reads. A failure part-way keeps them, the
+  // audit says it is unfinished, and the next run reads only what is left.
+  it("saves each page as it is read and resumes where it stopped", async () => {
+    await seed({
+      pages: [1, 2, 3].map((n) => ({
+        n, title: `Page ${n}`, type: "feature", density: "heavy", section: 1,
+        pillar: "chemistry", premise: "Silver halide remembers a photon.", body: BODY + ` Variant ${n}.`,
+      })),
+    });
+    const controller = new AbortController();
+    const first: string[] = [];
+    await expect(runAudit({
+      projectRoot: root, definition, signal: controller.signal,
+      ask: async (_p, tag) => { first.push(tag); if (tag === "audit-2") controller.abort(); return { findings: [] }; },
+    }, "issue-a", { revise: false })).rejects.toThrow();
+    const partial = (await read()).audit;
+    expect(partial?.complete).toBe(false);
+    expect(Object.keys(partial?.reviewed ?? {})).toEqual(["1", "2"]);
+
+    asked = [];
+    const done = await runAudit(ctxWith(() => ({ findings: [] })), "issue-a", { revise: false });
+    expect(asked).toEqual(["audit-3"]);
+    expect(done.audit?.complete).toBe(true);
+  });
+
   it("runs the rules alone when the model is not wanted", async () => {
     await seed();
     const issue = await runAudit(ctxWith(() => ({})), "issue-a", { deep: false, revise: false });

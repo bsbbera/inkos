@@ -32,6 +32,7 @@ import {
   recomposeShortFiction,
   type Finding,
   type StoryAudit,
+  locate,
 } from "@actalk/quire-core";
 import {
   blendTarget, loadPipeline, pipelineFor, readLexicon, readSetting, refFromPath, reportUnitDone,
@@ -405,6 +406,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): { readonly
   });
 
   app.get("/api/v1/audit/project/:kind/:id", async (c) => {
+    if (c.req.param("kind") === "publication") await syncPublicationAudits(root);
     const detail = await readAuditProject(root, c.req.param("kind"), c.req.param("id"));
     return detail ? c.json(detail) : c.json({ error: "no such project" }, 404);
   });
@@ -908,6 +910,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): { readonly
    * queue.
    */
   app.get("/api/v1/findings", async (c) => {
+    await syncPublicationAudits(root);
     const path = c.req.query("path");
     const openOnly = c.req.query("open") === "1";
     let findings = await readFindings(root);
@@ -1406,6 +1409,62 @@ export async function workspaceSummary(root: string): Promise<WorkspaceSummary> 
 
 async function readJson<T>(path: string): Promise<T | null> {
   try { return JSON.parse(await readFile(path, "utf-8")) as T; } catch { return null; }
+}
+
+/*
+ * A magazine run's audit, copied to where the Audit screen looks.
+ *
+ * The run keeps its findings on the issue (`issue.audit.reviewed`, per page)
+ * and the workbench reads the findings store and audit-state, keyed by the
+ * page's .md. Nothing joined the two, so a run with 65 findings showed every
+ * page as never read (2026-10-06, Indigo). Each reviewed page's findings are
+ * located against its .md, the file a highlight is drawn on, and merged with
+ * recordRun, so anything already settled stays settled.
+ *
+ * Done on read, not at save: core's runner does not know the store exists.
+ * `checked` carries the audit's `at`, so an unchanged audit is skipped.
+ */
+let syncing: Promise<void> | null = null;
+export function syncPublicationAudits(root: string): Promise<void> {
+  // ponytail: one sync at a time, so two screens loading at once don't race on findings.json.
+  syncing ??= (async () => {
+    const spec = PRODUCTIONS.find((p) => p.id === "publication");
+    if (!spec) return;
+    const dir = join(root, spec.outDir, "issues");
+    const ids = await readdir(dir).catch(() => [] as string[]);
+    let state = await readAuditState(root);
+    for (const id of ids) {
+      const audit = (await readJson<PublicationIssue>(join(dir, id, "publication.json")))?.audit;
+      if (!audit?.reviewed) continue;
+      const pages = await readdir(join(dir, id, "pages")).catch(() => [] as string[]);
+      const fresh: Finding[] = [];
+      const read: string[] = [];
+      for (const [n, page] of Object.entries(audit.reviewed)) {
+        const file = pages.find((f) => f.startsWith(`${n.padStart(2, "0")}-`) && f.endsWith(".md"));
+        if (!file) continue;
+        const path = [spec.outDir, "issues", id, "pages", file].join("/");
+        if (state.files[path]?.checked === audit.at) continue;
+        const markdown = await readFile(join(root, path), "utf-8").catch(() => "");
+        fresh.push(...page.findings.map((f) => locate({
+          path,
+          severity: f.severity === "warning" ? "warning" : "note",
+          category: f.category,
+          description: f.description,
+          suggestion: f.suggestion,
+          ...(f.quote ? { quote: f.quote } : {}),
+        }, markdown, audit.at)));
+        read.push(path);
+        state = await updateFileAudit(root, path, {
+          checked: audit.at,
+          findings: page.findings.length,
+          warnings: page.findings.filter((f) => f.severity === "warning").length,
+          reads: state.files[path]?.reads ?? 1,
+        });
+      }
+      if (read.length) await recordRun(root, fresh, read);
+    }
+  })().finally(() => { syncing = null; });
+  return syncing;
 }
 
 /** `expected`/`actual` are deliberately `unknown` in the contract. Say them anyway. */

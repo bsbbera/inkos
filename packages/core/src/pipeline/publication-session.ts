@@ -117,7 +117,13 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
      * asked for a list, until the CLI's own five-minute deadline cut it off
      * with an empty reply. Two of those in a row failed a 50-page run.
      */
-    const judging = tag.startsWith("factcheck");
+    //
+    // A page write, a page audit and a page revise are the same shape: the
+    // page and its research are already in the prompt. Through the session the
+    // same page timed out at agy's nine minutes twice; as a plain call it
+    // answered in four (2026-10-06, indigo p8). A revise that timed out threw
+    // away a 2.4 hour audit.
+    const judging = tag.startsWith("factcheck") || /^(page|audit|revise)-\d+$/.test(tag);
     // The magazine's design and art stages read the same two skills every
     // other type's do — they are stage-bound, not magazine-bound.
     const skill = await designSkillBrief(tag);

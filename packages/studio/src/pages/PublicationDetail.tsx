@@ -567,7 +567,8 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                       could not tell seven written pages from nine blank. */}
                   <span className={p.body ? "sheet is-written" : "sheet is-blank"}>
                     {p.body ? <span className="text-lines" aria-hidden="true" /> : null}
-                    <span className="sheet-note">{p.body ? `${(p.words ?? 0).toLocaleString()} words` : "not written"}</span>
+                    {/* A plate is written with an empty body: it is a picture, not a gap. */}
+                    <span className="sheet-note">{p.body ? `${(p.words ?? 0).toLocaleString()} words` : p.body === "" ? "picture only" : "not written"}</span>
                     <span className="folio">{String(p.n).padStart(2, "0")}</span>
                   </span>
                   <span className="cap">

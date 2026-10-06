@@ -2604,12 +2604,39 @@ export async function runAudit(
   const { deep = true, revise = true, rounds = 2, only } = options;
   emit(ctx, "publication:stage", { id, stage: "audit", state: "start" });
 
+  // Every page the model reads is saved as it is read, under a hash of what it
+  // read. A run that stops on page 14 resumes at page 14, and a page a revise
+  // has rewritten is the only one read again. Before this the whole audit was
+  // held in memory: sixteen pages read, a failed revise, nothing kept.
+  const reviewed: Record<string, { hash: string; findings: PublicationFinding[] }> = {
+    ...((await readIssue(ctx, id)).audit?.reviewed ?? {}) as Record<string, { hash: string; findings: PublicationFinding[] }>,
+  };
+  const textOf = (p: PublicationPage) => [p.title, p.deck, p.body].filter(Boolean).join("\n\n");
+  const hashOf = (p: PublicationPage) => createHash("sha1").update(textOf(p)).digest("hex").slice(0, 16);
+  let roundsSoFar = 0;
+
+  const checkpoint = async (found: PublicationFinding[]): Promise<void> => {
+    const issue = await readIssue(ctx, id);
+    issue.audit = { at: new Date().toISOString(), findings: found, rounds: roundsSoFar, complete: false, reviewed };
+    await save(ctx, issue);
+  };
+
   const look = async (): Promise<PublicationFinding[]> => {
     const issue = await readIssue(ctx, id);
     const found: PublicationFinding[] = [...auditPages(issue.pages, ctx.definition, issue)];
     if (deep) {
       for (const page of issue.pages.filter((p) => p.body && p.body.trim())) {
-        found.push(...await reviewPage(ctx, issue, page));
+        if (ctx.signal?.aborted) throw new PublicationStopped();
+        const key = String(page.n);
+        const hash = hashOf(page);
+        if (reviewed[key]?.hash !== hash) {
+          const read = await reviewPage(ctx, issue, page);
+          // A page the model could not read is retried next run, not remembered.
+          if (read.some((f) => f.category === "audit/unavailable")) { found.push(...read); continue; }
+          reviewed[key] = { hash, findings: read };
+          await checkpoint([...found, ...read]);
+        }
+        found.push(...reviewed[key]!.findings);
       }
     }
     return found;
@@ -2633,13 +2660,14 @@ export async function runAudit(
       changed = await revisePage(ctx, id, n, pageFindings) || changed;
     }
     round += 1;
+    roundsSoFar = round;
     if (!changed) break;
 
     findings = await look();
   }
 
   const issue = await readIssue(ctx, id);
-  issue.audit = { at: new Date().toISOString(), findings, rounds: round };
+  issue.audit = { at: new Date().toISOString(), findings, rounds: round, complete: true, reviewed };
   issue.status = "audited";
   await save(ctx, issue);
 

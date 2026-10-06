@@ -190,9 +190,12 @@ function baseStageStates(issue: PublicationIssue): Array<{ stage: PublicationSta
     },
     {
       stage: "audit",
-      state: issue.audit ? "done" : "pending",
+      // A run that stopped part-way keeps what it read, and says so.
+      state: !issue.audit ? "pending" : issue.audit.complete === false ? "partial" : "done",
       detail: issue.audit
-        ? `${issue.audit.findings.length} findings${issue.audit.rounds ? `, ${issue.audit.rounds} revise rounds` : ", not revised"}`
+        ? `${issue.audit.findings.length} findings${issue.audit.complete === false
+          ? `, ${Object.keys(issue.audit.reviewed ?? {}).length}/${issue.pages.filter(isPublicationPageWritten).length} pages read`
+          : issue.audit.rounds ? `, ${issue.audit.rounds} revise rounds` : ", not revised"}`
         : "never audited",
     },
     {
@@ -244,6 +247,7 @@ export function gateState(issue: PublicationIssue) {
   if (issue.pages.length === 0) copyBlockers.push("there is no flatplan yet");
   else if (written < issue.pages.length) copyBlockers.push(`${issue.pages.length - written} pages are still unwritten`);
   if (!issue.audit) copyBlockers.push("the issue has not been audited");
+  else if (issue.audit.complete === false) copyBlockers.push("the audit has not finished");
 
   const buildBlockers: string[] = [];
   if (!issue.approved) buildBlockers.push("the copy is not approved");
