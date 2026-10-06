@@ -93,9 +93,6 @@ export function WorkspaceFolder() {
   return (
     <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="icon-ring" aria-hidden>
-          <FolderOpen size={18} />
-        </span>
         <div className="min-w-0 flex-1">
           <h2 className="h-panel">Location</h2>
           <p className="note mt-1.5">The folder Quire keeps your books, worlds and magazines in.</p>
@@ -104,12 +101,11 @@ export function WorkspaceFolder() {
 
       <div className="relative mt-6 space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`pill border ${
-            current?.initialized ? "border-primary/50 text-primary" : "border-border/60 text-muted-foreground"
-          }`}>
+          {/* Green: a folder in use is the good state, not an alert. */}
+          <span className={current?.initialized ? "pill pill-ok" : "pill"}>
             {current ? (current.initialized ? "in use" : "new") : "—"}
           </span>
-          <span className="font-mono text-sm break-all">{current?.path ?? error ?? "reading…"}</span>
+          <span className="mono text-body break-all">{current?.path ?? error ?? "reading…"}</span>
         </div>
 
         {current ? (

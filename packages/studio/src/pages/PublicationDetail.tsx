@@ -259,21 +259,20 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
       {/* ----------------------------------------------------------- header */}
       <section>
         <div className="spread items-start gap-4">
+          {/* The topbar crumb already reads "Magazine / Indigo" and goes back;
+              a second back button under it said the same thing again. */}
           <div className="min-w-0">
-            <button type="button" className="btn btn-quiet btn-sm" onClick={nav.toDashboard}>
-              <Icon name="chevL" size={14} />Magazine
-            </button>
-            <h2 className="h-page mt-2" style={vtName(issue.id)}>{issue.title || issue.subject}</h2>
-            <p className="dim text-body mt-1.5 max-w-wide">
+            <h2 className="h-page" style={vtName(issue.id)}>{issue.title || issue.subject}</h2>
+            <p className="muted text-body mt-2 max-w-wide">
               {issue.thesis}
             </p>
-            <p className="dim text-small mt-1.5">
+            <p className="dim text-cap mt-1.5">
               {/* What it is, not what it is doing: the stage strip below says
                   that, and saying it twice let the two disagree. */}
               {issue.type} · {issue.pages.length} pages
             </p>
           </div>
-          <button type="button" className="btn btn-line btn-sm" onClick={() => void load()}>
+          <button type="button" className="btn btn-quiet btn-sm" onClick={() => void load()}>
             <Icon name="redo" size={14} />Refresh
           </button>
         </div>
@@ -546,8 +545,8 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
             <div>
               <h3 className="h-panel">The flatplan</h3>
               <p className="hint mt-1">
-                Reading order, always. The letter under each page is its density; the
-                word beside it is what kind of page it is.
+                Reading order, always. Under each page: how dense it is (D, M or C) and
+                what kind of page it is.
               </p>
             </div>
           </div>
@@ -563,10 +562,12 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                   aria-current={openPage === p.n}
                   onClick={() => { setOpenPage(openPage === p.n ? null : p.n); setNote(""); }}
                 >
-                  <span className="sheet">
-                    <span className="plate">
-                      <span>{p.body ? `${p.words ?? 0} words` : "unwritten"}</span>
-                    </span>
+                  {/* A written page shows lines of text; an unwritten one is an
+                      outline. Both were the same dotted plate, so a glance
+                      could not tell seven written pages from nine blank. */}
+                  <span className={p.body ? "sheet is-written" : "sheet is-blank"}>
+                    {p.body ? <span className="text-lines" aria-hidden="true" /> : null}
+                    <span className="sheet-note">{p.body ? `${(p.words ?? 0).toLocaleString()} words` : "not written"}</span>
                     <span className="folio">{String(p.n).padStart(2, "0")}</span>
                   </span>
                   <span className="cap">

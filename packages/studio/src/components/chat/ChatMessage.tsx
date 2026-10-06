@@ -12,6 +12,7 @@ import { parseToolMarks } from "./tool-marks";
 import type { MessageChip } from "../../store/chat/types";
 import { MessageResponse } from "../ai-elements/message";
 import { Failed } from "../ui/states";
+import { when } from "../../lib/when";
 
 export interface ChatMessageProps {
   readonly role: "user" | "assistant";
@@ -34,7 +35,7 @@ export function whenLabel(at: number, now = Date.now()): string {
   if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  return new Date(at).toLocaleDateString();
+  return when(at, now);
 }
 
 /**

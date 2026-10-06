@@ -62,9 +62,6 @@ export function SearchFallback() {
   return (
     <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="icon-ring" aria-hidden>
-          <Search size={18} />
-        </span>
         <div className="min-w-0 flex-1">
           <h2 className="h-panel">Search fallback</h2>
           <p className="note mt-1.5">

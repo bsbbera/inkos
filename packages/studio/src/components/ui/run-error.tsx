@@ -38,8 +38,15 @@ export function RunError({
     );
   }
   const due = plain.resetMs ? (Date.parse(at ?? "") || Date.now()) + plain.resetMs + 60_000 : undefined;
+  /* "It resets in 2h30m" beside "the limit lifted at 16:05" said two
+     contradictory things. Once the time has passed, only the second is true. */
+  const lifted = due !== undefined && due <= Date.now();
   return (
-    <Failed what={`Stopped${where ? ` at ${where}` : ""}`} detail={message}>
+    <Failed
+      what={`Stopped${where ? ` at ${where}` : ""}`}
+      detail={message}
+      {...(lifted ? { said: `The usage limit that stopped it lifted at ${clockAt(due)}. It can pick up where it stopped.` } : {})}
+    >
       {children}
       {later && scheduled ? (
         <span className="rowflex gap-2">
@@ -51,9 +58,6 @@ export function RunError({
           <Icon name="clock" size={14} />
           Resume at {clockAt(due)}
         </button>
-      ) : due ? (
-        // "It resets in 2h30m" was true when it stopped; say what is true now.
-        <span className="hint is-good">The limit lifted at {clockAt(due)}.</span>
       ) : null}
     </Failed>
   );

@@ -49,9 +49,6 @@ export function AppUpdates() {
   return (
     <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span className="icon-ring" aria-hidden>
-          <ArrowDownToLine size={18} />
-        </span>
         <div className="min-w-0 flex-1">
           <h2 className="h-panel">Updates</h2>
           <p className="note mt-1.5">

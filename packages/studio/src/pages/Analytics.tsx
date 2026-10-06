@@ -90,7 +90,7 @@ export function Analytics({
         <h2 className="h-page">Where the book actually is</h2>
       </section>
 
-      <section className="cols gap-3.5 grid-cols-3">
+      <section className="cols grid-cols-3">
         <div className="panel">
           <div className="panel-body">
             <span className="label">{t("analytics.totalChapters")}</span>

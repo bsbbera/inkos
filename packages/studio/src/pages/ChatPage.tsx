@@ -33,11 +33,10 @@ import {
 } from "../components/chat/NarrativeForecastPreview";
 import { ProjectArtifactDrawer } from "../components/chat/ProjectArtifactDrawer";
 import { PlayHud } from "../components/chat/PlayHud";
-import { Working } from "../components/ui/working";
+import { Orb, Working } from "../components/ui/working";
 import { PlayChoicePanel } from "../components/chat/PlayChoicePanel";
 import { latestPlayChoiceSet } from "../components/chat/play-choices";
 import {
-  BotMessageSquare,
   ArrowUp,
   ChevronDown,
   ChevronRight,
@@ -81,6 +80,7 @@ import {
   type StudioSkill,
 } from "./skill-ui-state";
 import { Failed, ErrorLine, Loading, Empty } from "../components/ui/states";
+import { Icon } from "../components/ui/icon";
 
 // -- Types --
 
@@ -977,7 +977,6 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           ) : null}
           <h1>{isZh ? "对话" : "Chat"}</h1>
         </div>
-        <span className="pill">{runningBar.text}</span>
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => setArtifactsOpen((open) => !open)}>
           <Layers size={15} aria-hidden="true" />
           {isZh ? "产出" : "Artifacts"}
@@ -1050,18 +1049,27 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             </div>
           </div>
         ) : messages.length === 0 && !loading ? (
-          <div className="flex h-full items-center justify-center px-4 select-none">
-            <div className="panel crop w-full max-w-md text-center">
-              <div className="relative">
-                <span
-                  className="mx-auto icon-ring icon-ring-lg"
-                  aria-hidden="true"
-                >
-                  <BotMessageSquare size={20} />
-                </span>
-                <p className="mt-5 text-body leading-7 text-muted-foreground">{emptyGuidance}</p>
+          /* The front of a conversation: the mark, one line of what to say,
+             and a few ways in that fill the composer rather than send. A
+             robot in a box said "chatbot", which is not what this is. */
+          <div className="chat-hello">
+            <span className="chat-hello-mark" aria-hidden="true"><Icon name="quire" size={30} /></span>
+            <h2 className="h-panel">{isZh ? "想写点什么？" : "What are we making?"}</h2>
+            <p className="muted text-body max-w-measure">{emptyGuidance}</p>
+            {!isZh ? (
+              <div className="chat-hello-ways stagger">
+                {[
+                  "A short story about ",
+                  "A 16-page magazine issue on ",
+                  "Read chapter 1 back to me and say where it drags",
+                  "Check the facts in ",
+                ].map((s) => (
+                  <button key={s} type="button" className="chip" onClick={() => setInput(s)}>
+                    {s.trim().replace(/ (about|on|in)$/, " $1…")}
+                  </button>
+                ))}
               </div>
-            </div>
+            ) : null}
           </div>
         ) : (
           /* `.thread`, the mock's own grid, at its own measure. This was a
@@ -1193,7 +1201,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
               <Message from="assistant">
                 <MessageContent>
                   <span className="flex items-center gap-2.5 text-body text-muted-foreground">
-                    <span className="thinking" aria-hidden="true"><i /><i /><i /></span>
+                    <Orb state="composing" size={32} />
                     {isZh ? "思考中" : "Thinking"}
                   </span>
                 </MessageContent>
@@ -1457,7 +1465,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
                     className="btn btn-quiet btn-sm"
                   >
                     <Cpu size={15} aria-hidden="true" />
-                    <span className="mono trunc text-cap max-w-65">
+                    <span className="trunc text-cap max-w-65">
                       {runningBar.text}
                     </span>
                     {runningBar.agent ? (

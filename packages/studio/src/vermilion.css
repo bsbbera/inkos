@@ -66,6 +66,11 @@
    that therefore did not exist. Anything that used to be a half-pixel apart
    is now a weight or a colour apart, which is a difference that reads.     */
 :root {
+  /* One side inset for every panel, its head and its body. Three were in use
+     (22, 20 and per-page 12-16), so titles, rows and buttons inside panels on
+     the same screen started on different edges. A narrow workbench lowers
+     it for all of its panels at once instead of overriding each one. */
+  --inset: 20px;
   --putty:      #E7DFD7;
   --putty-2:    #DDD3C9;
   --ink:        #23201D;
@@ -95,7 +100,18 @@
   --vermilion-edge: rgba(222, 81, 64, .30);
   --line:       rgba(35,32,29,.14);
   --line-soft:  rgba(35,32,29,.07);
+  /* The ground of the thing you have selected in a list. */
+  --select:     rgba(35,32,29,.06);
+  /* The chosen segment of a segmented control. */
+  --seg-thumb:  var(--paper);
   --line-char:  rgba(240,234,227,.16);
+  /* The ground the work is read and talked on. Charcoal in the dark theme,
+     paper in the light one: a black slab under a light window read as a
+     rendering fault, not as emphasis. */
+  --work: var(--paper); --work-2: var(--putty); --on-work: var(--ink);
+  --on-work-2: var(--ink-2); --line-work: var(--line);
+  --ok-base: var(--ok); --warn-base: var(--warn); --bad-base: var(--bad);
+  --vink-base: var(--vermilion-ink); --ink3-base: var(--ink-3);
 
   /* State has to survive two grounds. One value tuned for paper goes
      illegible the moment the same status is printed in a charcoal log, so
@@ -190,7 +206,11 @@
     --vermilion-edge: rgba(239, 101, 81, .34);
     --line:      rgba(239,232,225,.13);
     --line-soft: rgba(239,232,225,.07);
+    --select:    rgba(239,232,225,.07);
+    --seg-thumb: #3A3430;
     --line-char: rgba(240,234,227,.13);
+    --work: var(--char); --work-2: var(--char-2); --on-work: var(--on-char);
+    --on-work-2: var(--on-char-2); --line-work: var(--line-char); --ink3-base: var(--on-char-2);
 
     --ok: #6FA872;  --warn: #D2A055;  --bad: #E3705F;
     --ok-char: #6FA872; --warn-char: #D2A055; --bad-char: #E3705F;
@@ -227,7 +247,11 @@
   --vermilion-edge: rgba(239, 101, 81, .34);
   --line:      rgba(239,232,225,.13);
   --line-soft: rgba(239,232,225,.07);
+  --select:    rgba(239,232,225,.07);
+  --seg-thumb: #3A3430;
   --line-char: rgba(240,234,227,.13);
+  --work: var(--char); --work-2: var(--char-2); --on-work: var(--on-char);
+  --on-work-2: var(--on-char-2); --line-work: var(--line-char); --ink3-base: var(--on-char-2);
 
   --ok: #6FA872;  --warn: #D2A055;  --bad: #E3705F;
   --ok-char: #6FA872; --warn-char: #D2A055; --bad-char: #E3705F;
@@ -372,6 +396,8 @@ svg { display: block; }
   color: var(--ink-3); font-weight: 600;
 }
 .on-char .label, .dark .label { color: var(--on-char-2); }
+/* A label written as name + count ("Writing", "0") read "WRITING0". */
+.label > span + span { margin-left: .7em; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
 /* This used to be a kicker, defended here on the grounds that it "always
    carries a real datum, never a decorative restatement of the heading."
@@ -395,10 +421,19 @@ svg { display: block; }
   font-variant-numeric: tabular-nums; color: var(--vermilion-ink);
 }
 .numeral.ghost { color: var(--ink-3); opacity: .38; }
+.numeral.numeral-ok { color: var(--ok); }
+/* A count that describes rather than asks: ink. Vermilion is for what needs you. */
+.numeral.numeral-ink { color: var(--ink); }
 
 .h-page  { font-size: var(--fs-h2); letter-spacing: -.032em; }
 .h-panel { font-size: var(--fs-lead); }
 .h-sub   { font-size: var(--fs-body); font-weight: 600; }
+
+/* components/ui/page-head.tsx: the one way a screen names itself. */
+.page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+.page-head .lede { margin-top: 10px; max-width: 64ch; color: var(--ink-2); font-size: var(--fs-body); line-height: 1.6; text-wrap: pretty; }
+.page-head .h-page { text-wrap: balance; }
+.page-head-actions { display: flex; align-items: center; gap: 10px; flex: none; }
 
 .head { max-width: 62ch; margin-bottom: 22px; }
 .head h2 { font-size: var(--fs-h2); }
@@ -419,7 +454,14 @@ svg { display: block; }
 }
 .btn:hover  { background: var(--vermilion-2); transform: translateY(-1px); box-shadow: var(--e2); }
 .btn:active { transform: translateY(0) scale(.985); box-shadow: var(--e1); }
-.btn[disabled], .btn[aria-disabled="true"] { opacity: .4; pointer-events: none; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; box-shadow: none; }
+/* A filled button that cannot be pressed at 40% opacity read as a muddy
+   maroon - still the accent, so still asking. It goes neutral instead: the
+   shape says "this is the action", the colour says "not yet". */
+.btn:not(.btn-line):not(.btn-quiet):not(.btn-bad)[disabled],
+.btn:not(.btn-line):not(.btn-quiet):not(.btn-bad)[aria-disabled="true"] {
+  --bg: color-mix(in oklab, var(--ink) 9%, transparent); --fg: var(--ink-3); opacity: 1;
+}
 .btn .ico { transition: transform var(--med) var(--ease); }
 .btn:hover .ico { transform: translateX(3px); }
 .btn-line  { --bg: transparent; --fg: var(--ink); border-color: var(--line); }
@@ -515,7 +557,17 @@ svg { display: block; }
 }
 .seg-compact button { padding: 5px 8px; }
 .seg button:hover { color: var(--ink); }
-.seg button[aria-pressed="true"] { background: var(--accent-fill); color: var(--on-accent); }
+/* Which mode you are in is a state, not an action: a raised neutral chip,
+   not the accent. Rows of "As usual" in vermilion were a wall of alarms. */
+.seg button[aria-pressed="true"] { background: var(--seg-thumb); color: var(--ink); box-shadow: var(--e1); }
+.seg-slide { position: relative; isolation: isolate; }
+.seg-slide::before {
+  content: ""; position: absolute; z-index: -1; top: 3px; bottom: 3px; left: 0;
+  width: var(--seg-w, 0); transform: translateX(var(--seg-x, 0));
+  border-radius: 4px; background: var(--seg-thumb); box-shadow: var(--e1);
+}
+.seg-slide[data-ready]::before { transition: transform var(--med) var(--ease), width var(--med) var(--ease); }
+.seg-slide button[aria-pressed="true"] { background: transparent; box-shadow: none; }
 .dark .seg, .on-char .seg { border-color: var(--line-char); background: transparent; }
 .dark .seg button, .on-char .seg button { color: var(--on-char-2); }
 .dark .seg button:hover, .on-char .seg button:hover { color: var(--on-char); }
@@ -524,10 +576,20 @@ svg { display: block; }
    readable thing in the app and it was the control saying which mode you
    are in. */
 .dark .seg button[aria-pressed="true"],
-.on-char .seg button[aria-pressed="true"] { color: var(--on-accent); }
+.on-char .seg button[aria-pressed="true"] { color: var(--on-char); background: color-mix(in oklab, var(--on-char) 14%, transparent); }
+.dark .seg-slide::before, .on-char .seg-slide::before { background: color-mix(in oklab, var(--on-char) 14%, transparent); box-shadow: none; }
+.dark .seg-slide button[aria-pressed="true"], .on-char .seg-slide button[aria-pressed="true"] { background: transparent; }
 
 .field { display: grid; gap: 6px; }
-.field > label { font-size: var(--fs-cap); font-weight: 500; color: var(--ink-2); }
+/* One label for a form field, wherever it is written as `<label>` or as a
+   `.label` span: Taste said "Pack name" and "VOICES" in the same panel, and
+   Translation shouted every field. The tracked capitals stay for section
+   eyebrows outside fields. */
+.field > label, .field > .label, .field-label {
+  font-size: var(--fs-cap); font-weight: 500; color: var(--ink-2);
+  letter-spacing: 0; text-transform: none;
+}
+.dark .field > .label, .on-char .field > .label { color: var(--on-char-2); }
 .input {
   /* A field never inherits the label it sits in: no caps, no tracking. */
   font-weight: 450; letter-spacing: normal; text-transform: none;
@@ -564,7 +626,8 @@ textarea.input { resize: vertical; min-height: 88px; line-height: 1.55; }
    pill never has. */
 button.pill { cursor: pointer; background: transparent; transition: color var(--fast) var(--ease), border-color var(--fast) var(--ease), background-color var(--fast) var(--ease); }
 button.pill:hover { color: var(--ink); border-color: var(--ink-3); }
-button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color: transparent; color: var(--on-accent); }
+/* A filter that is on is a state: ink, not the accent the actions use. */
+button.pill[aria-pressed="true"] { background: var(--ink); border-color: transparent; color: var(--paper); }
 
 /* A checkbox, because choosing what to audit is a multi-select over files and
    nothing else in the system does that job. Square, so it is never confused
@@ -586,11 +649,13 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 
 /* A file's state is a round dot; your intent is a square box. Different
    shapes on purpose, because they sit next to each other in every row. */
-.dot { width: 7px; height: 7px; border-radius: 50%; flex: none; display: block; border: 1.5px solid var(--line); }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; display: block; border: 1.5px solid var(--ink-3); }
 .dot-clean { background: var(--ok); border-color: var(--ok); }
 .dot-warn  { background: var(--warn); border-color: var(--warn); }
 .dot-bad   { background: var(--bad); border-color: var(--bad); }
-.dot-never { background: transparent; }
+/* Not read yet: an empty ring in ink, not a line-coloured ghost that
+   disappeared against the panel. */
+.dot-never { background: transparent; opacity: .7; }
 
 .kbd {
   font-family: var(--font-mono); font-size: var(--fs-cap); padding: 2px 6px;
@@ -686,6 +751,10 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 }
 .railnew:hover { background: var(--vermilion-2); transform: translateY(-1px); box-shadow: var(--e2); }
 .railnew:active { transform: none; }
+/* On the Start page the door is where you are: a ring says so without the
+   rail pretending you are in Chat. */
+.railnew[aria-current="page"] { box-shadow: 0 0 0 3px color-mix(in oklab, var(--vermilion) 30%, transparent); }
+.railrun[aria-current="page"] { border-color: var(--vermilion); }
 .railnew svg { transition: transform var(--med) var(--ease); }
 .railnew:hover svg { transform: rotate(90deg); }
 .rail-thin .railnew { justify-content: center; padding: 9px 0; }
@@ -831,19 +900,25 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 /* ═══════════════════════════════════════════════════════════════ SURFACES */
 .panel {
   border-radius: var(--r-card); border: 1px solid var(--line);
-  background: var(--paper); color: var(--ink); padding: 20px 22px; position: relative; overflow: hidden;
+  background: var(--paper); color: var(--ink); padding: 20px var(--inset); position: relative; overflow: hidden;
 }
 .panel > h3:not(.label) { font-size: var(--fs-lead); margin-bottom: 4px; }
 .panel > .note { font-size: var(--fs-body); color: var(--ink-2); max-width: 56ch; }
 .panel-flush { padding: 0; }
+/* A panel with a head draws its own insets in the head and body; padding the
+   panel as well put every title 42px in from the edge on Taste and Style. */
+.panel:has(> .panel-head) { padding: 0; }
+/* The line under a panel title is its own block. As an inline span it took
+   the title's line height, and a two-line description read double-spaced. */
+.panel-head .grow > .h-panel + span:not(.rowflex) { display: block; margin-top: 3px; line-height: 1.5; }
 .panel-head {
-  display: flex; align-items: center; gap: 12px; padding: 15px 20px;
+  display: flex; align-items: center; gap: 12px; padding: 15px var(--inset);
   border-bottom: 1px solid var(--line);
 }
-.panel-body { padding: 16px 20px; }
+.panel-body { padding: 16px var(--inset); }
 /* A head that carries only a control. Fifteen pixels of padding above and
    below a title is right; above and below a toggle it is a gap. */
-.panel-head-thin { padding: 8px 12px 8px 16px; }
+.panel-head-thin { padding: 8px 12px 8px var(--inset); }
 
 .dark {
   background: var(--char); color: var(--on-char); border-radius: var(--r-card);
@@ -859,6 +934,13 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   --ink-3: var(--on-char-2);
 }
 .dark h1, .dark h2, .dark h3, .dark h4 { color: var(--on-char); }
+/* The conversation and the reader take the theme's work ground. */
+.chat > .convo > .dark, .dark.colpanel.reads, .dark.fullscreen-edit {
+  --char: var(--work); --char-2: var(--work-2); --on-char: var(--on-work);
+  --on-char-2: var(--on-work-2); --line-char: var(--line-work);
+  --ok: var(--ok-base); --warn: var(--warn-base); --bad: var(--bad-base);
+  --vermilion-ink: var(--vink-base); --ink-3: var(--ink3-base);
+}
 .dark .muted, .on-char .muted { color: var(--on-char-2); }
 .dark .dim, .on-char .dim { color: var(--on-char-2); }
 .dark .input, .on-char .input { background: var(--char-2); border-color: var(--line-char); color: var(--on-char); }
@@ -890,7 +972,9 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   }
 }
 
-.tiles { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); }
+.cols-audit { --inset: 16px; }
+
+.tiles { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(212px, 1fr)); }
 .tile {
   position: relative; overflow: hidden; border-radius: var(--r-card);
   border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 16px;
@@ -902,16 +986,37 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .tile h4 { font-size: var(--fs-lead); margin-top: auto; }
 .tile .who { font-size: var(--fs-cap); color: var(--ink-3); margin-top: 3px; }
 .tile .top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+/* The ways to start: every title on one line across a row, whatever the
+   length of the sentence under it, and the eyebrow kept clear of the mark. */
+.tile-way .who { min-height: 3lh; }
+.tile-way .top { padding-right: 76px; }
 /* A work on the shelf: a lettered cover on charcoal, the ground reserved for
    the work itself, then the name, the counts, and where it stands. */
 .tile-work { padding: 0 0 14px; min-height: 0; }
 .tile-work > :not(.cover) { margin-inline: 16px; }
 .tile-work h4 { margin-top: 12px; line-height: 1.25; }
+/* A binding, not a black box. Flat charcoal sat one step off the dark tile
+   it was printed on; a warm light behind the letter, tinted by the kind of
+   work, gives each shelf a little colour and each cover a corner to read. */
 .tile .cover {
+  --glow: var(--vermilion);
   position: relative; display: flex; flex-direction: column; justify-content: space-between;
-  aspect-ratio: 16 / 9; padding: 12px 14px; background: var(--char); color: var(--on-char);
+  aspect-ratio: 16 / 9; padding: 12px 14px; color: var(--on-char); isolation: isolate;
+  background:
+    radial-gradient(120% 95% at 100% 100%, color-mix(in oklab, var(--glow) 24%, transparent), transparent 62%),
+    var(--char);
   border-bottom: 1px solid var(--line);
 }
+.tile .cover::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; pointer-events: none;
+  background: radial-gradient(80% 70% at 100% 100%, color-mix(in oklab, var(--glow) 30%, transparent), transparent 70%);
+  transition: opacity var(--slow) var(--ease);
+}
+.tile-work:hover .cover::after, .tile-work:focus-visible .cover::after { opacity: 1; }
+.tile .cover[data-kind="storybook"]  { --glow: var(--warn); }
+.tile .cover[data-kind="storyboard"],
+.tile .cover[data-kind="script"]     { --glow: var(--ok); }
+.tile .cover[data-kind="magazine"]   { --glow: var(--vermilion-2); }
 .tile .cover-kind {
   font-size: var(--fs-cap); letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
   color: color-mix(in oklab, var(--on-char) 62%, transparent);
@@ -926,7 +1031,7 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 /* New is a tile, not a floating button: it belongs in the shelf it adds to. */
 .tile-new {
   border-style: dashed; background: transparent; align-items: center; justify-content: center;
-  gap: 12px; color: var(--ink-2);
+  gap: 12px; color: var(--ink-2); text-align: center;
 }
 .tile-new:hover { background: color-mix(in oklab, var(--vermilion) 5%, transparent); }
 
@@ -964,9 +1069,9 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 /* The four cards stand as one row: same height, explanation in the small size,
    and whatever each card asks you to do sits on its bottom edge, so the
    buttons line up across the row instead of floating at four heights. */
-.desk { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: stretch; }
+.desk { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: stretch; }
 .desk-card {
-  display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px var(--inset);
   border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper);
 }
 .desk-card > :is(p, .hint) { font-size: var(--fs-small); line-height: 1.5; margin: 0; }
@@ -1010,7 +1115,7 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    enough to fit. */
 .rows { display: grid; grid-template-columns: minmax(0, 1fr); }
 .row {
-  display: flex; align-items: center; gap: 13px; padding: 13px 4px;
+  display: flex; align-items: center; gap: 13px; padding: 13px 0;
   border-top: 1px solid var(--line); position: relative; text-align: left;
   background: transparent; border-left: 0; border-right: 0; border-bottom: 0;
   width: 100%; min-width: 0;
@@ -1045,12 +1150,16 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .row:hover .act, .row:focus-within .act { opacity: 1; transform: none; }
 @media (hover: none) { .row .act { opacity: 1; } }
 .row .num { font-size: var(--fs-body); font-weight: 600; color: var(--vermilion-ink); font-variant-numeric: tabular-nums; width: 2.2em; flex: none; }
+/* A mark in place of a number takes the number's width, so names line up. */
+.row .mark-slot { font-size: var(--fs-body); width: 2.2em; flex: none; display: flex; align-items: center; }
 /* The row you are already in. Every other row in a rail hands something to the
    composer and leaves you where you are; a conversation row swaps the
    transcript under you, so the one you are reading has to say so — marked the
    way .nav marks the page you are on, and not offering to take you there. */
 .row[aria-current="true"] { cursor: default; }
-.row[aria-current="true"] .name { color: var(--vermilion-ink); font-weight: 600; }
+/* Selected is a place, not an alarm: ink at full weight, and the accent only
+   as the small mark beside it. Red text on a red wash read as an error. */
+.row[aria-current="true"] .name { color: var(--ink); font-weight: 600; }
 .row[aria-current="true"]:hover > * { transform: none; }
 /* The production you have open, in the audit rail's work list.
 
@@ -1203,7 +1312,9 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 .readcol { width: 100%; max-width: var(--col-read); margin-inline: auto; }
 .readhead {
   display: flex; align-items: flex-start; gap: 16px;
-  padding: var(--pad-read-top) var(--pad-read) 0;
+  /* As much room under the toolbar as above it: with none, the page's own
+     heading sat hard against the controls and read as part of the head. */
+  padding: var(--pad-read-top) var(--pad-read) max(var(--pad-read-top), 16px);
 }
 /* The body reserves a scrollbar gutter on both edges; these two do not scroll,
    so without the same reservation their content box is a scrollbar wider than
@@ -1218,7 +1329,10 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
    hand out, and the toolbar parks itself against the title in the middle of
    the panel instead of on the right edge where it was put. */
 .readhead > .spread { flex: 1; min-width: 0; }
-.readhead > .spread > .rowflex { flex: 0 0 auto; }
+.readhead > .spread > .readtools { flex: 0 0 auto; }
+.readtools { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; }
+/* Wrapped onto its own line, the page's state still sits on the right. */
+.readtools > :last-child { margin-left: auto; }
 /* `both-edges`, not `stable`: the manuscript is centred in this box, and a
    gutter reserved on one side only shifts it by half the scrollbar - which is
    exactly the kind of 10px error that reads as "the margins are wrong" without
@@ -1234,7 +1348,6 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      desktop shell pins its Settings button. Wider than this and the column
      stops well short of it, and the extra clearance would only push the bar
      off the axis everything else stands on. */
-  .revisebar { padding-right: 60px; }
   .read { line-height: 1.64; }
   .readhead h3 { font-size: var(--fs-body); }
   /* The head is a row of controls beside a name. When the row cannot hold
@@ -1242,7 +1355,7 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
      they were on, because a control that moves across the pane when the pane
      narrows is a control you have to find again. */
   .readhead > .spread { flex-wrap: wrap; }
-  .readhead > .spread > .rowflex { flex: 1 0 100%; justify-content: flex-end; }
+  .readhead > .spread > .readtools { flex: 1 0 100%; justify-content: space-between; }
 }
 @container reading (max-width: 430px) {
   .read p + p { text-indent: 1em; }
@@ -1357,9 +1470,6 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   color: var(--on-char-2); font-weight: 600; margin-bottom: 6px;
 }
 
-.thinking { display: inline-flex; gap: 5px; align-items: center; height: 20px; }
-.thinking i { width: 7px; height: 7px; border-radius: 50%; background: var(--vermilion); display: block; opacity: .45; }
-
 .caret {
   display: inline-block; width: .4em; height: 1.05em; background: var(--vermilion);
   vertical-align: -.15em; margin-left: .07em;
@@ -1371,8 +1481,6 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
   font-size: var(--fs-body); color: var(--on-char-2);
 }
 .tool .tick { color: var(--vermilion); }
-.spin { width: 15px; height: 15px; flex: none; }
-.spin circle { fill: none; stroke: var(--vermilion); stroke-width: 2.6; stroke-linecap: round; stroke-dasharray: 31; stroke-dashoffset: 13; }
 
 /* Failure always states what stopped, what survived, and the way forward.
    "Error occurred" is banned; so is a dead end. */
@@ -1504,21 +1612,25 @@ button.pill[aria-pressed="true"] { background: var(--accent-fill); border-color:
 
 /* A row of counted facts: number over label, tabular, so the same block reads
    the same whether it is counting a whole production or one page of it. */
-.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+/* A grid, not a wrapping row: two rows of figures in one block share their
+   columns, so "reads" stands under "read" instead of wherever it fell. */
+.stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px 14px; }
 .stats > span { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
 
 /* The figures and the four stages, side by side.
    Two columns while there is room for two, one under the other when there is
    not. The stages take a fixed-ish share so the labels line up, and the
    figures take the rest. */
-.statusrow { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: flex-start; }
+.statusrow { display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: flex-start; container: statusrow / inline-size; }
 .statusrow-figures { flex: 1 1 210px; min-width: 0; }
 .statusrow-stages {
   flex: 1 1 190px; min-width: 0;
   padding-left: 18px; border-left: 1px solid var(--line);
 }
-/* Stacked, the rule between them is a rule above them. */
-@media (max-width: 640px) {
+/* Stacked, there is no rule between them and no indent: the stages start on
+   the same edge as the figures above. Measured on the row itself, because
+   the panel is narrow at every window width, not just a narrow window's. */
+@container statusrow (max-width: 430px) {
   .statusrow-stages { padding-left: 0; border-left: 0; }
 }
 .statusrow-stages .trunc {
@@ -1681,13 +1793,15 @@ button.wf-state:hover { background: var(--line-soft); }
    the scrollbar lands under the grip and takes the drag. `overflow-x: hidden`
    is not belt-and-braces: `overflow-y: auto` alone computes overflow-x to
    auto, so anything too wide gets a sideways scrollbar instead of an ellipsis. */
+/* The body's text edge is the head's: 16px on the side away from the seam,
+   so a label, a row and a hint in one rail share one left edge. */
 .subrail-body {
-  padding: 8px 14px 16px 12px; flex: 1;
+  padding: 8px 14px 16px 16px; flex: 1;
   min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden;
 }
-.chat > .subrail:last-child > .subrail-body { padding: 8px 12px 16px 14px; }
+.chat > .subrail:last-child > .subrail-body { padding: 8px 16px 16px 16px; }
 .subrail .grp { margin-top: 14px; }
-.subrail .grp > .label { padding: 0 4px 6px; }
+.subrail .grp > .label { padding: 0 0 6px; }
 
 /* ── Which creation this is, and that it is the parent ───────────────────
    Three devices, one meaning each, so the column can be read rather than
@@ -1758,21 +1872,9 @@ button.wf-state:hover { background: var(--line-soft); }
 .grp-switch .row { padding-top: 7px; padding-bottom: 7px; }
 .grp-switch .name { font-size: var(--fs-small); }
 
-/* The one you have open. Vermilion text alone put it a shade away from the
-   fifteen rows around it, all of which begin with the same six words. */
-.grp-switch .row[aria-current="true"] {
-  background: var(--vermilion-wash);
-  border-radius: var(--r-ctl);
-  border-top-color: transparent;
-  margin: 3px -7px; padding-left: 7px; padding-right: 7px;
-}
-/* The disc, at row scale: the same filled mark the work carries above. */
-.grp-switch .row[aria-current="true"]::before {
-  content: ""; flex: none; align-self: center;
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--vermilion);
-}
-.grp-switch .row[aria-current="true"] + .row { border-top-color: transparent; }
+/* The one you have open takes the same ground and bar as every other list's
+   current row. Its own disc sat in the flow and pushed the title 13px right
+   of the fifteen titles around it. */
 
 .composer { border-top: 1px solid var(--line-char); padding: 12px clamp(16px, 3vw, 32px) 16px; }
 .composer .box {
@@ -1854,7 +1956,7 @@ button.wf-state:hover { background: var(--line-soft); }
 }
 
 /* Empty is never blank. A disc composition, one heading, one action. */
-.empty { position: relative; overflow: hidden; padding: 54px 30px; text-align: left; border-radius: var(--r-card); border: 1px solid var(--line); }
+.empty { position: relative; overflow: hidden; padding: 32px var(--inset); text-align: left; border-radius: var(--r-card); border: 1px solid var(--line); }
 .empty h3 { font-size: var(--fs-h2); letter-spacing: -.03em; max-width: 18ch; }
 .empty p { margin-top: 10px; color: var(--ink-2); max-width: 42ch; font-size: var(--fs-body); }
 /* The one-line empty, for sidebars and menus: says what goes here, and the
@@ -1903,7 +2005,9 @@ button.wf-state:hover { background: var(--line-soft); }
 .finding[aria-current="true"] { background: color-mix(in oklab, var(--vermilion) 13%, transparent); border-left-color: var(--vermilion); }
 .finding b { font-size: var(--fs-body); font-weight: 600; display: block; }
 .finding .cat { font-size: var(--fs-cap); color: var(--ink-3); }
-.finding .sev { width: 6px; height: 6px; border-radius: 50%; flex: none; display: block; }
+/* Sized everywhere, not only inside a finding: the gate reasons used the same
+   dot and it rendered zero pixels wide, leaving an indent with nothing in it. */
+.sev { width: 6px; height: 6px; border-radius: 50%; flex: none; display: block; }
 .sev-bad  { background: var(--bad); }
 .sev-warn { background: var(--warn); }
 .sev-info { background: var(--ink-3); }
@@ -1925,10 +2029,13 @@ button.wf-state:hover { background: var(--line-soft); }
 /* ══════════════════════════════════════════════════════════ MAGAZINE WORK
    Tabs are the pipeline. A done tab carries the filled dot, the current one
    carries the halo. */
-.tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--line); }
+/* The space between tabs is the strip's gap, not each tab's side padding, so
+   the first tab's word starts on the page's left edge like the title above
+   it, and the underline is exactly as wide as the word. */
+.tabs { display: flex; flex-wrap: wrap; gap: 0 28px; border-bottom: 1px solid var(--line); }
 .tab {
   appearance: none; border: 0; background: transparent; cursor: pointer; white-space: nowrap; flex: none;
-  display: flex; align-items: center; gap: 8px; padding: 11px 15px;
+  display: flex; align-items: center; gap: 8px; padding: 11px 0;
   font-size: var(--fs-body); font-weight: 500; color: var(--ink-3); position: relative;
   transition: color var(--fast) var(--ease);
 }
@@ -1936,7 +2043,7 @@ button.wf-state:hover { background: var(--line-soft); }
 .tab.done i { background: var(--ok); border-color: var(--ok); }
 .tab.done { color: var(--ink-2); }
 .tab::after {
-  content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px;
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
   background: var(--vermilion); transform: scaleX(0); transition: transform var(--med) var(--ease);
 }
 .tab:hover { color: var(--ink); }
@@ -2130,6 +2237,9 @@ button.wf-state:hover { background: var(--line-soft); }
   display: flex; flex-direction: column; gap: 1px;
   margin: 0 -11px; padding: 0 11px;
   scrollbar-width: thin;
+  /* Room for the bar is kept whether or not it shows, so opening Tools does
+     not slide every count in the rail sideways. */
+  scrollbar-gutter: stable;
 }
 .rail-scroll::-webkit-scrollbar { width: 6px; }
 .rail-scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 3px; }
@@ -2266,6 +2376,13 @@ button.wf-state:hover { background: var(--line-soft); }
    conversation is the last thing to give up space because it is the app. */
 @media (max-width: 1040px) {
   .cols-audit { grid-template-columns: 1fr; }
+  /* Stacked, the three panels shared one screen's height and each became a
+     slot two rows tall with its own scrollbar. Each keeps a real height and
+     the page scrolls instead. */
+  .stage-flush:has(> .workbench) { overflow-y: auto; }
+  .workbench { height: auto; }
+  .workbench > .cols { flex: none; }
+  .workbench > .cols > * { height: auto; min-height: 480px; max-height: 82vh; }
 }
 /* Stacked columns have no vertical seam to drag, so the handles are not a
    control here - they would render as two 6px stripes between the panels. */
@@ -2293,7 +2410,12 @@ button.wf-state:hover { background: var(--line-soft); }
     font-size: var(--fs-cap);
   }
   .rail .nav { position: relative; }
-  .rail-scroll { margin: 0; padding: 0; }
+  /* The scroll area shrank to the icon's width under `align-items: center`,
+     so the page marker was drawn across the icon. Full width, icon centred,
+     marker on the edge. */
+  .rail-scroll { margin: 0; padding: 0; align-self: stretch; }
+  .rail .nav { width: 100%; }
+  .rail .nav::before { left: 0; }
   .topbar { padding: 10px 12px; gap: 7px; }
   .topbar .pill:not(.pill-bad):not(.pill-warn) { display: none; }
   .wrap, .wrap-read { padding-left: 16px; padding-right: 16px; }
@@ -2442,13 +2564,6 @@ input[type="checkbox"], input[type="radio"] { cursor: pointer; }
   --warning: var(--warn-char);
 }
 
-/* The page-level spinner: the tool spinner's arc, scaled up. */
-.spin-ring {
-  width: 2rem; height: 2rem; border-radius: 50%;
-  border: 2px solid color-mix(in oklab, var(--vermilion) 18%, transparent);
-  border-top-color: var(--vermilion);
-}
-
 /* Streamdown draws its own table chrome; the panel already is one. */
 [data-streamdown="table-wrapper"] { border: none; background: transparent; padding: 0; }
 [data-streamdown="table-wrapper"] > .flex.items-center.justify-end { display: none; }
@@ -2532,7 +2647,6 @@ button.well:hover, label.well:hover { border-color: var(--ink-3); }
 .dark button.well:hover, .on-char button.well:hover { border-color: var(--on-char-2); }
 
 /* A well that is one of several choices. */
-.well[aria-pressed="true"] { border-color: var(--vermilion); background: var(--vermilion-wash); }
 
 /* A surface that floats over the page: menus, pickers, a HUD. */
 .pop {
@@ -2541,3 +2655,125 @@ button.well:hover, label.well:hover { border-color: var(--ink-3); }
   box-shadow: var(--e3); padding: 6px;
 }
 .dark .pop, .on-char .pop { background: var(--char-2); border-color: var(--line-char); color: var(--on-char); }
+
+
+/* ── THE SWEEP, OCTOBER 2026 ──────────────────────────────────────────────
+   Components the second UI pass needed and nothing in the system had: a
+   file drop, a "More" fold for power-user fields, a list of ticks, the chat
+   greeting, a quiet reader for rule files, and the flatplan's two kinds of
+   sheet. Motion for all of them lives in motion.css. */
+
+/* A file control that is one step: the label is the button, the input is
+   hidden, and the line under the name says where the file has got to. */
+.drop {
+  display: flex; align-items: center; gap: 12px; cursor: pointer;
+  padding: 14px 16px; border-radius: var(--r-ctl);
+  border: 1.5px dashed color-mix(in oklab, var(--ink-3) 55%, transparent); background: var(--putty-2); color: var(--ink-2);
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+.drop:hover, .drop:focus-within { border-color: var(--vermilion); color: var(--ink); }
+.drop.has { border-style: solid; background: var(--paper); color: var(--ink); }
+
+/* Fields most people never need, folded under one quiet word. */
+.more > summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  font-size: var(--fs-cap); font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before {
+  content: ""; width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg); transition: transform var(--med) var(--ease);
+}
+.more[open] > summary::before { transform: rotate(45deg); }
+.more > summary:hover { color: var(--ink); }
+
+/* A short list you tick from. */
+fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
+.ticks { display: flex; flex-wrap: wrap; gap: 6px; }
+.tick {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+  padding: 6px 11px; border-radius: 999px; border: 1px solid var(--line);
+  font-size: var(--fs-body); background: var(--paper);
+  transition: border-color var(--fast) var(--ease), background-color var(--fast) var(--ease);
+}
+.tick:hover { border-color: color-mix(in oklab, var(--vermilion) 45%, transparent); }
+.tick:has(input:checked) { border-color: var(--vermilion); background: var(--select); }
+.tick input { margin: 0; }
+
+/* The front of a conversation. */
+.chat-hello {
+  min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; text-align: center; padding: 24px 16px; user-select: none;
+}
+.chat-hello-mark {
+  display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%;
+  color: var(--vermilion); background: color-mix(in oklab, var(--vermilion) 10%, transparent);
+  margin-bottom: 4px;
+}
+.chat-hello .h-panel { color: var(--on-char); font-size: var(--fs-h3); }
+.chat-hello .muted { color: var(--on-char-2); }
+.chat-hello-ways { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; max-width: 620px; }
+.chat-hello-ways .chip { font-size: var(--fs-body); padding: 7px 14px; background: var(--char-2); color: var(--on-char); border-color: var(--line-char); }
+.chat-hello-ways .chip:hover { border-color: var(--vermilion); }
+
+/* Two turns in a row from the same speaker show the mark once. */
+.msg:has(> .who-av.model) + .msg > .who-av.model { visibility: hidden; }
+/* Two messages inside one turn (the tool it read, then the reply) had no
+   space between them, while turns sit 15px apart. */
+.msg + .msg { margin-top: 12px; }
+
+/* A rules file, read rather than dumped as source. */
+.genre-rules { max-height: 460px; overflow-y: auto; padding: 18px 22px; }
+.read.read-quiet { font-size: var(--fs-body); line-height: 1.65; }
+.read.read-quiet > * { white-space: normal; }
+.read.read-quiet p + p { text-indent: 0; }
+.read.read-quiet h3 { font-family: var(--font-ui); font-size: var(--fs-lead); font-weight: 600; letter-spacing: -.01em; }
+.read.read-quiet > * + h3 { margin-top: 1.4em; }
+.read.read-quiet .whitespace-pre-line { white-space: pre-line; }
+
+/* The flatplan's two sheets: one written, one still to write. */
+.pg .sheet.is-blank { border-style: dashed; background: transparent; }
+.pg .sheet .text-lines {
+  position: absolute; inset: 16% 16% 34% 16%;
+  background: repeating-linear-gradient(to bottom, color-mix(in oklab, var(--ink) 18%, transparent) 0 2px, transparent 2px 9px);
+  -webkit-mask-image: linear-gradient(to right, #000 70%, transparent);
+  mask-image: linear-gradient(to right, #000 70%, transparent);
+}
+.pg .sheet-note { position: absolute; left: 9px; bottom: 7px; font-size: var(--fs-cap); color: var(--ink-3); }
+.pg .sheet.is-blank .sheet-note { font-style: italic; }
+.flat .pg .folio { color: var(--ink-3); opacity: .5; }
+
+/* A pressed history row in a list of wells is selected, not alarmed. */
+.well[aria-pressed="true"] { border-color: var(--ink-3); background: var(--select); }
+
+/* A live state, as a dot that breathes while it is true. */
+.live-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ink-3); opacity: .5; flex: none; }
+.live-dot.on { background: var(--ok); opacity: 1; }
+/* In a page title the dot hangs in the margin (its width plus the gap-3
+   beside it), so the words start on the same edge as the lede under them. */
+.page-head .h-page .live-dot:first-child { margin-left: -22px; }
+.page-head .h-page .orb:first-child { margin-left: -32px; }
+
+/* Empty states speak at panel size; at page size they out-shouted the page. */
+.empty h3 { font-size: var(--fs-h3); max-width: 28ch; }
+
+/* A quiet reader sits on the left edge of its box at a wide measure. */
+.read.read-quiet { max-width: 76ch; margin-inline: 0; padding-inline: 0; }
+
+/* The selected row in a list: a soft ground and the accent as a short bar on
+   its edge. Ink weight alone was too quiet once the red text went. */
+/* The ground reaches 8px past the row on each side instead of filling the
+   row's own box: rows carry little or no side padding, so a filled box put
+   the selected name hard against its own edge and the bar. Drawn behind, so
+   the name stays on the same edge as every unselected name. */
+.rows > .row[aria-current="true"] { border-top-color: transparent; position: relative; isolation: isolate; }
+.rows > .row[aria-current="true"]::before {
+  content: ""; position: absolute; inset: 0 -8px; z-index: -1;
+  background: var(--select); border-radius: var(--r-ctl);
+}
+.rows > .row[aria-current="true"] + .row { border-top-color: transparent; }
+.rows > .row[aria-current="true"]:not(.row-work)::after {
+  content: ""; position: absolute; left: -8px; top: 24%; bottom: 24%; width: 3px;
+  border-radius: 2px; background: var(--vermilion);
+}

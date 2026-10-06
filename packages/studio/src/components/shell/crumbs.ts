@@ -53,7 +53,8 @@ export function crumbsFor(
     case "publication":
       return [magazines, { label: names.publication?.(route.issueId) ?? route.issueId }];
 
-    case "project-settings": return [{ label: "Settings", route: { page: "setup" } }, { label: "Project" }];
+    // One screen with tabs, so one crumb: the tab bar says which part.
+    case "project-settings": return [home, { label: "Settings" }];
     case "daemon": return [home, { label: "Daemon" }];
     case "logs": return [home, { label: "Logs" }];
     case "genres": return [home, { label: "Genres" }];
@@ -62,7 +63,7 @@ export function crumbsFor(
     case "import": return [home, { label: "Import" }];
     case "radar": return [home, { label: "Radar" }];
     case "doctor": return [home, { label: "Doctor" }];
-    case "mcp": return [{ label: "Settings", route: { page: "setup" } }, { label: "MCP" }];
+    case "mcp": return [home, { label: "Settings" }];
     case "setup": return [home, { label: "Settings" }];
   }
 }

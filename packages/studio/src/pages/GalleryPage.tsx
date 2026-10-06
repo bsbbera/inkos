@@ -17,7 +17,8 @@ import { Verdict } from "../components/Verdict";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast } from "../components/ui/vermilion";
 import { ask } from "../components/ConfirmDialog";
-import { titleOf } from "../lib/title-of";
+import { useTitles } from "../hooks/use-titles";
+import { PageHead } from "../components/ui/page-head";
 
 interface Asset {
   readonly path: string;
@@ -60,6 +61,7 @@ export function GalleryPage({ type, id, onPick, jobs }: {
     data: projectData, error: projectError, loading: projectsLoading, refetch: refetchProjects,
   } = useApi<{ projects: ReadonlyArray<Project> }>("/audit/projects");
   const projects = projectData?.projects ?? [];
+  const nameOf = useTitles();
   const workType = type ?? projects[0]?.kind ?? null;
   const workId = id ?? projects[0]?.id ?? null;
 
@@ -128,17 +130,16 @@ export function GalleryPage({ type, id, onPick, jobs }: {
   const here = projects.find((p) => p.kind === workType && p.id === workId);
 
   return (
-    <div className="grid gap-4.5">
-      <div className="spread items-end gap-3 flex-wrap">
-        <div className="min-w-0">
-          <div className="label">Gallery · {here?.kindLabel ?? workType}</div>
-          {/* The work's name, not its folder; the folder stays in the tooltip. */}
-          <h2 className="trunc mt-1" title={workId}>{titleOf(workId)}</h2>
-        </div>
+    <div className="stack-lg">
+      <PageHead
+        /* The work's own title ("Indigo"), not its folder read aloud. */
+        title={<span title={workId}>{nameOf(workId)}</span>}
+        lede={`The pictures for this ${(here?.kindLabel ?? workType).toLowerCase()}, each with the recipe that made it.`}
+        actions={
         <div className="rowflex gap-2.5 flex-wrap">
           {drawing ? <span className="pill">{drawing} redrawing</span> : null}
           <select
-            className="input w-auto max-w-80"
+            className="input w-auto min-w-56 max-w-110"
             aria-label="Which work"
             value={`${workType}/${workId}`}
             onChange={(e) => {
@@ -146,22 +147,24 @@ export function GalleryPage({ type, id, onPick, jobs }: {
               if (kind) onPick(kind, rest.join("/"));
             }}
           >
-            {here ? null : <option value={`${workType}/${workId}`}>{titleOf(workId)}</option>}
+            {here ? null : <option value={`${workType}/${workId}`}>{nameOf(workId)}</option>}
             {projects.map((p) => (
-              <option key={`${p.kind}/${p.id}`} value={`${p.kind}/${p.id}`}>{titleOf(p.id)} · {p.kindLabel}</option>
+              <option key={`${p.kind}/${p.id}`} value={`${p.kind}/${p.id}`}>{nameOf(p.id)} · {p.kindLabel}</option>
             ))}
           </select>
+          {/* Words, not a grid glyph beside a bin glyph: the bin read as
+              "delete" sitting next to the work picker. */}
           <Seg
-            compact
             value={view}
             onChange={setView}
             options={[
-              { value: "work", label: "Pictures", icon: "grid" },
-              { value: "trash", label: "Trash", icon: "trash" },
+              { value: "work", label: "Pictures" },
+              { value: "trash", label: "Set aside" },
             ]}
           />
         </div>
-      </div>
+        }
+      />
 
       {view === "work" ? <DesignDesk type={workType} id={workId} jobs={jobs} /> : null}
 

@@ -190,7 +190,6 @@ export function StartPage({
       <section className="crop pb-0">
         <span className="disc fill w-57.5 h-57.5 -right-28 -top-31 opacity-13" />
         <span className="disc stroke w-29.5 h-29.5 -right-9.5 -top-8.5 opacity-40" />
-        <span className="disc dots w-24 h-24 -left-14.5 -bottom-16.5 opacity-28" />
         <h2 className="h-page">What are you making?</h2>
         <p className="muted text-body mt-2.5 max-w-measure">
           Picking one opens a conversation, not a form. You describe it, the machine asks a few
@@ -249,7 +248,7 @@ function Group({
       </div>
       <div className="tiles">
         {ways.map((w) => (
-          <button key={w.id} type="button" className="tile crop" onClick={w.start}>
+          <button key={w.id} type="button" className="tile tile-way crop" onClick={w.start}>
             <span className={`mark ${w.mark}`}>
               <span className="d1" />
               <span className="d2" />

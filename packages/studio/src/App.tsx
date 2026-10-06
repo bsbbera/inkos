@@ -42,6 +42,7 @@ import { crumbsFor } from "./components/shell/crumbs";
 import { useShellData, deriveActiveRun } from "./hooks/use-shell-data";
 import { useJobs, jobLabel, jobDetail } from "./hooks/use-jobs";
 import { Failed, Loading } from "./components/ui/states";
+import { Orb } from "./components/ui/working";
 
 export type { HashRoute as Route } from "./hooks/use-hash-route";
 
@@ -159,7 +160,7 @@ export function App() {
     toMcp: () => setRoute({ page: "mcp" }),
     toSetup: () => setRoute({ page: "setup" }),
     toAgents: () => setRoute({ page: "setup", tab: "agents" }),
-    toAudit: () => setRoute({ page: "audit" }),
+    toAudit: (kind?: string, id?: string) => setRoute(kind && id ? { page: "audit", kind, id } : { page: "audit" }),
     toNew: () => setRoute({ page: "new" }),
     toRun: () => setRoute({ page: "run" }),
     toPublication: (issueId: string) => setRoute({ page: "publication", issueId }),
@@ -188,6 +189,7 @@ export function App() {
       return {
         what: jobLabel(job),
         where: jobDetail(job),
+        stage: job.stage,
         more: jobs.live.length - 1,
         others: jobs.live.slice(1).map((j) => ({ what: jobLabel(j), where: jobDetail(j) })),
         ...(job.status === "running" && job.startedAt ? { startedAt: Date.parse(job.startedAt) } : {}),
@@ -224,7 +226,7 @@ export function App() {
   if (startupGate === "loading") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <span className="spin-ring" role="status" aria-label="Loading" />
+        <span role="status" aria-label="Loading"><Orb size={32} /></span>
       </div>
     );
   }
@@ -307,7 +309,7 @@ export function App() {
       {route.page === "doctor" && <DoctorView t={t} />}
       {route.page === "setup" && <SetupPage nav={nav} theme={theme} t={t} {...(route.tab ? { tab: route.tab } : {})} />}
       {route.page === "mcp" && <SetupPage nav={nav} tab="mcp" theme={theme} t={t} />}
-      {route.page === "audit" && <AuditPage sse={sse} />}
+      {route.page === "audit" && <AuditPage sse={sse} {...(route.kind && route.id ? { open: { kind: route.kind, id: route.id } } : {})} />}
       {route.page === "gallery" && (
         <GalleryPage
           {...(route.type ? { type: route.type } : {})}

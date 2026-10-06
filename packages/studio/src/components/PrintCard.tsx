@@ -151,7 +151,7 @@ export function PrintCard({ type, id }: { type: string; id: string }) {
       {desk.package?.findings.length ? (
         <div className="rows mt-3">
           {desk.package.findings.map((f) => (
-            <div className="row py-2 px-1 gap-2.5" key={f.code + f.message}>
+            <div className="row py-2 gap-2.5" key={f.code + f.message}>
               <span className={`${f.severity === "blocking" ? "st now" : "st"} gap-2.5`}><i />{f.severity}</span>
               <span className="meta whitespace-normal">{f.message}</span>
             </div>

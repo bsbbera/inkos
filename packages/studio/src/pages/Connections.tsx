@@ -16,8 +16,9 @@ import { fetchJson, putApi } from "../hooks/use-api";
 import { useServiceStore } from "../store/service/store";
 import { Tabs, toast, toastError } from "../components/ui/vermilion";
 import { Icon } from "../components/ui/icon";
-import { Spinner } from "../components/ui/working";
+import { Orb } from "../components/ui/working";
 import { Empty, ErrorLine, Failed, Loading } from "../components/ui/states";
+import { when } from "../lib/when";
 
 type Kind = "api" | "cli" | "local";
 
@@ -49,7 +50,7 @@ export function ago(iso: string, now = Date.now()): string {
   if (s < 45) return "just now";
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
-  return new Date(iso).toLocaleDateString();
+  return when(iso, now);
 }
 
 /** What the row says under its name. */
@@ -135,7 +136,7 @@ function Row({ c, onChanged }: { readonly c: Connection; readonly onChanged: () 
         disabled={busy || (needsKey && !c.hasKey && !key.trim())}
         onClick={() => void run()}
       >
-        {busy ? <Spinner /> : <Icon name="plug" size={14} />}
+        {busy ? <Orb state="connecting" /> : <Icon name="plug" size={14} />}
         {busy ? "Testing…" : "Test connection"}
       </button>
       {c.hasKey ? (
@@ -200,7 +201,7 @@ function AddCustom({ kind, onAdded }: { readonly kind: Kind; readonly onAdded: (
       {error ? <ErrorLine>{error}</ErrorLine> : null}
       <div className="rowflex gap-2">
         <button type="button" className="btn btn-sm" disabled={busy || !name.trim() || !baseUrl.trim()} onClick={() => void add()}>
-          {busy ? <Spinner /> : null}
+          {busy ? <Orb state="connecting" /> : null}
           {busy ? "Testing…" : "Add and test"}
         </button>
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => setOpen(false)}>Cancel</button>
@@ -212,7 +213,7 @@ function AddCustom({ kind, onAdded }: { readonly kind: Kind; readonly onAdded: (
 export function Connections() {
   const [rows, setRows] = useState<ReadonlyArray<Connection> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [kind, setKind] = useState<Kind>("api");
+  const [kind, setKind] = useState<Kind | null>(null);
   const refreshServices = useServiceStore((s) => s.refreshServices);
   const fetchBankModels = useServiceStore((s) => s.fetchBankModels);
 
@@ -237,9 +238,14 @@ export function Connections() {
   if (error) return <Failed what="Could not read the connections." detail={error} retry={() => void load()} />;
   if (!rows) return <Loading what="Testing what this machine can reach…" />;
 
-  const here = rows.filter((r) => r.kind === kind);
+  /* Open on the kind that has something working, not on API keys: a machine
+     running four CLIs opened on five empty "Paste API key" rows. */
+  const shown: Kind = kind
+    ?? (["cli", "api", "local"] as const).find((k) => rows.some((r) => r.kind === k && r.connected))
+    ?? "api";
+  const here = rows.filter((r) => r.kind === shown);
   const count = (k: Kind) => rows.filter((r) => r.kind === k && r.connected).length;
-  const note = KINDS.find((k) => k.value === kind)!.note;
+  const note = KINDS.find((k) => k.value === shown)!.note;
 
   return (
     <section className="panel">
@@ -256,7 +262,7 @@ export function Connections() {
       <div className="mt-4">
         <Tabs
           items={KINDS.map((k) => ({ value: k.value, label: `${k.label}${count(k.value) ? ` · ${count(k.value)}` : ""}` }))}
-          value={kind}
+          value={shown}
           onChange={setKind}
         />
       </div>
@@ -264,7 +270,7 @@ export function Connections() {
 
       {here.length === 0 ? (
         <div className="mt-3">
-          <Empty compact icon="plug" title={kind === "cli" ? "Install Claude Code, Codex, Devin or Antigravity and it shows here." : "Nothing here yet."} />
+          <Empty compact icon="plug" title={shown === "cli" ? "Install Claude Code, Codex, Devin or Antigravity and it shows here." : "Nothing here yet."} />
         </div>
       ) : (
         <ul className="rows mt-2 list-none p-0">
@@ -272,7 +278,7 @@ export function Connections() {
         </ul>
       )}
 
-      {kind !== "cli" ? <AddCustom key={kind} kind={kind} onAdded={changed} /> : null}
+      {shown !== "cli" ? <AddCustom key={shown} kind={shown} onAdded={changed} /> : null}
     </section>
   );
 }

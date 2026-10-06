@@ -14,6 +14,7 @@
  * "sentence std dev" told nobody anything - and to be honest that importing
  * replaces whatever voice was there before.
  */
+import { PageHead } from "../components/ui/page-head";
 import { useEffect, useMemo, useState } from "react";
 import { fetchJson, useApi, postApi } from "../hooks/use-api";
 import { Empty, Failed } from "../components/ui/states";
@@ -278,19 +279,12 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
 
   return (
     <div className="stack-lg">
-      <section className="crop pb-0">
-        <div className="head">
-          <h2 className="h-page">Write it in somebody else&rsquo;s hand</h2>
-          <p>
-            Paste a few pages by an author whose sentences you want. Quire measures how they are
-            built, has a model describe the habits behind them, and hands the result to a piece of
-            work as its voice. The craft rules stay underneath either way &mdash; this changes how
-            the prose sounds, not what counts as good prose.
-          </p>
-        </div>
-      </section>
+      <PageHead
+        title="Write it in somebody else’s hand"
+        lede="Paste a few pages by an author whose sentences you want. Quire measures how they are built, has a model describe the habits behind them, and hands the result to a piece of work as its voice. The craft rules stay underneath either way — this changes how the prose sounds, not what counts as good prose."
+      />
 
-      <section className="cols grid-cols-2">
+      <section className="cols grid-cols-2 items-start">
         <div className="panel">
           <div className="panel-head">
             <span className="grow">
@@ -386,7 +380,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
                   </span>
                 </div>
                 <div className="panel-body stack">
-                  <div className="cols gap-3.5 grid-cols-2">
+                  <div className="cols grid-cols-2">
                     <div>
                       <span className="label">Sentence length</span>
                       <div className="numeral tnum">{profile.avgSentenceLength.toFixed(1)}</div>
@@ -463,7 +457,7 @@ export function StyleManager({ jobs }: { readonly jobs: JobsView }) {
               ) : (
                 <div className="rows">
                   {styles.map((v) => (
-                    <div className="row py-2.5 px-1 gap-2.5" key={v.id}>
+                    <div className="row py-2.5 gap-2.5" key={v.id}>
                       <label className="rowflex gap-2.5 cursor-pointer">
                         <input
                           type="radio"

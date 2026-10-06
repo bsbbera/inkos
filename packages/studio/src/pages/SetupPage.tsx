@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
+import { PageHead } from "../components/ui/page-head";
 import { ProjectSettings } from "./ProjectSettings";
 import { McpPage } from "./McpPage";
 import { Bot, Cpu, HardDriveDownload, Image as ImageIcon, PlugZap, RefreshCw } from "../components/ui/glyphs";
@@ -44,12 +45,6 @@ function Section({
   return (
     <section className="panel crop">
       <header className="relative flex items-start gap-3.5">
-        <span
-          className="icon-ring"
-          aria-hidden="true"
-        >
-          {icon}
-        </span>
         <div className="min-w-0 flex-1">
           <h2 className="h-panel">{title}</h2>
           <p className="note mt-1.5">{note}</p>
@@ -149,7 +144,7 @@ function Images() {
 
       {status?.installed ? (
         <div className="mt-5">
-          <label htmlFor="comfy-workflow" className="label">
+          <label htmlFor="comfy-workflow" className="field-label">
             Workflow
           </label>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -273,12 +268,8 @@ export function SetupPage({
   const current = TABS.find((entry) => entry.id === active) ?? TABS[0];
 
   return (
-    <div className="space-y-6">
-      <header className="head">
-        <p className="label">How this is set up</p>
-        <h1 className="h-page mt-3">Settings</h1>
-        <p>{current.note}</p>
-      </header>
+    <div className="stack-lg">
+      <PageHead title="Settings" lede={current.note} />
 
       <div role="tablist" aria-label="Settings sections" className="tabs">
         {TABS.map((entry) => (

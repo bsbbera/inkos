@@ -433,7 +433,7 @@ export function BookDetail({
   const chapterRows = useArrivals(data?.chapters ?? NO_CHAPTERS, (c) => String(c.number));
 
   if (loading) return (
-    <div className="space-y-8" aria-busy="true">
+    <div className="stack-lg" aria-busy="true">
       <div className="space-y-3 border-b border-border/40 pb-8">
         <div className="skel h-10 w-2/5" />
         <div className="skel h-4 w-1/3" />
@@ -458,7 +458,7 @@ export function BookDetail({
   const exportHref = `/api/v1/books/${bookId}/export?format=${exportFormat}${exportApprovedOnly ? "&approvedOnly=true" : ""}`;
 
   return (
-    <div className="space-y-8 fade-in">
+    <div className="stack-lg fade-in">
       {/* Breadcrumbs */}
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-border/40 pb-8">

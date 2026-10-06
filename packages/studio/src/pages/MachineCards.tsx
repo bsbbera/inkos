@@ -109,7 +109,7 @@ export function CoverConfigCard() {
         }),
       });
       setStatus("saved");
-      setMessage(tr("封面配置已保存", "Cover config saved"));
+      setMessage(tr("封面配置已保存", "Saved."));
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : tr("保存封面配置失败", "Failed to save cover config"));
@@ -119,14 +119,14 @@ export function CoverConfigCard() {
   if (providers.length === 0 && status !== "error") return null;
 
   return (
-    <section className="panel space-y-3">
+    <section className="panel crop space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="h-panel">{tr("封面生成", "Cover generation")}</h2>
-          <p className="mt-1 text-xs text-muted-foreground/70">
+          <p className="note mt-1.5">
             {tr(
               "只配置封面通道和模型；封面尺寸由短篇封面提示词和内部默认处理。",
-              "Only configures the cover provider and model; cover size is handled by the short-story cover prompt and internal defaults.",
+              "Which service draws a short story's cover, and with which model. The size is set for you.",
             )}
           </p>
         </div>
@@ -138,8 +138,8 @@ export function CoverConfigCard() {
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted-foreground/70">{tr("服务", "Service")}</span>
+        <label className="field">
+          <span className="label">{tr("服务", "Service")}</span>
           <select
             value={service}
             onChange={(event) => handleServiceChange(event.target.value)}
@@ -150,8 +150,8 @@ export function CoverConfigCard() {
             ))}
           </select>
         </label>
-        <label className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted-foreground/70">{tr("封面模型", "Cover model")}</span>
+        <label className="field">
+          <span className="label">{tr("封面模型", "Cover model")}</span>
           <select
             value={model}
             onChange={(event) => setModel(event.target.value)}
@@ -165,8 +165,8 @@ export function CoverConfigCard() {
       </div>
 
       {needsKey && (
-      <label className="space-y-1.5">
-        <span className="block text-xs font-medium text-muted-foreground/70">Base URL</span>
+      <label className="field">
+        <span className="label">Base URL</span>
         <input
           type="url"
           value={baseUrl}
@@ -184,8 +184,8 @@ export function CoverConfigCard() {
       )}
 
       {needsKey ? (
-      <label className="space-y-1.5">
-        <span className="block text-xs font-medium text-muted-foreground/70">API Key</span>
+      <label className="field">
+        <span className="label">API Key</span>
         <div className="relative">
           <input
             type={showKey ? "text" : "password"}
@@ -207,7 +207,7 @@ export function CoverConfigCard() {
         <p className="text-small leading-5 text-muted-foreground/55">
           {tr(
             "图像在本机的 ComfyUI 中生成：无需密钥，离线可用。工作流与硬件设置在 Quire 的设置面板中。",
-            "Images render locally in ComfyUI: no key, works offline. The workflow and hardware settings live in Quire's settings panel.",
+            "Drawn on this machine in ComfyUI: no key, works offline. Its workflow is chosen under Images, above.",
           )}
         </p>
       )}
@@ -219,7 +219,7 @@ export function CoverConfigCard() {
           className="btn btn-sm inline-flex items-center gap-1.5"
         >
           {status === "saving" && <Spinner />}
-          {tr("保存封面配置", "Save cover config")}
+          {tr("保存封面配置", "Save")}
         </button>
         {message && (
           <span className={`hint ${status === "error" ? "is-bad" : "is-good"}`}>
@@ -294,19 +294,34 @@ export function PersonalSourcesCard() {
   };
 
   return (
-    <div className="panel mt-4">
-      <h3 className="h-panel">Your reading</h3>
-      <p className="hint mt-1">
+    <section className="panel crop">
+      <h2 className="h-panel">Your reading</h2>
+      <p className="note mt-1.5">
         Magazine research reads these before the web, so an issue can be made from what you read.
         Nothing leaves this machine except as text to your own model.
       </p>
-      <div className="rowflex flex-wrap gap-2 mt-3">
-        <input value={dir} onChange={(e) => setDir(e.target.value)} placeholder="Notes folder (full path)" aria-label="Notes folder" className="min-w-70" />
-        <input value={tag} onChange={(e) => setTag(e.target.value)} placeholder="Only notes tagged…" aria-label="Tag" />
-        <input type="date" value={since} onChange={(e) => setSince(e.target.value)} aria-label="Since" />
-        <label className="rowflex gap-1.5">
-          <input type="checkbox" checked={zotero} onChange={(e) => setZotero(e.target.checked)} /> Zotero library
+      {/* Labelled fields in a grid. Four bare inputs in a row read as one
+          sentence with the words missing, and the checkbox's label came out
+          larger than everything around it. */}
+      <div className="grid gap-3 mt-5 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <label className="field">
+          <span className="label">Notes folder</span>
+          <input className="input" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="C:\Users\you\Notes" />
         </label>
+        <label className="field">
+          <span className="label">Only notes tagged</span>
+          <input className="input" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="any tag" />
+        </label>
+        <label className="field">
+          <span className="label">Written since</span>
+          <input className="input" type="date" value={since} onChange={(e) => setSince(e.target.value)} />
+        </label>
+      </div>
+      <div className="rowflex gap-4 mt-3.5">
+        <label className="rowflex gap-2 text-body">
+          <input type="checkbox" checked={zotero} onChange={(e) => setZotero(e.target.checked)} /> Read my Zotero library too
+        </label>
+        <span className="grow" />
         <button type="button" className="btn btn-sm" onClick={() => void save()}>Save</button>
       </div>
       {state ? (
@@ -316,7 +331,7 @@ export function PersonalSourcesCard() {
         </p>
       ) : null}
       {note ? <p className="hint mt-1">{note}</p> : null}
-    </div>
+    </section>
   );
 }
 
@@ -362,11 +377,11 @@ export function PictureEngineCard() {
   };
 
   return (
-    <section className="panel space-y-3">
+    <section className="panel crop stack">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="h-panel">{tr("配图引擎", "Picture engine")}</h2>
-          <p className="mt-1 text-xs text-muted-foreground/70">
+          <p className="mt-1 muted text-body max-w-prose">
             {tr(
               "ComfyUI 在本机渲染，没有用量上限。Canva 额度用完时，同一个任务会自动转回 ComfyUI。",
               "ComfyUI renders on this machine with no limit. When Canva's allowance runs out, the same job falls back to ComfyUI on its own.",
@@ -380,8 +395,8 @@ export function PictureEngineCard() {
 
       <div className="grid gap-3 md:grid-cols-2">
         {ENGINE_SURFACES.map((surface) => (
-          <label key={surface} className="space-y-1.5">
-            <span className="block text-xs font-medium text-muted-foreground/70 capitalize">{surface}</span>
+          <label key={surface} className="field">
+            <span className="label capitalize">{surface}</span>
             <select
               value={prefs?.bySurface?.[surface] ?? "comfy"}
               onChange={(event) => void save({ bySurface: { ...(prefs?.bySurface ?? {}), [surface]: event.target.value } })}
@@ -392,8 +407,8 @@ export function PictureEngineCard() {
             </select>
           </label>
         ))}
-        <label className="space-y-1.5">
-          <span className="block text-xs font-medium text-muted-foreground/70">{tr("Canva 套餐", "Canva plan")}</span>
+        <label className="field">
+          <span className="label">{tr("Canva 套餐", "Canva plan")}</span>
           <select
             value={canva.plan}
             onChange={(event) => void save({ plan: event.target.value })}
@@ -406,8 +421,8 @@ export function PictureEngineCard() {
         </label>
       </div>
 
-      <label className="space-y-1.5">
-        <span className="block text-xs font-medium text-muted-foreground/70">{tr("Canva 访问令牌", "Canva access token")}</span>
+      <label className="field">
+        <span className="label">{tr("Canva 访问令牌", "Canva access token")}</span>
         <div className="relative">
           <input
             type={showToken ? "text" : "password"}

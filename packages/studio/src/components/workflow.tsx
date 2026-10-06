@@ -18,6 +18,8 @@
  * wherever it appears, because it is the text itself rather than a report
  * about the text.
  */
+import { briefly } from "../lib/error-copy";
+import { when } from "../lib/when";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Icon } from "./ui/icon";
 
@@ -81,6 +83,10 @@ export const STAGE_CLASS: Readonly<Record<string, string>> = {
  * opens onto the rest.
  */
 function shortDetail(detail: string): string {
+  /* A stage that failed carries the provider's message ("page-8: antigravity:
+     rate-limit — error: Individual quota reached…"); the bar says it in
+     words, first sentence only, and the raw text stays on the title. */
+  if (briefly(detail) !== detail) return briefly(detail);
   /* "22 files, 40,931 words" -> "22 files". The bar has room for the number
      that changes, and the full sentence is on the row's title. */
   return detail.split(",")[0]!.trim();
@@ -176,7 +182,7 @@ export function GateCard({
         {gate.approved ? (
           <span className="pill pill-ok">
             <Icon name="check" size={12} />
-            {" "}approved {new Date(gate.approved.at).toLocaleDateString()}
+            {" "}approved {when(gate.approved.at)}
           </span>
         ) : (
           <span className="pill">not approved</span>

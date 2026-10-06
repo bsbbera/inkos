@@ -7,6 +7,28 @@ import { useI18n } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Plus, Pencil, Trash2 } from "../components/ui/glyphs";
+import { PageHead } from "../components/ui/page-head";
+import { Empty } from "../components/ui/states";
+import { manuscriptBlocks } from "../lib/manuscript-md";
+
+/* A genre's rules file, drawn the way the reader draws a manuscript. Lists
+   stay lines: each "- " rule is its own block-level line. */
+function Rules({ text }: { readonly text: string }) {
+  if (!text.trim()) return <p className="dim">No rules written.</p>;
+  return (
+    <div className="read read-quiet">
+      {manuscriptBlocks(text).map((b, i) => {
+        const shown = b.runs.filter((r) => !r.hidden).map((r, j) => {
+          const t = text.slice(r.from, r.to);
+          return r.bold ? <b key={j}>{t}</b> : r.italic ? <em key={j}>{t}</em> : <span key={j}>{t}</span>;
+        });
+        if (b.kind === "rule") return <hr key={i} />;
+        if (b.kind === "h") return <h3 key={i}>{shown}</h3>;
+        return <p key={i} className="whitespace-pre-line">{shown}</p>;
+      })}
+    </div>
+  );
+}
 
 interface GenreInfo {
   readonly id: string;
@@ -215,14 +237,16 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
 
   // Only show genres matching current language, plus custom project genres
   const filteredGenres = data?.genres.filter((g) => g.language === lang || g.source === "project") ?? [];
-  const validSelected = selected && filteredGenres.some((g) => g.id === selected) ? selected : null;
+  // Open on the first genre rather than an empty pane that asks to be filled.
+  const validSelected = (selected && filteredGenres.some((g) => g.id === selected) ? selected : null)
+    ?? filteredGenres[0]?.id ?? null;
   const selectedGenre = filteredGenres.find((g) => g.id === validSelected) ?? null;
 
   const { data: detail } = useApi<GenreDetail>(validSelected ? `/genres/${validSelected}` : "");
 
   const handleCopy = async (id: string) => {
     await postApi(`/genres/${id}/copy`);
-    toast(`Copied ${id} to project genres/`);
+    toast("Copied into this project. Edit it there.");
     refetch();
   };
 
@@ -315,22 +339,22 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="h-page">{t("create.genre")}</h1>
-        <button
-          onClick={openCreateForm}
-          className="btn btn-sm flex items-center gap-1.5"
-        >
-          <Plus size={16} />
-          {t("genre.createNew")}
-        </button>
-      </div>
+    <div className="stack-lg">
+      <PageHead
+        title="Genres"
+        lede="What a genre tells the writer: the kinds of chapter it is built from, the words it wears out, and the rules it keeps. A copy in this project can be edited; the ones that come with Quire stay as they are."
+        actions={
+          <button type="button" onClick={openCreateForm} className="btn btn-sm">
+            <Plus size={15} />
+            New genre
+          </button>
+        }
+      />
 
       {formMode !== "hidden" && (
-        <div className="panel">
+        <div className="panel fade-in">
           <h2 className="h-panel mb-4">
-            {formMode === "create" ? t("genre.createNew") : `${t("common.edit")}: ${form.id}`}
+            {formMode === "create" ? "A new genre" : `Editing ${form.name || form.id}`}
           </h2>
           <GenreForm
             form={form}
@@ -344,102 +368,82 @@ export function GenreManager({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFu
         </div>
       )}
 
-      <div className="grid grid-cols-[250px_1fr] gap-6">
-        {/* Genre list */}
+      <div className="grid grid-cols-[260px_minmax(0,1fr)] gap-5 items-start">
         <div className="panel panel-flush overflow-hidden">
-          {filteredGenres.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => setSelected(g.id)}
-              className={`w-full text-left px-4 py-3 border-b border-border/40 transition-colors ${
-                validSelected === g.id ? "bg-primary/10 text-primary" : "hover:bg-muted/30"
-              }`}
-            >
-              <div className="text-sm font-medium">{g.name}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">
-                {g.id} · {g.language} · {g.source}
-              </div>
-            </button>
-          ))}
+          <div className="rows px-5 py-1.5 stagger">
+            {filteredGenres.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                onClick={() => setSelected(g.id)}
+                className="row py-2.5"
+                aria-current={validSelected === g.id ? "true" : undefined}
+              >
+                <span className="grow min-w-0">
+                  <span className="name trunc">{g.name}</span>
+                  <span className="meta">{g.source === "project" ? "In this project" : "Comes with Quire"}</span>
+                </span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Detail panel */}
-        <div className="panel min-h-100">
+        <div className="panel">
           {validSelected && detail ? (
-            <div className="space-y-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="h-panel">{detail.profile.name}</h2>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {detail.profile.id} · {detail.profile.language} ·
-                    {detail.profile.numericalSystem ? " Numerical" : ""}
-                    {detail.profile.powerScaling ? " Power" : ""}
-                    {detail.profile.eraResearch ? " Era" : ""}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={openEditForm}
-                    className="btn btn-line btn-sm flex items-center gap-1.5"
-                  >
+            <div key={validSelected} className="stack-lg fade-in">
+              <div className="spread items-start gap-4">
+                <h2 className="h-panel">{detail.profile.name}</h2>
+                <div className="rowflex gap-2">
+                  <button type="button" onClick={openEditForm} className="btn btn-line btn-sm">
                     <Pencil size={14} />
-                    {t("common.edit")}
+                    Edit
                   </button>
-                  {selectedGenre?.source === "project" && (
-                    <button
-                      onClick={() => setConfirmDeleteOpen(true)}
-                      className="btn btn-bad btn-sm flex items-center gap-1.5"
-                    >
+                  {selectedGenre?.source === "project" ? (
+                    <button type="button" onClick={() => setConfirmDeleteOpen(true)} className="btn btn-bad btn-sm">
                       <Trash2 size={14} />
-                      {t("common.delete")}
+                      Delete
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => validSelected && handleCopy(validSelected)} className="btn btn-line btn-sm">
+                      Copy into this project
                     </button>
                   )}
-                  <button
-                    onClick={() => validSelected && handleCopy(validSelected)}
-                    className="btn btn-line btn-sm"
-                  >
-                    {t("genre.copyToProject")}
-                  </button>
                 </div>
               </div>
 
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.chapterTypes")}</div>
-                <div className="flex gap-2 flex-wrap">
-                  {detail.profile.chapterTypes.map((ct) => (
-                    <span key={ct} className="pill">{ct}</span>
-                  ))}
+              <section>
+                <div className="label mb-2.5">Chapters it is built from</div>
+                <div className="rowflex gap-2 flex-wrap">
+                  {detail.profile.chapterTypes.map((ct) => <span key={ct} className="pill">{ct}</span>)}
                 </div>
-              </div>
+              </section>
 
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.fatigueWords")}</div>
-                <div className="flex gap-2 flex-wrap">
-                  {detail.profile.fatigueWords.slice(0, 15).map((w) => (
-                    <span key={w} className="pill">{w}</span>
-                  ))}
-                  {detail.profile.fatigueWords.length > 15 && (
-                    <span className="text-xs text-muted-foreground">+{detail.profile.fatigueWords.length - 15}</span>
-                  )}
+              <section>
+                <div className="label mb-2.5">Words it wears out</div>
+                <div className="rowflex gap-2 flex-wrap">
+                  {detail.profile.fatigueWords.slice(0, 15).map((w) => <span key={w} className="pill">{w}</span>)}
+                  {detail.profile.fatigueWords.length > 15 ? (
+                    <span className="dim text-cap">and {detail.profile.fatigueWords.length - 15} more</span>
+                  ) : null}
                 </div>
-              </div>
+              </section>
 
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.pacingRule")}</div>
-                <div className="text-sm">{detail.profile.pacingRule || "—"}</div>
-              </div>
+              <section>
+                <div className="label mb-2.5">Pace</div>
+                <p className="text-body max-w-measure">{detail.profile.pacingRule || "No rule; the writer sets its own pace."}</p>
+              </section>
 
-              <div>
-                <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">{t("genre.rules")}</div>
-                <pre className="text-sm leading-relaxed whitespace-pre-wrap font-mono text-foreground/80 bg-muted/30 p-4 rounded-md max-h-75 overflow-y-auto">
-                  {detail.body || "—"}
-                </pre>
-              </div>
+              <section>
+                <div className="label mb-2.5">The rules</div>
+                {/* Read as a page, not as source: the same reader the
+                    manuscript uses, so "## Genre Prohibitions" is a heading. */}
+                <div className="well genre-rules">
+                  <Rules text={detail.body || ""} />
+                </div>
+              </section>
             </div>
           ) : (
-            <div className="text-muted-foreground text-sm italic flex items-center justify-center h-full">
-              {t("genre.selectHint")}
-            </div>
+            <Empty icon="layers" title="Pick a genre to read it." />
           )}
         </div>
       </div>

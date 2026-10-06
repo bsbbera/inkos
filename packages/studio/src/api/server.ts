@@ -203,7 +203,7 @@ import {
   resolveRoutingTable,
   type ModelPin,
 } from "@actalk/quire-core";
-import { listAuditTargets, registerAuditRoutes } from "./audit.js";
+import { listAuditTargets, registerAuditRoutes, workspaceSummary } from "./audit.js";
 import {
   approveAsset, isServableImage, redesignAsset, registerAssetRoutes, rememberOnRecipe, trashAsset,
 } from "./assets.js";
@@ -220,7 +220,7 @@ import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
-import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
@@ -2923,9 +2923,24 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     },
   };
 
-  // Logger sink that prints to server terminal
+  /*
+   * The Logs screen read `quire.log` from the workspace and nothing ever wrote
+   * it, so it said "the machine has not said anything yet" over runs that had
+   * failed out loud. Every entry the terminal prints is now also kept there, as
+   * one JSON line, and a file past 4 MB is set aside once at start.
+   */
+  const logFile = join(root, ".quire", "quire.log");
+  // ponytail: one rotation at start, a size check per write if a single session can outgrow it
+  void stat(logFile)
+    .then((s) => (s.size > 4 * 1024 * 1024 ? rename(logFile, `${logFile}.1`) : undefined))
+    .catch(() => undefined);
+
+  // Logger sink that prints to server terminal, and keeps the line for the Logs screen
   const consoleSink: LogSink = {
     write(entry: LogEntry): void {
+      void mkdir(join(root, ".quire"), { recursive: true })
+        .then(() => appendFile(logFile, JSON.stringify(entry) + "\n", "utf-8"))
+        .catch(() => undefined);
       const prefix = `[${entry.tag}]`;
       if (entry.level === "warn") console.warn(prefix, entry.message);
       else if (entry.level === "error") console.error(prefix, entry.message);
@@ -5241,9 +5256,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // --- Logs ---
 
   app.get("/api/v1/logs", async (c) => {
-    const logPath = join(root, "quire.log");
     try {
-      const content = await readFile(logPath, "utf-8");
+      const content = await readFile(logFile, "utf-8");
       const lines = content.trim().split("\n").slice(-100);
       const entries = lines.map((line) => {
         try { return JSON.parse(line); } catch { return { message: line }; }
@@ -6844,7 +6858,20 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * a screen can listen for `job:progress` without also being woken by every
    * pipeline transition.
    */
-  setJobSink((event, job) => broadcast(event, job));
+  setJobSink((event, job) => {
+    broadcast(event, job);
+    // A job starting, finishing or failing is the line the Logs screen is
+    // for; progress ticks would drown it, so they stay on the stream only.
+    if (job.status === "running" && job.startedAt && !job.message
+      || job.status === "done" || job.status === "failed" || job.status === "cancelled") {
+      consoleSink.write({
+        level: job.status === "failed" ? "error" : "info",
+        tag: job.stage,
+        message: `${job.ref.type}/${job.ref.id} ${job.status}${job.error ? `: ${job.error}` : ""}`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
 
   /** What is running, what is waiting, and what just finished. */
   app.get("/api/v1/jobs", (c) => c.json({ jobs: listJobs() }));
@@ -8797,9 +8824,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       bookCount: 0,
     };
 
+    /* Every piece of work in the folder. Counting books/ alone reported
+       "0 books" beside four shorts and storyboards and three issues. */
     try {
-      const books = await state.listBooks();
-      checks.bookCount = books.length;
+      const summary = await workspaceSummary(root);
+      checks.bookCount = summary.projects.filter((p) => p.files > 0).length;
+      checks.booksDir = true;
     } catch { /* ignore */ }
 
     try {

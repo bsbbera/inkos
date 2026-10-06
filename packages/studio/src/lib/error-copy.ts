@@ -77,6 +77,16 @@ export function isStop(e: { readonly message: string; readonly stopped?: boolean
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/**
+ * A status line that may be carrying a provider's error ("page-8: antigravity:
+ * rate-limit — error: Individual quota reached…"): said in words, first
+ * sentence only. Anything that is not an error passes through unchanged.
+ */
+export function briefly(detail: string): string {
+  if (!/error|rate.?limit|quota|failed|refused|timed? ?out/i.test(detail)) return detail;
+  return plainError(detail).text.split(/(?<=\.)\s/)[0]!.trim();
+}
+
 export function plainError(message: string): PlainError {
   const head = /^([\w.-]+):\s*([\w.-]+):\s*[\w-]+\s*[—-]\s*/.exec(message);
   const where = head ? head[1].replace(/-(\d+)$/, " $1") : "";
@@ -108,10 +118,18 @@ export function plainError(message: string): PlainError {
     text = `${who} is down or overloaded. Resume in a few minutes.`;
     fix = "resume";
   }
+  /* A step's own id ahead of the message ("factcheck:verify:p1: model
+     returned no") is the pipeline talking to itself. */
+  const step = /^([a-z]+)(?::[a-z-]+)*:(?:p|page-?)(\d+):\s*/i.exec(message);
+  if (!text && /returned (no|nothing|empty)|empty (response|reply)|no output/.test(m)) {
+    const doing = step ? ({ factcheck: "checking the facts", write: "writing", plan: "planning", audit: "reading it back" } as Record<string, string>)[step[1]!.toLowerCase()] ?? step[1] : null;
+    text = `The model gave back nothing usable${doing ? ` while ${doing}` : ""}${step ? ` on page ${step[2]}` : ""}. Send it again, or pick another model in Settings.`;
+    fix = "models";
+  }
   if (text) return { where, text, rewritten: true, ...(fix ? { fix } : {}), ...(resetMs ? { resetMs } : {}) };
 
   // Unknown: keep the person's words, drop the trailing machine payload.
-  const prose = message.slice(head ? head[0].length : 0).split(/\s(?:[A-Z_]{3,}:|\{)/)[0].trim();
+  const prose = message.slice(head ? head[0].length : step ? step[0].length : 0).split(/\s(?:[A-Z_]{3,}:|\{)/)[0].trim();
   const short = prose.length > 220 ? `${prose.slice(0, 217)}…` : prose;
   return { where, text: short || message, rewritten: short !== message };
 }

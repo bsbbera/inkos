@@ -6,7 +6,7 @@
  * names are the mock's exactly - a screen ports by carrying its JSX across,
  * and nothing below knows what screen it is on.
  */
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { Icon, type IconName } from "./icon";
 import { plainError } from "../../lib/error-copy";
 
@@ -36,8 +36,19 @@ export function Seg<T extends string>({
    */
   readonly compact?: boolean;
 }) {
+  /* The selection is one thumb that slides to the chosen segment rather than
+     a fill that jumps: the eye follows the move and knows what changed. */
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    const on = el?.querySelector<HTMLElement>('button[aria-pressed="true"]');
+    if (!el || !on) return;
+    el.style.setProperty("--seg-x", `${on.offsetLeft}px`);
+    el.style.setProperty("--seg-w", `${on.offsetWidth}px`);
+    if (!el.dataset.ready) requestAnimationFrame(() => { el.dataset.ready = "1"; });
+  }, [value, options.length, compact]);
   return (
-    <div className={`seg${compact ? " seg-compact" : ""}${className ? ` ${className}` : ""}`}>
+    <div ref={box} className={`seg seg-slide${compact ? " seg-compact" : ""}${className ? ` ${className}` : ""}`}>
       {options.map((o) => (
         <button
           key={o.value}

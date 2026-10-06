@@ -29,13 +29,15 @@ export const NAV: readonly NavGroup[] = [
   {
     label: "Working",
     items: [
-      { id: "home", icon: "home", label: "Home", route: { page: "dashboard" }, owns: ["run"] },
+      { id: "home", icon: "home", label: "Home", route: { page: "dashboard" } },
       {
         id: "chat",
         icon: "chat",
         label: "Chat",
         route: { page: "chat" },
-        owns: ["book-create", "new", "film-author"],
+        /* "Start something" is its own button and lights itself; the rail
+           marking Chat while the page said "Start something" read as lost. */
+        owns: ["book-create", "film-author"],
       },
       {
         id: "books",
@@ -69,7 +71,7 @@ export const NAV: readonly NavGroup[] = [
     label: "System",
     items: [
       { id: "genres", icon: "layers", label: "Genres", route: { page: "genres" } },
-      { id: "audit-packs", icon: "pulse", label: "Audit checks", route: { page: "audit-packs" } },
+      { id: "audit-packs", icon: "target", label: "Audit checks", route: { page: "audit-packs" } },
       {
         id: "setup",
         icon: "plug",
@@ -80,7 +82,7 @@ export const NAV: readonly NavGroup[] = [
            the model picker. */
         owns: ["project-settings", "mcp"],
       },
-      { id: "daemon", icon: "cpu", label: "Daemon", route: { page: "daemon" } },
+      { id: "daemon", icon: "cpu", label: "Daemon", route: { page: "daemon" }, owns: ["run"] },
       { id: "logs", icon: "list", label: "Logs", route: { page: "logs" } },
     ],
   },
@@ -89,10 +91,10 @@ export const NAV: readonly NavGroup[] = [
     items: [
       { id: "translation", icon: "type", label: "Translation", route: { page: "translation" } },
       { id: "style", icon: "drop", label: "Style", route: { page: "style" } },
-      { id: "taste", icon: "pulse", label: "Taste", route: { page: "taste" } },
+      { id: "taste", icon: "heart", label: "Taste", route: { page: "taste" } },
       { id: "import", icon: "file", label: "Import", route: { page: "import" } },
-      { id: "radar", icon: "search", label: "Radar", route: { page: "radar" } },
-      { id: "doctor", icon: "heart", label: "Doctor", route: { page: "doctor" } },
+      { id: "radar", icon: "chart", label: "Radar", route: { page: "radar" } },
+      { id: "doctor", icon: "checkC", label: "Doctor", route: { page: "doctor" } },
       { id: "styleguide", icon: "grid", label: "Style guide", route: { page: "styleguide" } },
     ],
   },

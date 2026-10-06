@@ -1,4 +1,7 @@
 import { Empty } from "../components/ui/states";
+import { PageHead } from "../components/ui/page-head";
+import { Seg } from "../components/ui/vermilion";
+import { titleOf } from "../lib/title-of";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 /*
@@ -208,32 +211,29 @@ export function AuditPacks() {
   );
 
   return (
-    <div className="stack">
-      <div className="panel">
-        <div className="spread items-start">
-          <div>
-            <h3 className="h-panel">What the audit looks for</h3>
-            <p className="hint mt-1">
-              A pack turns checks on and off, adds one of your own in a sentence, and moves
-              the bar. Nothing here changes a work until the work picks the pack.
-            </p>
-          </div>
-          <button type="button" className="btn btn-sm" onClick={() => setDraft(BLANK)}>New pack</button>
-        </div>
-        {note ? <p className="hint mt-2">{note}</p> : null}
-      </div>
+    <div className="stack-lg">
+      <PageHead
+        title="What the audit looks for"
+        lede="A pack turns checks on and off, adds one of your own in a sentence, and moves the bar. Nothing here changes a work until the work picks the pack."
+        /* The form below is always a pack; this only clears it, so it is
+           offered only while an existing pack is open in it. */
+        actions={draft.id && packs.some((p) => p.id === draft.id)
+          ? <button type="button" className="btn btn-line btn-sm" onClick={() => setDraft(BLANK)}>Start a new pack</button>
+          : undefined}
+      />
+      {note ? <p className="hint fade-in">{note}</p> : null}
 
       <div className="panel">
         <h3 className="h-panel">Packs</h3>
-        <div className="rows mt-2.5">
+        <div className="rows mt-2.5 stagger">
           {packs.map((p) => (
-            <div className="row py-2.5 px-1 gap-2.5" key={p.id}>
-              <button type="button" className="btn btn-quiet btn-sm" onClick={() => setDraft(p)}>{p.id}</button>
-              <span className="grow" />
-              <span className="meta">
-                v{p.version} · {p.source === "user" ? "yours" : "shipped"}
-                {p.appliesTo?.length ? ` · ${p.appliesTo.join(", ")}` : " · every type"}
-              </span>
+            <div className="row py-2.5 gap-2.5" key={p.id} aria-current={draft.id === p.id ? "true" : undefined}>
+              <button type="button" className="grow text-left min-w-0 bg-transparent border-0 p-0 cursor-pointer" onClick={() => setDraft(p)} title={p.id}>
+                <span className="name text-body">{titleOf(p.id)}</span>
+                <span className="meta">
+                  {p.source === "user" ? "Yours" : "Comes with Quire"} · {p.appliesTo?.length ? `for ${p.appliesTo.join(", ")}` : "for every kind of work"} · version {p.version}
+                </span>
+              </button>
               {p.source === "user" ? (
                 <button type="button" className="btn btn-quiet btn-sm" onClick={() => void remove(p.id)}>Remove</button>
               ) : null}
@@ -244,8 +244,8 @@ export function AuditPacks() {
       </div>
 
       <div className="panel">
-        <h3 className="h-panel">{draft.id ? `Editing ${draft.id}` : "New pack"}</h3>
-        <div className="rowflex gap-2.5 mt-2.5 flex-wrap">
+        <h3 className="h-panel">{draft.id ? `Editing ${titleOf(draft.id)}` : "A new pack"}</h3>
+        <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)] gap-2.5 mt-2.5">
           <label className="field">
             <span className="label">Name</span>
             <input
@@ -293,20 +293,20 @@ export function AuditPacks() {
           {(catalogue?.dimensions ?? []).map((d) => {
             const state = enabled.has(d.id) ? "on" : disabled.has(d.id) ? "off" : "default";
             return (
-              <div className="row py-2 px-1 gap-2.5" key={d.id}>
-                <span className="grow">
-                  {d.id}. {d.en}
-                  {d.ask ? <span className="meta ml-2">{d.ask}</span> : null}
+              <div className="row still py-2.5 gap-3" key={d.id}>
+                <span className="grow min-w-0">
+                  <span className="name text-body">{d.en}</span>
+                  {d.ask ? <span className="meta">{d.ask}</span> : null}
                 </span>
-                {(["default", "on", "off"] as const).map((s) => (
-                  <button
-                    key={s} type="button"
-                    className={state === s ? "btn btn-sm" : "btn btn-quiet btn-sm"}
-                    onClick={() => setDimension(d.id, s)}
-                  >
-                    {s === "default" ? "As usual" : s === "on" ? "On" : "Off"}
-                  </button>
-                ))}
+                <Seg
+                  value={state}
+                  onChange={(s) => setDimension(d.id, s)}
+                  options={[
+                    { value: "default", label: "As usual" },
+                    { value: "on", label: "On" },
+                    { value: "off", label: "Off" },
+                  ]}
+                />
               </div>
             );
           })}
@@ -331,7 +331,7 @@ export function AuditPacks() {
         </div>
         <div className="rows mt-2.5">
           {custom.map((d, i) => (
-            <div className="row py-2.5 px-1 gap-2 items-start" key={i}>
+            <div className="row py-2.5 gap-2 items-start" key={i}>
               <input
                 className="input max-w-40" value={d.label} placeholder="Human warmth"
                 aria-label="Check name"
@@ -426,7 +426,7 @@ export function AuditPacks() {
         {findings ? (
           <div className="rows mt-2.5">
             {findings.length === 0 ? <p className="hint">Nothing flagged.</p> : findings.map((f, i) => (
-              <div className="row py-2 px-1 gap-2.5" key={i}>
+              <div className="row py-2 gap-2.5" key={i}>
                 <span className="meta min-w-17.5">{f.severity}</span>
                 <span className="grow">{f.description}</span>
                 <span className="meta">{f.category}</span>

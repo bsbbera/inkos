@@ -12,6 +12,7 @@
  */
 import type { Message, ToolExecution } from "../../store/chat/types";
 import { markedFiles, namedFiles } from "./tool-marks";
+import { when } from "../../lib/when";
 
 export interface SessionFile {
   readonly path: string;
@@ -60,7 +61,7 @@ export function whenAgo(at: number, now = Date.now()): string {
   if (mins < 60) return `${mins} minute${mins === 1 ? "" : "s"} ago`;
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
-  return new Date(at).toLocaleDateString();
+  return when(at, now);
 }
 
 export function sessionFiles(

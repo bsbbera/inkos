@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PageHead } from "../components/ui/page-head";
 import { fetchJson, invalidateApiPaths, useApi, postApi } from "../hooks/use-api";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
@@ -187,11 +188,11 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
   ];
 
   return (
-    <div className="space-y-8">
-      <h1 className="h-page flex items-center gap-3">
-        <span className="icon-ring icon-ring-lg" aria-hidden="true"><FileInput size={19} /></span>
-        {t("import.title")}
-      </h1>
+    <div className="stack-lg">
+      <PageHead
+        title={t("import.title")}
+        lede="Chapters into a book you already have, or a source to build something new on. The Start page opens the same doors as a conversation; these are the forms behind them."
+      />
 
       {/* Tabs */}
       <div className="tabs" role="tablist">
@@ -218,18 +219,27 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
               <option value="">{t("import.selectTarget")}</option>
               {booksData?.books.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
             </select>
-            <input
-              type="text" value={chSplitRegex} onChange={(e) => setChSplitRegex(e.target.value)}
-              placeholder={t("import.splitRegex")}
-              className="input w-full font-mono"
-            />
             <textarea value={chText} onChange={(e) => setChText(e.target.value)} rows={10}
+              aria-label="The chapters"
               placeholder={t("import.pasteChapters")}
-              className="input w-full resize-none font-mono"
+              className="input w-full resize-y"
             />
+            {/* A regular expression is a power tool; most text splits on its
+                own headings, so it waits behind "More". */}
+            <details className="more">
+              <summary>More</summary>
+              <label className="field mt-2.5">
+                <span className="label">{t("import.splitRegex")}</span>
+                <input
+                  type="text" value={chSplitRegex} onChange={(e) => setChSplitRegex(e.target.value)}
+                  placeholder="^Chapter \d+"
+                  className="input w-full mono"
+                />
+              </label>
+            </details>
             <button onClick={handleImportChapters} disabled={loading || !chBookId || !chText.trim()}
               className="btn">
-              {loading ? t("import.importing") : t("import.chapters")}
+              {loading ? t("import.importing") : "Bring the chapters in"}
             </button>
           </>
         )}
@@ -278,7 +288,7 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             </select>
             <button onClick={handleImportCanon} disabled={loading || !canonTarget || (canonSourceType === "book" ? !canonFrom : !canonFile)}
               className="btn">
-              {loading ? t("import.importing") : t("import.canon")}
+              {loading ? t("import.importing") : "Bring the canon in"}
             </button>
           </>
         )}
@@ -312,7 +322,7 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             </div>
             <textarea value={ffText} onChange={(e) => setFfText(e.target.value)} rows={10}
               placeholder={t("import.pasteMaterial")}
-              className="input w-full resize-none font-mono"
+              className="input w-full resize-y"
             />
             <button onClick={handleFanficInit} disabled={loading || !ffTitle.trim() || !ffText.trim()}
               className="btn">
@@ -371,7 +381,7 @@ export function ImportManager({ nav, theme, t, initialTab }: { nav: Nav; theme: 
             />
             <textarea value={imRef} onChange={(e) => setImRef(e.target.value)} rows={8}
               placeholder={t("import.imitationRef")}
-              className="input w-full resize-none font-mono"
+              className="input w-full resize-y"
             />
             <button onClick={handleImitationInit} disabled={loading || !imTitle.trim() || !imRef.trim() || !imIdea.trim()}
               className="btn">

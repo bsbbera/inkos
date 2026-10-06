@@ -8,7 +8,7 @@
 import { useState } from "react";
 import { Icon, ICONS, type IconName } from "../components/ui/icon";
 import { Seg, Tabs, toast, toastError } from "../components/ui/vermilion";
-import { Bar, Ring, Spinner, Working } from "../components/ui/working";
+import { Bar, Orb, Ring, Spinner, Working } from "../components/ui/working";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { TYPE_STEPS } from "../lib/utils";
 import { useTheme, type ThemeMode } from "../hooks/use-theme";
@@ -195,7 +195,7 @@ export function StyleGuide() {
             </p>
           </div>
           <div className="panel stack">
-            <h3 className="h-panel">The four working states</h3>
+            <h3 className="h-panel">The working states</h3>
             <p className="note">
               The only movement beyond hover and press. Each has one shape on every screen, and a
               word beside it. Never in or beside the reading column.
@@ -204,6 +204,9 @@ export function StyleGuide() {
               <Working kind="searching" label="Searching the web…" />
               <Working kind="planning" label="Planning the issue…" />
               <Working kind="thinking" label="Thinking…" />
+              <Working kind="checking" label="Checking the chapter…" />
+              <Working kind="connecting" label="Testing the connection…" />
+              <Working kind="building" label="Laying out the pages…" />
               <span className="ws">Writing page 4<span className="caret" aria-hidden="true" /></span>
               <Working kind="generating" label="Generating pictures…" />
               <Working kind="generating" value={0.6} label="Generating pictures · 6 of 10" />
@@ -215,6 +218,11 @@ export function StyleGuide() {
               <Ring value={0.4} size="sm" />
               <Ring value={0.4} />
               <Ring value={0.4} size="lg" />
+              <Ring value={0.4} size="sm" orb="working" />
+              <Ring value={0.4} size="lg" orb="composing" />
+              <Orb size={64} state="weaving" />
+              <Orb state="working" tone="ok" />
+              <Orb state="working" tone="quiet" />
               <Spinner />
               <Bar value={0.4} className="w-40" />
             </div>

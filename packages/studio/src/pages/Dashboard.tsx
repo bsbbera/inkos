@@ -63,6 +63,8 @@ import { toast } from "../components/ui/vermilion";
 import { Ring } from "../components/ui/working";
 import { Num } from "../components/ui/num";
 import { titleOf } from "../lib/title-of";
+import { standingOf } from "../lib/standing";
+import { WorkTile } from "../components/ui/work-tile";
 import { shimGet, type ComfyStatus, type ShimStatus } from "../lib/shim";
 import { useEffect, useState } from "react";
 
@@ -75,42 +77,7 @@ interface Nav {
   readonly toRun: () => void;
   readonly toSetup: () => void;
   readonly toNew: () => void;
-  readonly toAudit: () => void;
-}
-
-/**
- * Which silhouette a creation wears.
- *
- * vermilion.css ships one per form and the screen was using two of them: a
- * short, a storyboard, a script and a translation all had a mark drawn for
- * them and no tile to wear it on, because only books and publications were
- * ever listed here.
- */
-const MARKS: Readonly<Record<string, string>> = {
-  book: "mark-book",
-  short: "mark-short",
-  script: "mark-script",
-  storyboard: "mark-storyboard",
-  "interactive-film": "mark-film",
-  publication: "mark-mag",
-  translation: "mark-translation",
-  play: "mark-world",
-};
-
-/**
- * Where a creation has got to, in the words the mock uses.
- *
- * `blocked` is the one state the mock does not draw, and it is the one worth
- * adding: a blocking finding is the difference between work that needs looking
- * at and work that cannot be signed off until someone acts.
- */
-function creationBadge(p: {
-  files: number; read: number; signedOff: number; blocking: number;
-}): { readonly label: string; readonly tone: string } {
-  if (p.files > 0 && p.signedOff === p.files) return { label: "approved", tone: "pill pill-ok" };
-  if (p.blocking > 0) return { label: "blocked", tone: "pill pill-bad" };
-  if (p.read < p.files) return { label: "needs a read", tone: "pill pill-warn" };
-  return { label: "drafting", tone: "pill pill-fill" };
+  readonly toAudit: (kind?: string, id?: string) => void;
 }
 
 /** One thing a person has to decide. The whole point of the screen. */
@@ -189,12 +156,17 @@ export function deriveGates(
    * rows are not inferred - the run has stopped, and it cannot move until
    * somebody says so.
    */
+  /* The run knows the work by its folder; a book or an issue also knows its
+     real title, and that is the one a person gave it. */
+  const realTitle = (id: string) =>
+    books.find((b) => b.id === id)?.title ?? publications.find((p) => p.id === id)?.title ?? titleOf(id);
   for (const w of waiting) {
     const words = GATE_WORDS[w.gate] ?? { name: `is at the ${w.gate} gate`, verb: w.gate, act: "Open" };
     gates.push({
-      id: `pipeline:${w.ref.id}`,
-      icon: "check",
-      name: `${titleOf(w.ref.id)} ${words.name}`,
+      id: `pipeline:${w.ref.type}/${w.ref.id}`,
+      // A pen, not a tick: the tick reads as "done", and this is still owed.
+      icon: "pencil",
+      name: `${realTitle(w.ref.id)} ${words.name}`,
       // The stage repeats the gate ("gate:design") the name already says.
       meta: [w.ref.type, `${w.units.length} unit${w.units.length === 1 ? "" : "s"} pending`]
         .join(" · "),
@@ -291,7 +263,7 @@ export function deriveGates(
     if (c.signedOff < c.files) {
       unsigned.push({
         id,
-        icon: "check",
+        icon: "pencil",
         name: `${c.title} is ready to sign off`,
         meta: [form, `${c.files} file${c.files === 1 ? "" : "s"} read`].join(" · "),
         verb: "sign off",
@@ -321,7 +293,10 @@ export function Dashboard({
     shim: ShimStatus | null;
     comfy: ComfyStatus | null;
     affinity: { running?: boolean } | null;
-  }>({ shim: null, comfy: null, affinity: null });
+    /* The shim probes every agent before it answers, which takes seconds; a
+       null before that is "not asked yet", not "unreachable". */
+    checked: boolean;
+  }>({ shim: null, comfy: null, affinity: null, checked: false });
 
   /* The machine panel is the shim's business, not Studio's, so it is three
      cross-origin calls rather than three more Studio routes proxying them. */
@@ -337,6 +312,7 @@ export function Dashboard({
         shim: s.status === "fulfilled" ? s.value : null,
         comfy: c.status === "fulfilled" ? c.value : null,
         affinity: a.status === "fulfilled" ? a.value : null,
+        checked: true,
       });
     });
     return () => {
@@ -416,9 +392,13 @@ export function Dashboard({
           else if (book && g.id.startsWith("book:") && chapter !== undefined) {
             nav.toChapter(book.id, chapter);
           } else if (book) nav.toBook(book.id);
-          // Reading, findings and the signature all live on one screen, so
-          // every gate the folder raises opens the same one.
-          else nav.toAudit();
+          // Reading, findings and the signature all live on one screen; the
+          // gate names the work, so the screen opens on it.
+          else {
+            const ref = /^(?:pipeline|work):([^/]+)\/(.+)$/.exec(g.id);
+            if (ref?.[1] === "publication") nav.toPublication(ref[2]!);
+            else nav.toAudit(ref?.[1], ref?.[2]);
+          }
         },
       };
     });
@@ -441,14 +421,14 @@ export function Dashboard({
     const fromBooks = books.map((b) => ({
       id: b.id,
       title: b.title,
-      mark: "mark-book",
+      kind: "book",
       when: new Date(b.updatedAt).getTime(),
       badge:
         b.pendingReview > 0
           ? { label: "needs a read", tone: "pill pill-warn" }
           : b.status === "completed"
-            ? { label: "approved", tone: "pill pill-ok" }
-            : { label: b.status, tone: "pill pill-fill" },
+            ? { label: "signed off", tone: "pill pill-ok" }
+            : { label: "drafting", tone: "pill" },
       detail: `${b.chaptersWritten} of ${b.targetChapters} chapters · ${b.genre}`,
       open: () => nav.toBook(b.id),
     }));
@@ -456,13 +436,19 @@ export function Dashboard({
        for ever, however recently it was worked on. The folder walk knows when
        its files last changed, which is the same question. */
     const touched = new Map(creations.map((p) => [p.id, p.modified]));
+    const byId = new Map(creations.map((p) => [p.id, p]));
+    const stopped = new Set((waitingData?.waiting ?? []).map((w) => w.ref.id));
     const fromPubs = publications.map((p) => ({
       id: p.id,
       title: p.title,
-      mark: p.type === "storybook" ? "mark-story" : "mark-mag",
+      kind: p.type,
       when: new Date(touched.get(p.id) ?? 0).getTime(),
-      badge: { label: p.status, tone: "pill pill-fill" },
-      detail: `${p.written} of ${p.extent} pages · ${p.type}`,
+      // The run's own word ("designed") said where the pipeline was, not what
+      // the work wants from you; the shelf and the gates use this one.
+      badge: p.pdf || p.status === "approved"
+        ? { label: "signed off", tone: "pill pill-ok" }
+        : standingOf(byId.get(p.id), stopped.has(p.id)),
+      detail: `${p.written} of ${p.extent} pages written`,
       open: () => nav.toPublication(p.id),
     }));
     /* Everything else that was written in this folder. A short, a storyboard,
@@ -477,16 +463,16 @@ export function Dashboard({
       .map((p) => ({
         id: p.id,
         title: p.title,
-        mark: MARKS[p.kind] ?? "mark-book",
+        kind: p.label.toLowerCase(),
         when: new Date(p.modified).getTime(),
-        badge: creationBadge(p),
-        detail: `${p.read} of ${p.files} read · ${p.label.toLowerCase()}`,
-        open: nav.toAudit,
+        badge: standingOf(p, stopped.has(p.id)),
+        detail: `${p.read} of ${p.files} read`,
+        open: () => nav.toAudit(p.kind, p.id),
       }));
     return [...fromBooks, ...fromPubs, ...fromFolder]
       .sort((a, b) => b.when - a.when)
       .slice(0, 4);
-  }, [books, publications, creations, nav]);
+  }, [books, publications, creations, waitingData, nav]);
 
   const nothingYet = recent.length === 0;
 
@@ -502,15 +488,15 @@ export function Dashboard({
         <div className="spread items-end relative">
           <div className="rowflex gap-6.5 items-end">
             <div>
-              <div className={approved ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={approved} /></div>
+              <div className={approved ? "numeral numeral-ok text-d3" : "numeral ghost text-d3"}><Num value={approved} /></div>
               <div className="label mt-2.5">approved</div>
             </div>
             <div>
-              <div className={inFlight ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={inFlight} /></div>
+              <div className={inFlight ? "numeral numeral-ink text-d3" : "numeral ghost text-d3"}><Num value={inFlight} /></div>
               <div className="label mt-2.5">in flight</div>
             </div>
             <div>
-              <div className={thisMonth ? "numeral text-d3" : "numeral ghost text-d3"}><Num value={thisMonth} /></div>
+              <div className={thisMonth ? "numeral numeral-ink text-d3" : "numeral ghost text-d3"}><Num value={thisMonth} /></div>
               <div className="label mt-2.5">this month</div>
             </div>
           </div>
@@ -581,7 +567,9 @@ export function Dashboard({
       </section>
 
       {/* ── The live run, and the machine under it ───────────────────── */}
-      <section className="cols cols-a">
+      {/* items-start: stretched to the height of the column beside it, an idle
+          run card was half a screen of empty charcoal. */}
+      <section className="cols cols-a items-start">
         <div className="dark crop py-5 px-5.5">
           <div className="spread items-start relative">
             <div>
@@ -667,8 +655,8 @@ export function Dashboard({
                         {" · "}{k.files} {k.files === 1 ? "file" : "files"}
                       </span>
                     </span>
-                    <span className="dim mono text-cap">
-                      {k.read}/{k.files} read
+                    <span className="dim text-cap tnum">
+                      {k.read} of {k.files} read
                       {k.open > 0 ? ` · ${k.open} open` : ""}
                       {k.blocking > 0 ? ` · ${k.blocking} blocking` : ""}
                     </span>
@@ -682,17 +670,25 @@ export function Dashboard({
                onKeyDown={(e) => { if (e.key === "Enter") nav.toSetup(); }}>
             <h3 className="h-panel">The machine</h3>
             <div className="rowflex mt-2.5">
+              {!machine.checked ? (
+                <span className="pill">Checking the machine…</span>
+              ) : (
+              <>
               <span className={machine.shim ? "pill pill-ok" : "pill pill-bad"}>
                 {machine.shim
-                  ? `shim · ${machine.shim.agents.length} provider${machine.shim.agents.length === 1 ? "" : "s"}`
-                  : "shim unreachable"}
+                  ? `${machine.shim.agents.length} model connection${machine.shim.agents.length === 1 ? "" : "s"}`
+                  : "Models unreachable"}
               </span>
-              <span className={machine.comfy?.up ? "pill pill-ok" : "pill pill-warn"}>
-                {machine.comfy?.up ? "ComfyUI up" : machine.comfy?.installed ? "ComfyUI stopped" : "ComfyUI not installed"}
+              {/* Stopped and closed are resting states, not faults: each is
+                  only needed while pictures or a layout are being made. */}
+              <span className={machine.comfy?.up ? "pill pill-ok" : machine.comfy?.installed ? "pill" : "pill pill-warn"}>
+                {machine.comfy?.up ? "ComfyUI up" : machine.comfy?.installed ? "ComfyUI resting" : "ComfyUI not installed"}
               </span>
-              <span className={machine.affinity?.running ? "pill pill-ok" : "pill pill-warn"}>
+              <span className={machine.affinity?.running ? "pill pill-ok" : "pill"}>
                 {machine.affinity?.running ? "Affinity open" : "Affinity closed"}
               </span>
+              </>
+              )}
               <span className={daemon?.running ? "pill pill-ok" : "pill"}>
                 {daemon?.running ? "daemon on" : "daemon off"}
               </span>
@@ -713,7 +709,7 @@ export function Dashboard({
                     <button
                       key={b.id}
                       type="button"
-                      className="row py-2.5 px-1"
+                      className="row py-2.5"
                       onClick={() => void writeNext(b, nav)}
                     >
                       <span className="num tnum">{b.chaptersWritten + 1}</span>
@@ -742,24 +738,14 @@ export function Dashboard({
         </div>
         <div className="tiles">
           {recent.map((r) => (
-            <button key={r.id} type="button" className="tile crop" onClick={r.open}>
-              <span className={`mark ${r.mark}`}>
-                <span className="d1" />
-                <span className="d2" />
-              </span>
-              <span className="top">
-                <span className={r.badge.tone}>{r.badge.label}</span>
-              </span>
-              <h4>{r.title}</h4>
-              <span className="who">{r.detail}</span>
-            </button>
+            <WorkTile key={r.id} id={r.id} title={r.title} kind={r.kind} detail={r.detail} badge={r.badge} onOpen={r.open} />
           ))}
           <button type="button" className="tile tile-new" onClick={nav.toNew}>
             <span className="arrow" aria-hidden="true">
               <Icon name="plus" size={18} />
             </span>
             <span className="text-body font-semibold">Start something</span>
-            <span className="hint">book · storybook · short · script</span>
+            <span className="hint">a novel, an issue, a short, a script</span>
           </button>
         </div>
       </section>

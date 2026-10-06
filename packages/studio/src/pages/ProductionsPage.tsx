@@ -10,13 +10,14 @@
  * near-identical grids would drift apart within a month.
  */
 import { useArrivals } from "../hooks/use-arrivals";
-import { vtName } from "../lib/view-transition";
 import { useMemo, useState } from "react";
 import { useApi } from "../hooks/use-api";
 import type { BookSummary } from "../shared/contracts";
 import type { PublicationSummary } from "../hooks/use-shell-data";
 import { Icon } from "../components/ui/icon";
 import { Failed } from "../components/ui/states";
+import { standingOf } from "../lib/standing";
+import { WorkTile } from "../components/ui/work-tile";
 
 type Filter = "all" | "drafting" | "waiting" | "done";
 
@@ -61,7 +62,7 @@ function bookState(b: BookSummary): Production["state"] {
    the kind is on the cover now and this pill always means where it stands. */
 function badgeFor(state: Production["state"]): Production["badge"] {
   if (state === "waiting") return { label: "needs a read", tone: "pill pill-warn" };
-  if (state === "done") return { label: "approved", tone: "pill pill-ok" };
+  if (state === "done") return { label: "signed off", tone: "pill pill-ok" };
   return { label: "drafting", tone: "pill" };
 }
 
@@ -77,7 +78,7 @@ export function ProductionsPage({
     /* Where a folder-derived production opens. Shorts, storyboards, scripts
        and films have no detail screen of their own; the audit is the screen
        that reads them. */
-    readonly toAudit: () => void;
+    readonly toAudit: (kind?: string, id?: string) => void;
   };
 }) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -93,9 +94,10 @@ export function ProductionsPage({
      /books alone — so a finished 50,000-word short sat in the workspace and
      the shelf said "No productions yet". Books keep their own row: they carry
      a real title and progress in chapters, which the walk cannot see. */
-  const walk = useApi<{ projects: readonly FolderCreation[] }>(
-    kind === "books" ? "/workspace/summary" : "",
-  );
+  const walk = useApi<{ projects: readonly FolderCreation[] }>("/workspace/summary");
+  /* Runs stopped at a gate. Home raises these first; a shelf that did not
+     read them said "none waiting" over three issues Home said were. */
+  const gated = useApi<{ waiting: ReadonlyArray<{ ref: { id: string } }> }>("/productions/waiting");
 
   const items = useMemo<Production[]>(() => {
     if (kind === "books") {
@@ -112,16 +114,14 @@ export function ProductionsPage({
         };
       });
       const spoken = new Set(shelf.map((row) => row.id));
+      const stopped = new Set((gated.data?.waiting ?? []).map((w) => w.ref.id));
       const folder = (walk.data?.projects ?? [])
         // Issues have their own shelf; a book already spoke for itself above.
         .filter((c) => c.kind !== "publication" && c.files > 0 && !spoken.has(c.id))
         .map((c): Production => {
           // Same vocabulary the rest of the app counts in: a blocking finding
           // outranks reading, and nothing is done until it is signed off.
-          const state: Production["state"] =
-            c.signedOff >= c.files ? "done"
-            : c.blocking > 0 || c.read >= c.files ? "waiting"
-            : "drafting";
+          const standing = standingOf(c, stopped.has(c.id));
           return {
             id: c.id,
             title: c.title,
@@ -131,43 +131,46 @@ export function ProductionsPage({
               c.blocking > 0 ? `${c.blocking} blocking` : `${c.read} of ${c.files} read`,
             ].join(" · "),
             kind: c.label.toLowerCase(),
-            state,
-            badge: badgeFor(state),
-            open: () => nav.toAudit(),
+            state: standing.state,
+            badge: standing,
+            open: () => nav.toAudit(c.kind, c.id),
           };
         });
       return [...shelf, ...folder];
     }
+    const byId = new Map((walk.data?.projects ?? []).map((c) => [c.id, c]));
+    const stopped = new Set((gated.data?.waiting ?? []).map((w) => w.ref.id));
     return (pubs.data?.publications ?? []).map((p) => {
-      const state: Production["state"] =
-        p.status === "approved" || p.pdf ? "done"
-        : p.status.includes("gate") || p.status.includes("review") ? "waiting"
-        : "drafting";
+      const standing = p.status === "approved" || p.pdf
+        ? { state: "done" as const, label: "signed off", tone: "pill pill-ok" }
+        : standingOf(byId.get(p.id), stopped.has(p.id) || /gate|review/.test(p.status));
       return {
         id: p.id,
         title: p.title,
-        detail: `${p.written} of ${p.extent} pages · ${p.subject}`,
+        // The subject is the brief's sentence, not a caption; the cover and
+        // the title already say what it is about.
+        detail: `${p.written} of ${p.extent} pages written`,
         kind: p.type,
-        state,
-        badge: badgeFor(state),
+        state: standing.state,
+        badge: standing,
         open: () => nav.toPublication(p.id),
       };
     });
-  }, [kind, books.data, pubs.data, walk.data, nav]);
+  }, [kind, books.data, pubs.data, walk.data, gated.data, nav]);
 
   const shown = filter === "all" ? items : items.filter((i) => i.state === filter);
   const tiles = useArrivals(shown, (p) => p.id);
   const waiting = items.filter((i) => i.state === "waiting").length;
   const loading = kind === "books" ? (books.loading || walk.loading) : pubs.loading;
   const error = kind === "books" ? books.error : pubs.error;
-  const noun = kind === "books" ? "production" : "issue";
+  const noun = kind === "books" ? "book" : "issue";
 
   const headline =
     items.length === 0
       ? `No ${noun}s yet`
       : waiting === 0
         ? `${items.length} ${noun}${items.length === 1 ? "" : "s"}, none waiting`
-        : `${items.length} ${noun}${items.length === 1 ? "" : "s"}, ${waiting} want${waiting === 1 ? "s" : ""} a read`;
+        : `${items.length} ${noun}${items.length === 1 ? "" : "s"}, ${waiting} waiting on you`;
 
   return (
     <div className="stack-lg">
@@ -195,20 +198,16 @@ export function ProductionsPage({
 
         <div className="tiles">
           {tiles.map(({ item: p, motion }) => (
-            <button key={p.id} type="button" className={`tile tile-work${motion ? ` ${motion}` : ""}`} onClick={p.open}>
-              {/* A lettered cover until a work has art of its own: the kind
-                  on top, the first letter of the title in the reading face, past a leading
-                  "The", or every shelf is a row of Ts. */}
-              <span className="cover" aria-hidden="true">
-                <span className="cover-kind">{p.kind}</span>
-                <span className="cover-letter">{p.title.trim().replace(/^(the|an?)\s+/i, "").charAt(0)}</span>
-              </span>
-              <h4 style={vtName(p.id)}>{p.title}</h4>
-              <span className="who">{p.detail}</span>
-              <span className="tile-foot">
-                <span className={p.badge.tone}>{p.badge.label}</span>
-              </span>
-            </button>
+            <WorkTile
+              key={p.id}
+              id={p.id}
+              title={p.title}
+              kind={p.kind}
+              detail={p.detail}
+              badge={p.badge}
+              onOpen={p.open}
+              {...(motion ? { className: motion } : {})}
+            />
           ))}
 
           {/* New belongs in the shelf it adds to, not floating over it. */}
@@ -217,7 +216,7 @@ export function ProductionsPage({
               <Icon name="plus" size={18} />
             </span>
             <span className="text-body font-semibold">Start something</span>
-            <span className="hint">book · storybook · short · script</span>
+            <span className="hint">{kind === "books" ? "a novel, a short, a script or a storyboard" : "a new issue"}</span>
           </button>
         </div>
 

@@ -12,9 +12,9 @@
  */
 import type { HashRoute } from "../../hooks/use-hash-route";
 import { Icon } from "../ui/icon";
-import { Ring } from "../ui/working";
+import { Ring, orbForStage } from "../ui/working";
 import { NAV, activeNavId } from "./nav";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** "4m", "1h 12m": how long the run has been going. Ticks twice a minute. */
 function Elapsed({ since }: { readonly since: number }) {
@@ -30,6 +30,8 @@ function Elapsed({ since }: { readonly since: number }) {
 export interface RailRun {
   readonly what: string;
   readonly where: string;
+  /** The pipeline stage id, when the run is a queued stage; picks the orb. */
+  readonly stage?: string;
   /** 0-1. Undefined when the stage cannot say, which is most of them. */
   readonly progress?: number;
   /**
@@ -69,6 +71,11 @@ export function Rail({
   readonly onOpenPalette?: () => void;
 }) {
   const active = activeNavId(route);
+  /* The page you are on is never half under the fold of the rail. */
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    scroller.current?.querySelector('[aria-current="page"]')?.scrollIntoView({ block: "nearest" });
+  }, [active]);
   /* Three groups and seventeen rows outran a laptop, and the last row sat
      half under the run pill. Tools starts folded; any group folds on its
      label, and the one holding the current page is always open. Remembered
@@ -103,7 +110,7 @@ export function Rail({
         <b>Quire</b>
       </div>
 
-      <button type="button" className="railnew" onClick={() => setRoute({ page: "new" })}>
+      <button type="button" className="railnew" aria-current={route.page === "new" ? "page" : undefined} onClick={() => setRoute({ page: "new" })}>
         <Icon name="plus" size={16} />
         <span>Start something</span>
       </button>
@@ -119,7 +126,7 @@ export function Rail({
         </button>
       ) : null}
 
-      <div className="rail-scroll">
+      <div className="rail-scroll" ref={scroller}>
         {NAV.map((group) => {
           const open = !folded.has(group.label) || group.items.some((i) => i.id === active);
           return (
@@ -159,8 +166,8 @@ export function Rail({
       </div>
 
       {run ? (
-        <button type="button" className="railrun" onClick={() => setRoute({ page: "run" })}>
-          <Ring value={run.progress} size="sm" />
+        <button type="button" className="railrun" aria-current={route.page === "run" ? "page" : undefined} onClick={() => setRoute({ page: "run" })}>
+          <Ring value={run.progress} size="sm" orb={orbForStage(run.stage)} />
           <span className="grow">
             <span className="what">{run.what}</span>
             <span className="where">

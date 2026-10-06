@@ -16,7 +16,8 @@ const SMALL_WORDS = new Set([
 ]);
 
 export function titleOf(slug: string): string {
-  const words = slug.replace(/[_-]+/g, " ").trim().split(/[ ]+/).filter(Boolean);
+  // "the-green-leaf-s-secret" was "the green leaf's secret" before the slug ate the apostrophe.
+  const words = slug.replace(/[_-]+/g, " ").replace(/(\w) s(?= |$)/g, "$1's").trim().split(/[ ]+/).filter(Boolean);
   if (words.length === 0) return slug;
   return words
     .map((word, index) => {

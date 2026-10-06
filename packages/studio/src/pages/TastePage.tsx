@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { titleOf } from "../lib/title-of";
+import { PageHead } from "../components/ui/page-head";
+import { useTitles } from "../hooks/use-titles";
 
 /*
  * Taste (18 §3). What your verdicts added up to, waiting for a yes; the rules
@@ -43,7 +46,7 @@ const SURFACES: ReadonlyArray<{ id: string; label: string; from: string; used: s
   { id: "content", label: "Writing", from: "Redo, Tweak and Reject on pages", used: "every writer" },
   { id: "image", label: "Pictures", from: "verdicts on pictures in the Gallery", used: "every picture brief" },
   { id: "design", label: "Design", from: "verdicts on layouts, worlds and kits", used: "the magazine design spec" },
-  { id: "build", label: "Build", from: "verdicts on the printed build", used: "nothing yet - kept for the build surface" },
+  { id: "build", label: "Build", from: "verdicts on the printed build", used: "nothing yet, kept for the build surface" },
 ];
 
 const api = async (path: string, init?: RequestInit): Promise<Record<string, unknown>> => {
@@ -72,6 +75,7 @@ export function TastePage() {
   const [pack, setPack] = useState({ id: "", styles: [] as string[], works: [] as string[], rules: true });
   const [importPath, setImportPath] = useState("");
   const [clone, setClone] = useState({ from: "", to: "" });
+  const nameOf = useTitles();
 
   const load = useCallback(async () => {
     const [p, r] = await Promise.all([api("/taste/proposals?state=pending"), api("/taste/rules")]);
@@ -143,7 +147,7 @@ export function TastePage() {
       <span className="grow text-small">{r.text}</span>
       <span className="dim text-cap">
         {reach(r.scope)}
-        {r.review ? " · redone three times since - look again"
+        {r.review ? " · redone three times since — look again"
           : r.trial && r.trial.seen < 3 ? ` · watching (${r.trial.seen} of 3)` : ""}
       </span>
       <button
@@ -160,17 +164,10 @@ export function TastePage() {
 
   return (
     <div className="stack-lg">
-      <section className="crop pb-0">
-        <div className="head">
-          <h2 className="h-page">What you keep choosing</h2>
-          <p>
-            Every Keep, Redo, Tweak and Reject you give is counted. When the same reason comes up
-            often enough it becomes a proposed rule, and a rule you accept goes into the next
-            thing made. Style decides whose voice the prose is in; this is what you like, in the
-            words and the pictures both.
-          </p>
-        </div>
-      </section>
+      <PageHead
+        title="What you keep choosing"
+        lede="Every Keep, Redo, Tweak and Reject you give is counted. When the same reason comes up often enough it becomes a proposed rule, and a rule you accept goes into the next thing made. Style decides whose voice the prose is in; this is what you like, in the words and the pictures both."
+      />
 
       <section className="cols grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="stack">
@@ -185,7 +182,7 @@ export function TastePage() {
               <button
                 type="button"
                 className="btn btn-sm"
-                onClick={() => void run("/taste/distill", {}, () => "Reading your verdicts - proposals appear here when it finishes.")}
+                onClick={() => void run("/taste/distill", {}, () => "Reading your verdicts — proposals appear here when it finishes.")}
               >
                 Look for new rules
               </button>
@@ -205,7 +202,7 @@ export function TastePage() {
                 </div>
               ) : (
                 <p className="hint">
-                  Nothing waiting. A reason pressed five times on one work - or across two works -
+                  Nothing waiting. A reason pressed five times on one work — or across two works —
                   becomes a proposal.
                 </p>
               )}
@@ -252,7 +249,7 @@ export function TastePage() {
             <span className="grow">
               <h3 className="h-panel">Carry it</h3>
               <span className="dim text-cap">
-                A Taste Pack holds voices, a work&rsquo;s world and kit, and your rules - never your
+                A Taste Pack holds voices, a work&rsquo;s world and kit, and your rules &mdash; never your
                 manuscripts or your verdicts.
               </span>
             </span>
@@ -264,34 +261,46 @@ export function TastePage() {
                 id="pack-name"
                 className="input"
                 value={pack.id}
-                placeholder="pack-name"
+                placeholder="my-taste"
                 onChange={(e) => setPack({ ...pack, id: e.target.value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") })}
               />
             </div>
-            <div className="field">
-              <label htmlFor="pack-voices">Voices</label>
-              <select
-                id="pack-voices"
-                className="input"
-                multiple
-                value={pack.styles}
-                onChange={(e) => setPack({ ...pack, styles: [...e.target.selectedOptions].map((o) => o.value) })}
-              >
-                {styles.map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="pack-works">Worlds and kits from</label>
-              <select
-                id="pack-works"
-                className="input"
-                multiple
-                value={pack.works}
-                onChange={(e) => setPack({ ...pack, works: [...e.target.selectedOptions].map((o) => o.value) })}
-              >
-                {works.map((w) => <option key={`${w.type}/${w.id}`} value={`${w.type}/${w.id}`}>{w.type} · {w.id}</option>)}
-              </select>
-            </div>
+            {/* Ticks, not a multiple-select: a list box of slugs needed Ctrl to
+                choose two and showed "publication · indigo-one-colour-…". */}
+            <fieldset className="field">
+              <legend className="field-label mb-1.5">Voices</legend>
+              <div className="ticks">
+                {styles.length === 0 ? <span className="dim text-cap">No voices yet.</span> : styles.map((s) => (
+                  <label key={s} className="tick" title={s}>
+                    <input
+                      type="checkbox"
+                      checked={pack.styles.includes(s)}
+                      onChange={(e) => setPack({ ...pack, styles: e.target.checked ? [...pack.styles, s] : pack.styles.filter((x) => x !== s) })}
+                    />
+                    <span>{titleOf(s)}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <fieldset className="field">
+              <legend className="field-label mb-1.5">Worlds and kits from</legend>
+              <div className="ticks">
+                {works.map((w) => {
+                  const key = `${w.type}/${w.id}`;
+                  return (
+                    <label key={key} className="tick" title={key}>
+                      <input
+                        type="checkbox"
+                        checked={pack.works.includes(key)}
+                        onChange={(e) => setPack({ ...pack, works: e.target.checked ? [...pack.works, key] : pack.works.filter((x) => x !== key) })}
+                      />
+                      <span>{nameOf(w.id)}</span>
+                      <span className="dim text-cap">{w.type}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
             <label className="rowflex gap-1.5 text-small">
               <input type="checkbox" checked={pack.rules} onChange={(e) => setPack({ ...pack, rules: e.target.checked })} />
               Include my rules
@@ -338,11 +347,11 @@ export function TastePage() {
               <div className="stack-xs">
                 <select id="clone-to" className="input" value={clone.to} onChange={(e) => setClone({ ...clone, to: e.target.value })}>
                   <option value="">Make this work…</option>
-                  {works.map((w) => <option key={`to-${w.type}/${w.id}`} value={`${w.type}/${w.id}`}>{w.type} · {w.id}</option>)}
+                  {works.map((w) => <option key={`to-${w.type}/${w.id}`} value={`${w.type}/${w.id}`}>{nameOf(w.id)} · {w.type}</option>)}
                 </select>
                 <select aria-label="Clone from" className="input" value={clone.from} onChange={(e) => setClone({ ...clone, from: e.target.value })}>
                   <option value="">…look and sound like this one</option>
-                  {works.map((w) => <option key={`from-${w.type}/${w.id}`} value={`${w.type}/${w.id}`}>{w.type} · {w.id}</option>)}
+                  {works.map((w) => <option key={`from-${w.type}/${w.id}`} value={`${w.type}/${w.id}`}>{nameOf(w.id)} · {w.type}</option>)}
                 </select>
               </div>
               <div className="rowflex mt-2">

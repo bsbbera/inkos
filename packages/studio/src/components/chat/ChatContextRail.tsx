@@ -14,6 +14,7 @@ import { Empty } from "../ui/states";
  * there is no book, and only a chat that has made nothing yet falls back to
  * naming the shelf.
  */
+import { useTitles } from "../../hooks/use-titles";
 import { vtName } from "../../lib/view-transition";
 import { useEffect, useState } from "react";
 import { Book, ChevronDown, FileText, Layers, MessageSquare, Trash2, Users } from "../ui/glyphs";
@@ -123,6 +124,8 @@ function Conversations() {
      the browser: a window.confirm cannot say which files survive, and that is
      the whole question someone has at that moment. */
   const [confirming, setConfirming] = useState<string | null>(null);
+  /* The count said 18 and the list stopped at 8 with no way to the rest. */
+  const [all, setAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,13 +159,13 @@ function Conversations() {
       className="grp-switch"
       icon={<MessageSquare size={12} aria-hidden="true" />}
     >
-      {recent.slice(0, 8).map((session) => {
+      {(all ? recent : recent.slice(0, 8)).map((session) => {
         const here = session.sessionId === activeSessionId;
         const kind = session.sessionKind ? KIND_LABEL[session.sessionKind] : undefined;
 
         if (confirming === session.sessionId) {
           return (
-            <div key={session.sessionId} className="row py-2 px-1 block">
+            <div key={session.sessionId} className="row py-2 block">
               <div className="name trunc text-small">
                 Delete “{session.title ?? "Untitled"}”?
               </div>
@@ -189,7 +192,7 @@ function Conversations() {
         return (
           <div
             key={session.sessionId}
-            className="row py-2 px-1"
+            className="row py-2"
             aria-current={here ? "true" : undefined}
           >
             <button
@@ -201,7 +204,9 @@ function Conversations() {
                 void loadSessionDetail(session.sessionId);
               }}
             >
-              <span className="name trunc block">
+              {/* Two lines, not one: sixteen titles that all begin "Write a
+                  short story calle…" could not be told apart at one. */}
+              <span className="name line-clamp-2" title={session.title ?? undefined}>
                 {session.title ?? "Untitled"}
               </span>
               <span className="meta trunc text-cap block">
@@ -220,6 +225,11 @@ function Conversations() {
           </div>
         );
       })}
+      {recent.length > 8 ? (
+        <button type="button" className="btn btn-quiet btn-sm mt-1.5 self-start -ml-2.75" onClick={() => setAll(!all)}>
+          {all ? "Show fewer" : `Show all ${recent.length}`}
+        </button>
+      ) : null}
     </Group>
   );
 }
@@ -239,6 +249,7 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
   const [truth, setTruth] = useState<ReadonlyArray<TruthFile>>([]);
   const [made, setMade] = useState<ProductionContext | null>(null);
   const [books, setBooks] = useState<ReadonlyArray<{ readonly id: string; readonly title?: string }>>([]);
+  const nameOf = useTitles();
 
   /* What this conversation made, when it did not make a book. Derived rather
      than stored: the run named its own output paths, and the alternative is a
@@ -251,8 +262,10 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
   useEffect(() => {
     if (bookId || madeKey) return;
     let cancelled = false;
-    void fetchJson<{ books?: ReadonlyArray<{ id: string; title?: string }> }>("/books")
-      .then((data) => { if (!cancelled) setBooks(data.books ?? []); })
+    /* Every piece of work in the folder, not /books alone: a workspace of
+       shorts and issues said "0 books here, start one" beside seven of them. */
+    void fetchJson<{ projects?: ReadonlyArray<{ id: string; title?: string; files: number }> }>("/workspace/summary")
+      .then((data) => { if (!cancelled) setBooks((data.projects ?? []).filter((p) => p.files > 0)); })
       .catch(() => undefined);
     return () => { cancelled = true; };
   }, [bookId, madeKey, bookDataVersion]);
@@ -384,7 +397,7 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   {subject.sub ? <span className="sep">{subject.sub}</span> : null}
                 </>
               ) : (
-                <span>{`${books.length} book${books.length === 1 ? "" : "s"} here`}</span>
+                <span>{books.length === 0 ? "Nothing made yet" : `${books.length} piece${books.length === 1 ? "" : "s"} of work here`}</span>
               )}
             </span>
           </span>
@@ -404,7 +417,7 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={ch.number}
                     type="button"
-                    className="row py-2 px-1"
+                    className="row py-2"
                     onClick={() => onReference?.(`chapter ${ch.number}`)}
                   >
                     <span className="num tnum">
@@ -427,7 +440,7 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={person.key}
                     type="button"
-                    className="row py-2 px-1"
+                    className="row py-2"
                     onClick={() => onReference?.(person.name)}
                   >
                     <span className="grow min-w-0">
@@ -445,7 +458,7 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
                   <button
                     key={file.key}
                     type="button"
-                    className="row py-2 px-1"
+                    className="row py-2"
                     onClick={() => onReference?.(file.name)}
                   >
                     <span className="grow min-w-0">
@@ -458,18 +471,18 @@ export function ChatContextRail({ bookId, onReference }: ChatContextRailProps) {
             ) : null}
           </div>
         ) : (
-          <Group label="Books" icon={<Book size={12} aria-hidden="true" />}>
+          <Group label="Your work" icon={<Book size={12} aria-hidden="true" />}>
             {books.length === 0 ? (
-              <Empty compact icon="book" title="Books you start show here." action={<a className="btn btn-line btn-sm" href="#/new">Start one</a>} />
+              <Empty compact icon="book" title="What you make shows here." action={<a className="btn btn-line btn-sm" href="#/new">Start something</a>} />
             ) : books.slice(0, 8).map((book) => (
               <button
                 key={book.id}
                 type="button"
-                className="row py-2 px-1"
-                onClick={() => onReference?.(book.title ?? book.id)}
+                className="row py-2"
+                onClick={() => onReference?.(nameOf(book.id))}
               >
                 <span className="grow min-w-0">
-                  <span className="name trunc">{book.title ?? book.id}</span>
+                  <span className="name trunc" title={book.id}>{nameOf(book.id)}</span>
                 </span>
               </button>
             ))}

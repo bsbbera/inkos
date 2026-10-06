@@ -118,7 +118,10 @@ export function Shell({
                  most, 6xl on translation, 1400px on the reader - so the same
                  app changed column width as you walked through it. */
               <div className="stage">
-                <div className="wrap">{children}</div>
+                {/* Keyed on the page, not its parameters: arriving at a screen
+                    replays its settle (motion.css), picking another work on the
+                    same screen does not throw away what is open. */}
+                <div className="wrap route-enter" key={route.page}>{children}</div>
               </div>
             )}
           </>

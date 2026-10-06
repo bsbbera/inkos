@@ -91,9 +91,13 @@ export function Failed({
   kept,
   retry,
   children,
+  said,
 }: {
   /** What stopped, in the product's words. */
   readonly what: string;
+  /** The sentence to show instead of the one read off `detail`, when the
+      screen knows something newer than the message does. */
+  readonly said?: string;
   /** The machine's words. Read into a sentence; the raw text folds under Details. */
   readonly detail?: string | null;
   /** What survived. The reassurance is the point. */
@@ -108,7 +112,7 @@ export function Failed({
       <Icon name="alert" size={16} />
       <div className="grow">
         <b>{what}</b>
-        {plain ? <p>{plain.text}</p> : null}
+        {said ?? plain ? <p>{said ?? plain?.text}</p> : null}
         {plain?.rewritten ? (
           <details className="raw">
             <summary>Details</summary>

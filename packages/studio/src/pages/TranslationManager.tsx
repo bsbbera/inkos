@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { PageHead } from "../components/ui/page-head";
 import type { Theme } from "../hooks/use-theme";
 import type { TFunction } from "../hooks/use-i18n";
 import { useColors } from "../hooks/use-colors";
 import { fetchJson, useApi } from "../hooks/use-api";
-import { Download, FileText, Languages, Loader2, Play, Upload } from "../components/ui/glyphs";
+import { Download, Loader2, Play, Upload } from "../components/ui/glyphs";
 
 import { Spinner } from "../components/ui/working";
 import { Failed, Loading } from "../components/ui/states";
@@ -133,7 +134,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
   const [detailLoading, setDetailLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState<"upload" | "create" | "run" | "export" | "">("");
-  const [file, setFile] = useState<File | null>(null);
+  const [chosen, setFile] = useState<File | null>(null);
   const [uploaded, setUploaded] = useState<TranslationUploadResponse | null>(null);
   const [title, setTitle] = useState("");
   const [sourceLanguage, setSourceLanguage] = useState(isZh ? "自动识别" : "Auto detect");
@@ -168,7 +169,8 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
     return chapters.find((chapter) => chapter.number === previewChapterNumber) ?? chapters[0] ?? null;
   }, [detail?.chapters, previewChapterNumber]);
 
-  const uploadFile = async () => {
+  const uploadFile = async (picked?: File) => {
+    const file = picked ?? chosen;
     if (!file) return;
     setBusy("upload");
     setStatus("");
@@ -258,51 +260,39 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="h-page flex items-center gap-3">
-            <span className="icon-ring icon-ring-lg" aria-hidden="true"><Languages size={19} /></span>
-            {t("translation.title")}
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t("translation.subtitle")}
-          </p>
-        </div>
-      </div>
+    <div className="stack-lg">
+      <PageHead
+        title="Translate a book"
+        lede="Bring an EPUB, PDF, text or Markdown file. It is translated chapter by chapter with its names and terms held fixed, read back, and exported as EPUB, Markdown or plain text."
+      />
 
-      <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-6">
-        <section className="panel space-y-4">
-          <div className="flex items-center gap-2">
-            <Upload size={18} className="text-primary" />
-            <h2 className="h-panel">{t("translation.newProject")}</h2>
-          </div>
-          <div className="space-y-3">
+      <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4 items-start">
+        <section className="panel stack">
+          <h2 className="h-panel">A new translation</h2>
+          {/* One step: choosing the file sends it. It was a browser file
+              button and then a second "Upload Source" button to press. */}
+          <label className={`drop${chosen ? " has" : ""}`}>
             <input
               type="file"
+              className="sr-only"
               accept=".txt,.md,.markdown,.pdf,.epub,text/plain,text/markdown,application/pdf,application/epub+zip"
               onChange={(event) => {
                 const next = event.currentTarget.files?.[0] ?? null;
                 setFile(next);
                 setUploaded(null);
                 if (next && !title.trim()) setTitle(next.name.replace(/\.[^.]+$/u, ""));
+                if (next) void uploadFile(next);
               }}
-              className="block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary-foreground"
             />
-            {file && (
-              <div className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                {file.name} · {formatFileSize(file.size)}
-              </div>
-            )}
-            <button
-              onClick={uploadFile}
-              disabled={!file || busy === "upload"}
-              className="btn btn-line w-full"
-            >
-              {busy === "upload" ? <Spinner className="mr-2" /> : null}
-              {t("translation.upload")}
-            </button>
-          </div>
+            <Upload size={18} />
+            <span className="grow min-w-0">
+              <span className="block font-medium trunc">{chosen ? chosen.name : "Choose the book"}</span>
+              <span className="block dim text-cap">
+                {busy === "upload" ? "Sending…" : uploaded ? `Ready · ${formatFileSize(chosen?.size ?? 0)}` : "EPUB, PDF, TXT or Markdown"}
+              </span>
+            </span>
+            {busy === "upload" ? <Spinner /> : uploaded ? <span className="pill pill-ok">ready</span> : null}
+          </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="label space-y-1">
@@ -338,10 +328,13 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
             {t("translation.projectTitle")}
             <input value={title} onChange={(e) => setTitle(e.target.value)} className="input w-full normal-case" />
           </label>
-          <label className="label space-y-1 block">
-            {t("translation.segmentMax")}
-            <input type="number" min={400} max={4000} value={segmentMaxChars} onChange={(e) => setSegmentMaxChars(Number(e.target.value) || 1200)} className="input w-full normal-case" />
-          </label>
+          <details className="more">
+            <summary>More</summary>
+            <label className="field mt-2.5">
+              <span className="label">Longest piece sent at once, in characters</span>
+              <input type="number" min={400} max={4000} value={segmentMaxChars} onChange={(e) => setSegmentMaxChars(Number(e.target.value) || 1200)} className="input w-full" />
+            </label>
+          </details>
           <button
             onClick={createProject}
             disabled={!uploaded || busy === "create"}
@@ -353,12 +346,9 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
         </section>
 
         <section className="panel space-y-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <FileText size={18} className="text-primary" />
-              <h2 className="h-panel">{t("translation.projects")}</h2>
-            </div>
-            <button onClick={() => refetch()} className="btn btn-line btn-sm">{t("translation.refresh")}</button>
+          <div className="spread gap-3">
+            <h2 className="h-panel">Your translations</h2>
+            <button type="button" onClick={() => refetch()} className="btn btn-quiet btn-sm">{t("translation.refresh")}</button>
           </div>
 
           {loading && <Loading what="Reading translations…" />}
@@ -379,7 +369,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
                 >
                   <div className="font-semibold line-clamp-1">{item.title}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{item.sourceLanguage} → {item.targetLanguage} · {item.chapters} {t("translation.chapters")}</div>
-                  <div className="mt-2 text-small text-muted-foreground/70">{item.projectId}</div>
+
                 </button>
               ))}
             </div>
@@ -390,7 +380,7 @@ export function TranslationManager({ nav, theme, t }: { nav: Nav; theme: Theme; 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="font-semibold">{selected.title}</div>
-                  <div className="text-xs text-muted-foreground">{selected.projectId}</div>
+
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <button onClick={runProject} disabled={busy === "run"} className="btn">

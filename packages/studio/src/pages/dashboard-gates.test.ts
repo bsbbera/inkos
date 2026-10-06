@@ -151,7 +151,7 @@ describe("deriveGates: pipeline gates", () => {
       [work({ id: "the-lamp-room", files: 22, read: 6 })],
       [waiting],
     );
-    expect(gates[0]?.id).toBe("pipeline:the-second-law");
+    expect(gates[0]?.id).toBe("pipeline:short/the-second-law");
     expect(gates[0]?.action).toBe("Sign it off");
   });
 

@@ -16,6 +16,7 @@
  * your intent, round dots are the file's own state; they never mean the same
  * thing inside one row.
  */
+import { briefly } from "../lib/error-copy";
 import { Num } from "../components/ui/num";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TypeMark } from "../components/TypeMark";
@@ -23,13 +24,14 @@ import type { SSEMessage } from "../hooks/use-sse";
 import { fetchJson, useApi } from "../hooks/use-api";
 import { useNewSSEMessages } from "../hooks/use-sse";
 import { Icon } from "../components/ui/icon";
-import { Spinner } from "../components/ui/working";
+import { Orb } from "../components/ui/working";
 import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
 import { copyText } from "../lib/clipboard";
 import { manuscriptBlocks, type Run } from "../lib/manuscript-md";
 import { titleOf } from "../lib/title-of";
+import { useTitles } from "../hooks/use-titles";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { PicturesStrip } from "../components/PicturesStrip";
 import { SettingCard } from "../components/SettingCard";
@@ -268,18 +270,26 @@ const SEV_CLASS: Record<Severity, string> = {
 export function placeOf(path: string): string {
   const name = path.split("/").pop() ?? path;
   const num = /^(\d{2,4})/.exec(name);
-  if (num) return `ch${String(Number(num[1])).padStart(2, "0")}`;
-  return name.replace(/\.md$/, "");
+  // An issue is made of pages, everything else of chapters; "CH01" over a
+  // magazine page named the wrong thing in the wrong register.
+  const unit = /(^|\/)(issues|publications?|magazines?)\//i.test(path) ? "Page" : "Chapter";
+  if (num) return `${unit} ${Number(num[1])}`;
+  return titleOf(name.replace(/\.md$/, ""));
 }
 
 /* ---------------------------------------------------------------- the page */
 
-export function AuditPage({ sse }: { readonly sse: { readonly messages: ReadonlyArray<SSEMessage> } }) {
+export function AuditPage({ sse, open }: {
+  readonly sse: { readonly messages: ReadonlyArray<SSEMessage> };
+  /** The work a tile or a gate asked for; without it the screen opens on the newest. */
+  readonly open?: { readonly kind: string; readonly id: string };
+}) {
   const { data: projectList, loading, error, refetch: refetchProjects } =
     useApi<{ projects: ReadonlyArray<Project> }>("/audit/projects");
   const projects = useMemo(() => projectList?.projects ?? [], [projectList]);
 
-  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(null);
+  const [picked, setPicked] = useState<{ kind: string; id: string } | null>(open ?? null);
+  useEffect(() => { if (open) setPicked(open); }, [open?.kind, open?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     // Open on the work touched most recently rather than on nothing at all.
     if (!picked && projects.length > 0) {
@@ -591,7 +601,8 @@ export function AuditPage({ sse }: { readonly sse: { readonly messages: Readonly
   const pageName = useMemo(() => {
     const item = items.find((i) => i.path === page);
     if (!item) return page ? placeOf(page) : "";
-    return item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "") || item.name;
+    // "0002.md" has no words in its name; it is Chapter 2.
+    return titleOf(item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "")) || placeOf(item.path);
   }, [items, page]);
 
   /*
@@ -894,7 +905,8 @@ function fileFacts(item: Item, findings: ReadonlyArray<Finding>) {
     open: open.length,
     blocking: open.filter((f) => f.severity === "blocking").length,
     num: num ? String(Number(num[1])).padStart(2, "0") : null,
-    name: item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "") || item.name,
+    // The file's slug read as words; the slug itself stays in the tooltip.
+    name: titleOf(item.name.replace(/^\d+[_-]?/, "").replace(/\.md$/, "")) || placeOf(item.path),
     history: historyOf(item.audit),
   };
 }
@@ -929,6 +941,7 @@ function ScopeColumn({
   readonly onStop: () => void;
 }) {
   const here = items.find((i) => i.path === page) ?? null;
+  const nameOf = useTitles();
   /* A list reads names in order; a field of tiles answers "which of these
      still needs work" at a glance. Which one you want is about the production,
      not the session, so the choice is kept. */
@@ -991,13 +1004,13 @@ function ScopeColumn({
                 <button
                   key={item.path}
                   type="button"
-                  className="row py-2 px-1 w-full text-left"
+                  className="row py-2 w-full text-left"
                   aria-current={page === item.path}
                   onClick={() => onPage(item.path)}
                 >
                   {f.num ? <span className="num tnum">{f.num}</span> : null}
                   <span className="grow">
-                    <span className="name text-body">{f.name}</span>
+                    <span className="name text-body" title={item.name}>{f.name}</span>
                     <span className="meta">
                       {item.words.toLocaleString()} words · {f.note}
                       {f.history ? ` · ${f.history}` : ""}
@@ -1028,7 +1041,7 @@ function ScopeColumn({
           {picked ? (
             <span className="rowflex gap-2 min-w-0">
               <span className="trunc text-body font-semibold" title={picked.id}>
-                {titleOf(picked.id)}
+                {nameOf(picked.id)}
               </span>
               <span className="dim text-cap flex-none">
                 {items.length} file{items.length === 1 ? "" : "s"}
@@ -1047,7 +1060,7 @@ function ScopeColumn({
         />
       </div>
 
-      <div className="panel-body grows px-3.5 pt-1.5 pb-2.5">
+      <div className="panel-body grows pt-1.5 pb-2.5">
         {projects.length > 1 ? (
           <>
             {/* No "The work" heading, and no row for the work you are already
@@ -1062,14 +1075,17 @@ function ScopeColumn({
                   <Fragment key={`${p.kind}/${p.id}`}>
                     <button
                       type="button"
-                      className="row row-work py-2 px-1"
+                      className="row row-work py-2"
                       aria-current={open}
                       onClick={() => onPick({ kind: p.kind, id: p.id })}
                     >
-                      <TypeMark kind={p.kind} />
+                      {/* The same slot the chapter numbers stand in, so every
+                          name in this list starts on one edge whatever mark
+                          sits in front of it. */}
+                      <span className="mark-slot"><TypeMark kind={p.kind} /></span>
                       <span className="grow">
                         <span className="name text-body" title={p.id}>
-                          {titleOf(p.id)}
+                          {nameOf(p.id)}
                         </span>
                         {/* The silhouette said the type already. Repeating the
                             word beside it is the labelling the styleguide
@@ -1085,12 +1101,12 @@ function ScopeColumn({
           </>
         ) : files}
       </div>
-      <div className="panel-body border-t border-t-(--line) py-3.5 px-4">
+      <div className="panel-body border-t border-t-(--line) py-3.5">
         <div className="rowflex justify-between mb-2.5">
           <span className="dim text-cap">
             {here ? `${here.words.toLocaleString()} words` : `${items.length} files`}
           </span>
-          <span className="dim mono text-cap">
+          <span className="dim text-cap tnum">
             {estimate(here ? here.words : items.reduce((n, i) => n + i.words, 0))}
           </span>
         </div>
@@ -1101,14 +1117,16 @@ function ScopeColumn({
             Stop serves both. */}
         {running || working ? (
           <button type="button" className="btn btn-line w-full justify-center" onClick={onStop}>
-            <Spinner />
+            <Orb state="solving" />
             Stop
           </button>
         ) : (
-          <>
+          /* Two sizes of the same act, side by side and the same width: the
+             fill says which is the usual one, the width does not need to. */
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              className="btn w-full justify-center"
+              className="btn justify-center"
               disabled={!here}
               onClick={onRead}
             >
@@ -1117,13 +1135,13 @@ function ScopeColumn({
             </button>
             <button
               type="button"
-              className="btn btn-quiet btn-sm w-full justify-center mt-2"
+              className="btn btn-line justify-center"
               disabled={items.length === 0}
               onClick={onReadAll}
             >
               Read all {items.length}
             </button>
-          </>
+          </div>
         )}
         <p className="hint mt-2.5">
           {progress ?? "Findings from earlier runs stay until you settle them."}
@@ -1260,7 +1278,7 @@ function StateColumn({
   return (
     <div className="panel panel-flush colpanel">
       {/* ---------------------------------------------------------- status */}
-      <div className="panel-head py-3.5 px-4">
+      <div className="panel-head py-3.5">
         <span className="grow min-w-0">
           <h3 className="h-panel">Where it stands</h3>
           {workflow ? (
@@ -1299,7 +1317,7 @@ function StateColumn({
       <div className="grows">
 
         {/* ------------------------------------------- the whole production */}
-        <div className="panel-body py-3 px-4">
+        <div className="panel-body py-3">
           <div className="label mb-2">
             <span>All {global.pages} page{global.pages === 1 ? "" : "s"}</span>
           </div>
@@ -1348,7 +1366,7 @@ function StateColumn({
                   </span>
                   <span className="w-20 flex-none whitespace-nowrap font-medium">{st.stage}</span>
                   <span className="grow dim trunc text-cap" title={st.detail}>
-                    {st.detail}
+                    {briefly(st.detail)}
                   </span>
                 </div>
               ))}
@@ -1360,7 +1378,7 @@ function StateColumn({
         {/* The world this is set in, beside the manuscript: reading it and
             correcting it are the two things anyone does with it (22 §5). */}
         {detail ? (
-          <div className="panel-body py-3 px-4">
+          <div className="panel-body py-3">
             <SettingCard type={detail.kind} id={detail.id} />
           </div>
         ) : null}
@@ -1380,7 +1398,7 @@ function StateColumn({
       {workflow && showState ? (
         <>
           {/* ------------------------------------------------------- gates */}
-          <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+          <div className="panel-body py-2.5 border-t border-t-(--line)">
             <div className="stack-xs">
               {workflow.gates.map((g) => {
                 /* The sign-off lives per file in the audit state for every kind
@@ -1422,7 +1440,7 @@ function StateColumn({
           </div>
 
           {/* ---------------------------------------------- what you can do */}
-          <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+          <div className="panel-body py-2.5 border-t border-t-(--line)">
             <div className="rowflex gap-2 flex-wrap">
               {pageSigned ? (
                 <button
@@ -1521,23 +1539,30 @@ function StateColumn({
             ) : null}
 
             {detail?.resumable ? (
-              <div className="rowflex gap-2 mt-2.5 flex-wrap">
-                <span className="label">Resume</span>
-                <select
-                  className="input w-auto py-1.5 px-2 text-small"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                >
-                  {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <span className="label">through</span>
-                <select
-                  className="input w-auto py-1.5 px-2 text-small"
-                  value={stopAt}
-                  onChange={(e) => setStopAt(e.target.value)}
-                >
-                  {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
+              /* Two labelled fields and the button on one line. Inline labels
+                 between selects wrapped into "RESUME [write] THROUGH" over
+                 "[audit] Go" in a column this narrow. */
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-end mt-2.5">
+                <label className="field">
+                  <span className="label">Pick up at</span>
+                  <select
+                    className="input py-1.5 px-2 text-small"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                  >
+                    {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label className="field">
+                  <span className="label">Go through</span>
+                  <select
+                    className="input py-1.5 px-2 text-small"
+                    value={stopAt}
+                    onChange={(e) => setStopAt(e.target.value)}
+                  >
+                    {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
                 <button
                   type="button"
                   className="btn btn-sm"
@@ -1580,7 +1605,7 @@ function StateColumn({
           times and still wrong" is a per-page fact, and a production total
           cannot say it — nine rewrites spread over seventeen pages and nine
           rewrites of this one are the same number and a different problem. */}
-      <div className="panel-body py-3 px-4 border-t border-t-(--line)">
+      <div className="panel-body py-3 border-t border-t-(--line)">
         <div className="label mb-2">
           <span>{here ? `This page · ${pageName}` : "This page"}</span>
         </div>
@@ -1615,7 +1640,7 @@ function StateColumn({
       </div>
 
       {/* ---------------------------------------------------------- checks */}
-      <div className="panel-head py-3 px-4 border-t border-t-(--line)">
+      <div className="panel-head py-3 border-t border-t-(--line)">
         <span className="grow">
           <span className="rowflex gap-2.5 items-baseline">
             <span className="numeral text-h3">
@@ -1632,7 +1657,7 @@ function StateColumn({
         <span className="dim text-cap">j / k</span>
       </div>
 
-      <div className="panel-body px-3 pt-2 pb-0.5">
+      <div className="panel-body pt-2 pb-0.5">
         <div className="rowflex gap-1.5 flex-wrap">
           {pills.map((p) => (
             <button
@@ -1651,7 +1676,7 @@ function StateColumn({
         </div>
       </div>
 
-      <div className="panel-body p-2">
+      <div className="panel-body py-2 px-0.5">
         {/* Three states, not two. A page nobody has read and a page that was
             read and came back clean both used to say "Nothing is open", which
             is a claim about writing that had never been looked at.
@@ -1706,7 +1731,7 @@ function StateColumn({
       {/* Your verdict and the stages, last: they are what you do once the
           page above has been read. */}
       {detail && here ? (
-        <div className="panel-body py-3 px-4 border-t border-t-(--line)">
+        <div className="panel-body py-3 border-t border-t-(--line)">
           <div className="label mb-2"><span>Your verdict on this page</span></div>
           <Verdict
             key={here.path}
@@ -1724,7 +1749,7 @@ function StateColumn({
               Where the pipeline itself is. Everything above is read off the
               files on disk; this is read off the run. */}
           {pipeRun ? (
-            <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+            <div className="panel-body py-2.5 border-t border-t-(--line)">
               <div className="rowflex gap-2 text-small items-baseline">
                 <span className="dim text-cap">Run</span>
                 <span className="mono grow text-cap">{pipeRun.stage}</span>
@@ -1737,7 +1762,7 @@ function StateColumn({
               Every gate this kind of work has, whether or not the run has got
               there, each one signable at any time. */}
           {declared?.gates?.length ? (
-            <div className="panel-body py-2.5 px-4 border-t border-t-(--line)">
+            <div className="panel-body py-2.5 border-t border-t-(--line)">
               <div className="stack-xs">
                 {declared.gates.map((g) => {
                   const state = pipeRun?.gates[g]?.state ?? null;
@@ -1842,6 +1867,15 @@ function PageColumn({
   /* Up here for the same reason. The editor is the same prose at the same size
      as the reader, so switching modes must not resize it under you. */
   const { chosen } = useReadingSize();
+  /* Most pages open on their own title. The head then names where the page
+     sits ("Page 1") instead of printing the same title twice, one above the
+     other. The writer's heading stays in the prose; it is their text. */
+  const titled = useMemo(() => {
+    const first = manuscriptBlocks(text)[0];
+    if (!first || first.kind !== "h") return false;
+    const head = text.slice(first.from, first.to).replace(/^#+\s*/, "").trim().toLowerCase();
+    return head === name.trim().toLowerCase();
+  }, [text, name]);
 
   /* Full screen is a way of editing this page, not a mode of its own. Leaving
      edit, or moving to a different page, closes it - otherwise the overlay
@@ -1870,18 +1904,24 @@ function PageColumn({
       <div className="readhead relative flex-none">
         <div className="spread readcol items-start gap-3">
           <div className="min-w-0">
-            <div className="label">{placeOf(path)}</div>
+            {!titled && placeOf(path) !== name ? <div className="label">{placeOf(path)}</div> : null}
             {/* Truncates rather than breaking: `overflow-wrap: anywhere` put
                 `0007.md` down the column one character per line as soon as the
                 pane got narrow. A file name is one token. */}
-            <h3 className="trunc text-lead mt-1.5" title={name}>{name}</h3>
+            <h3 className="trunc text-lead" title={name}>{titled ? placeOf(path) : name}</h3>
           </div>
           {/* No `flex` here. It carried `none`, which is an inline style and
               so beat the container query that drops this row under the name
               when the pane is too narrow to hold both - so instead of
               wrapping, the row ran off the right edge of the panel. The
               stylesheet owns when it wraps. */}
-          <div className="rowflex gap-2.5">
+          {/* Two groups, not one row of seven: the tools that act on the
+              text, and the page's state. When the head is too narrow for the
+              name beside them they drop under it as one line, tools on the
+              left and state on the right, instead of wrapping wherever the
+              seventh control happened to fall. */}
+          <div className="readtools">
+          <div className="rowflex gap-1">
             {/* The whole page, out of the app or read to you. They belong to
                 the page, not to one mode of looking at it, so they sit with
                 the page's own controls and act on whichever text is in front
@@ -1915,6 +1955,8 @@ function PageColumn({
               <Icon name="pulse" size={15} />
             </button>
             <ReadingSize dark />
+          </div>
+          <div className="rowflex gap-2.5">
             <span className="pill">
               {findings.filter((f) => f.state === "open").length} open
             </span>
@@ -1927,6 +1969,7 @@ function PageColumn({
                 { value: "edit", label: "Edit", icon: "pencil" },
               ]}
             />
+          </div>
           </div>
         </div>
       </div>
@@ -2000,9 +2043,9 @@ function PageColumn({
               Settings button is the stylesheet's job now, and only at the
               widths where the column actually reaches that corner. */}
           <div className="revisebar">
-            <div className="rowflex readcol gap-2">
+            <div className="rowflex readcol gap-2 flex-wrap">
               <input
-                className="input grow"
+                className="input grow min-w-60"
                 value={note}
                 onChange={(e) => onNote(e.target.value)}
                 placeholder="What is wrong with this page? It will be rewritten to fix it."

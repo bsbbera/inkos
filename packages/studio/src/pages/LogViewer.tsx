@@ -8,6 +8,7 @@
  * The level segment carries counts, so "is anything actually wrong" is
  * answered before the filter is touched.
  */
+import { PageHead } from "../components/ui/page-head";
 import { useMemo, useState } from "react";
 import { useApi } from "../hooks/use-api";
 import type { TFunction } from "../hooks/use-i18n";
@@ -63,12 +64,10 @@ export function LogViewer({ t }: { readonly t: TFunction }) {
 
   return (
     <div className="stack-lg">
-      <section className="crop pb-0">
-        <h2 className="h-page">The machine talking to itself</h2>
-        <p className="muted text-body mt-2 max-w-measure">
-          Everything the shim, the daemon and the writer said while working. {t("logs.showingRecent")}
-        </p>
-      </section>
+      <PageHead
+        title="The machine talking to itself"
+        lede={<>Everything the shim, the daemon and the writer said while working. {t("logs.showingRecent")}</>}
+      />
 
       <div className="rowflex items-center gap-2.5 flex-wrap">
         <div className="seg">

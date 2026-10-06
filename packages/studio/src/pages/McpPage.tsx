@@ -117,7 +117,7 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
   const onCount = entries.filter(([, s]) => s.enabled).length;
 
   return (
-    <div className="space-y-8">
+    <div className="stack-lg">
       <div className="flex items-center justify-between gap-4">
         {embedded ? <span className="grow" /> : (
         <div>
@@ -131,7 +131,7 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
           </p>
         </div>
         )}
-        <button onClick={() => void load()} className="btn btn-line shrink-0">
+        <button type="button" onClick={() => void load()} className="btn btn-line btn-sm shrink-0">
           Rescan
         </button>
       </div>

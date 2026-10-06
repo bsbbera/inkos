@@ -27,7 +27,7 @@ export type HashRoute =
   | { page: "doctor" }
   | { page: "mcp" }
   | { page: "setup"; tab?: "machine" | "providers" | "agents" }
-  | { page: "audit" }
+  | { page: "audit"; kind?: string; id?: string }
   | { page: "gallery"; type?: string; id?: string }
   | { page: "taste" }
   | { page: "publication"; issueId: string }
@@ -51,6 +51,8 @@ function parseHash(hash: string): HashRoute {
   const setupMatch = path.match(/^setup\/(machine|providers|agents)$/);
   if (setupMatch) return { page: "setup", tab: setupMatch[1] as "machine" | "providers" | "agents" };
   if (path === "audit") return { page: "audit" };
+  const auditMatch = path.match(/^audit\/([^/]+)\/([^/]+)$/);
+  if (auditMatch) return { page: "audit", kind: decodeURIComponent(auditMatch[1]!), id: decodeURIComponent(auditMatch[2]!) };
   if (path === "gallery") return { page: "gallery" };
   if (path === "taste") return { page: "taste" };
   const galleryMatch = path.match(/^gallery\/([^/]+)\/([^/]+)$/);
@@ -130,7 +132,9 @@ function routeToHash(route: HashRoute): string {
     case "styleguide": return "#/styleguide";
     case "audit-packs": return "#/audit-packs";
     case "run": return route.runId ? `#/run/${encodeURIComponent(route.runId)}` : "#/run";
-    case "audit": return "#/audit";
+    case "audit": return route.kind && route.id
+      ? `#/audit/${encodeURIComponent(route.kind)}/${encodeURIComponent(route.id)}`
+      : "#/audit";
     case "taste": return "#/taste";
     case "gallery":
       return route.type && route.id

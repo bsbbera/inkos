@@ -78,12 +78,6 @@ function SettingsCard({
   return (
     <section className="panel crop space-y-5">
       <div className="relative flex items-start gap-3.5">
-        <span
-          className="icon-ring"
-          aria-hidden="true"
-        >
-          {icon}
-        </span>
         <div className="min-w-0 flex-1">
           <h2 className="h-panel">{title}</h2>
           <p className="note mt-1.5 leading-relaxed">{description}</p>
@@ -192,7 +186,7 @@ export function ProjectSettings({ nav, theme, t, embedded }: { nav: Nav; theme: 
   };
 
   return (
-    <div className="space-y-8">
+    <div className="stack-lg">
       {embedded ? null : (
         <header className="head">
           <p className="label flex items-center gap-2">
@@ -264,7 +258,7 @@ export function ProjectSettings({ nav, theme, t, embedded }: { nav: Nav; theme: 
       </SettingsCard>
 
       <SettingsCard
-        title={isZh ? "Agent Skills" : "Agent Skills"}
+        title={isZh ? "智能体技能" : "Skills"}
         description={isZh ? "导入标准 SKILL.md 专业能力包。Chat 可以按意图自主使用，也可以在输入框用 + 号强制启用。" : "Import standard SKILL.md expertise packages. Chat can choose a skill from intent, or you can force one from the + menu."}
         icon={<Bot size={18} />}
       >

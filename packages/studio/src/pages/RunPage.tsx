@@ -10,13 +10,16 @@
  * think / tool / stream / fail - and when it lands only `line()` below changes;
  * the transcript, the stage list and the clock are already shaped for it.
  */
+import { when } from "../lib/when";
+import { useTitles } from "../hooks/use-titles";
+import { plainError } from "../lib/error-copy";
 import { useEffect, useMemo, useState } from "react";
 import type { SSEMessage } from "../hooks/use-sse";
 import type { ActiveRun } from "../hooks/use-shell-data";
-import { jobDetail, jobLabel, type JobsView } from "../hooks/use-jobs";
+import { isLive, jobDetail, jobLabel, type JobsView } from "../hooks/use-jobs";
 import { Icon } from "../components/ui/icon";
 import { toast } from "../components/ui/vermilion";
-import { Ring } from "../components/ui/working";
+import { Orb, Ring, orbForStage } from "../components/ui/working";
 import { copyText } from "../lib/clipboard";
 
 
@@ -132,6 +135,7 @@ export function RunPage({
   readonly run: ActiveRun | null;
   readonly jobs: JobsView;
 }) {
+  const nameOf = useTitles();
   /*
    * What this screen is about, from whichever source knows.
    *
@@ -212,16 +216,41 @@ export function RunPage({
 
   const done = stages.filter((s) => s.state === "done").length;
   const pct = stages.length ? Math.round((done / stages.length) * 100) : 0;
+  // What the run is doing now, as an orb inside the progress ring. A gate is
+  // the machine waiting on you, so it breathes rather than works.
+  const now = stages.find((s) => s.state === "now");
+  const nowOrb = now ? (now.took === "waiting on you" ? "breathing" : orbForStage(now.name)) : undefined;
 
   if (!head) {
+    /* What ran last, so an empty screen still answers "did it finish?" */
+    const past = [...jobs.jobs].filter((j) => !isLive(j)).reverse().slice(0, 6);
     return (
-      <div className="empty">
-        <Icon name="clock" size={22} />
-        <h3>Nothing is running.</h3>
-        <p>
-          When a draft, an audit or an issue build starts, it appears here and in the rail,
-          with its transcript and the stage it has reached.
-        </p>
+      <div className="stack-lg">
+        <div className="empty">
+          <Icon name="clock" size={22} />
+          <h3>Nothing is running.</h3>
+          <p>
+            When a draft, an audit or an issue build starts, it appears here and in the rail,
+            with its transcript and the stage it has reached.
+          </p>
+        </div>
+        {past.length > 0 ? (
+          <section className="panel">
+            <h3 className="label mb-2">Ran recently</h3>
+            <div className="rows stagger">
+              {past.map((j) => (
+                <div key={j.id} className="row still py-2.5">
+                  <span className="grow min-w-0">
+                    <span className="name trunc" title={j.ref.id}>{nameOf(j.ref.id)}</span>
+                    <span className="meta trunc">{j.stage.replace(/[._:-]+/g, " ")}{j.error ? ` · ${plainError(j.error).text}` : ""}</span>
+                  </span>
+                  <span className={j.status === "failed" ? "pill pill-bad" : j.status === "done" ? "pill pill-ok" : "pill"}>{j.status}</span>
+                  <span className="meta tnum">{when(j.endedAt ?? j.startedAt ?? j.queuedAt)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     );
   }
@@ -254,10 +283,8 @@ export function RunPage({
             </div>
           ))}
           {transcript.length === 0 ? (
-            <div className="thinking" aria-label="Waiting for the first event">
-              <i />
-              <i />
-              <i />
+            <div role="status" aria-label="Waiting for the first event">
+              <Orb state="breathing" size={32} />
             </div>
           ) : null}
         </div>
@@ -298,7 +325,7 @@ export function RunPage({
             </p>
             <div className="rows mt-3">
               {jobs.live.map((job) => (
-                <div className="row py-2.5 px-1 gap-2.5" key={job.id}>
+                <div className="row py-2.5 gap-2.5" key={job.id}>
                   <span className={`${job.status === "running" ? "st now" : "st"} gap-2.5`}>
                     <i />
                     {jobLabel(job)}
@@ -327,13 +354,13 @@ export function RunPage({
               </p>
             </div>
             <div className="rowflex gap-2.5">
-              <Ring value={pct / 100} />
+              <Ring value={pct / 100} size="lg" {...(nowOrb ? { orb: nowOrb } : {})} />
               <span className="pct">{pct}%</span>
             </div>
           </div>
           <div className="rows mt-3">
             {stages.map((s) => (
-              <div className="row py-2.5 px-1" key={s.name}>
+              <div className="row py-2.5" key={s.name}>
                 <span
                   className={`${s.state === "done"
                     ? "st done"

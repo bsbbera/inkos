@@ -80,7 +80,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
         {files.length === 0 ? (
           // "Nothing yet" and "this panel does not exist" are different facts,
           // and a rail that hides itself when empty says the wrong one.
-          <p className="hint text-cap px-1 pt-1 pb-0">
+          <p className="hint text-cap pt-1 pb-0">
             Nothing written to disk yet.
           </p>
         ) : (
@@ -89,7 +89,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
               <button
                 key={file.path}
                 type="button"
-                className="row py-2.5 px-1"
+                className="row py-2.5"
                 onClick={() => (bookId ? openArtifact(file.path) : openProjectArtifact(file.path))}
               >
                 <Glyph kind={file.kind} />
@@ -106,7 +106,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
         )}
 
         <div className="grp">
-          <div className="rowflex justify-between px-1 pt-0 pb-1.5">
+          <div className="rowflex justify-between pt-0 pb-1.5">
             <span className="label">This session</span>
             <span className="seg text-cap">
               {(["agent", "model"] as const).map((mode) => (
@@ -123,7 +123,7 @@ export function ChatArtifactsRail({ bookId }: { readonly bookId?: string }) {
           </div>
 
           {lines.length === 0 ? (
-            <p className="hint text-cap py-0 px-1">
+            <p className="hint text-cap py-0">
               Nothing has run in this session yet.
             </p>
           ) : (

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { buildApiUrl, fetchJson } from "../hooks/use-api";
 import type { JobsView } from "../hooks/use-jobs";
 import { toast } from "./ui/vermilion";
+import { when } from "../lib/when";
 
 interface Policy {
   readonly surfaces: ReadonlyArray<string>;
@@ -444,7 +445,7 @@ export function DesignDesk({ type, id, jobs }: {
         <div>
           <button
             type="button"
-            className="btn btn-quiet btn-sm"
+            className="btn btn-line btn-sm"
             disabled={busy !== null}
             onClick={() => void run("cast", () => post("/design/cast", { type, id }), "Reading the cast off the text.")}
           >
@@ -456,7 +457,7 @@ export function DesignDesk({ type, id, jobs }: {
       {/* ------------------------------------------------------ final */}
       <Card
         title="Your final"
-        badge={last ? <span className="pill" title={last.ingestedAt}>learned {new Date(last.ingestedAt).toLocaleDateString()}</span> : null}
+        badge={last ? <span className="pill" title={last.ingestedAt}>learned {when(last.ingestedAt)}</span> : null}
       >
         <span className="hint">
           Put the text you consider finished, the PDF you printed, or pictures you made in{" "}

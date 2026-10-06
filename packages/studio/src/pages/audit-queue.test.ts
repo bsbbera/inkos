@@ -111,13 +111,14 @@ describe("fileState", () => {
 });
 
 describe("placeOf", () => {
-  it("reads a numbered chapter file as a chapter", () => {
-    expect(placeOf("books/tide/chapters/0009_nine.md")).toBe("ch09");
-    expect(placeOf("Magazine/issues/kolam/pages/03-opening.md")).toBe("ch03");
+  it("reads a numbered file as a chapter, or a page in an issue", () => {
+    expect(placeOf("books/tide/chapters/0009_nine.md")).toBe("Chapter 9");
+    expect(placeOf("Magazine/issues/kolam/pages/03-opening.md")).toBe("Page 3");
   });
 
-  it("falls back to the name for anything unnumbered", () => {
-    expect(placeOf("dramas/closing-time/script.md")).toBe("script");
+  it("falls back to the name, read as words, for anything unnumbered", () => {
+    expect(placeOf("dramas/closing-time/script.md")).toBe("Script");
+    expect(placeOf("Magazine/issues/indigo/the-sudden-blush.md")).toBe("The Sudden Blush");
   });
 });
 

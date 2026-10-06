@@ -11,6 +11,7 @@ import {
   setBookCreateSessionId,
 } from "./chat-page-state";
 import { Failed, Loading } from "../components/ui/states";
+import { Orb } from "../components/ui/working";
 
 interface Nav {
   toDashboard: () => void;
@@ -808,7 +809,7 @@ export function BookCreate({ nav, theme, t }: { nav: Nav; theme: Theme; t: TFunc
 
       {status && (
         <div role="status" className="notice flex items-center gap-2.5 text-sm panel-in">
-          <span className="thinking" aria-hidden="true"><i /><i /><i /></span>
+          <Orb state="shaping" />
           {status}
         </div>
       )}
