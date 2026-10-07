@@ -330,7 +330,7 @@ export async function improvePage(input: {
 
 export interface ScoreFile { readonly latest: PageScore; readonly history: ReadonlyArray<PageScore> }
 
-/** `<issue>/pages/<nn>/score.json`, where the page bundle keeps its score (Phase 5). */
+/** `<issue>/pages/<nn>/score.json`, where the page bundle keeps its score (Phase 6). */
 export const scorePath = (issueDir: string, n: number) => join(issueDir, "pages", String(n).padStart(2, "0"), "score.json");
 
 export async function readScore(issueDir: string, n: number): Promise<ScoreFile | null> {
