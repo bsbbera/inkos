@@ -243,9 +243,13 @@ function baseStageStates(issue: PublicationIssue): Array<{ stage: PublicationSta
  * "Cannot build" with no reason is what makes a gate feel like a bug. Every
  * blocked gate names its own remedy.
  */
+/** Where an issue's files live. */
+export const issueDirOf = (root: string, id: string): string =>
+  join(root, PRODUCTIONS.find((p) => p.id === "publication")?.outDir ?? "Magazine", "issues", id);
+
 /** The pack an issue resolves to: its type's defaults, the packs chosen on it, its own override. */
 export const publicationPack = (root: string, id: string): Promise<ResolvedAuditPack> =>
-  auditPackIn(join(root, PRODUCTIONS.find((p) => p.id === "publication")?.outDir ?? "Magazine", "issues", id), "publication");
+  auditPackIn(issueDirOf(root, id), "publication");
 
 /** The numbers this issue's design is held to: defaults, then what accepted taste rules taught its type, worlds and itself. */
 export const publicationMath = (root: string, issue: PublicationIssue): Promise<DesignMath> =>

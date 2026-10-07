@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  declaredBreaks, goldenRules, mathScopeOf, parseNumberRule, readMath, writeMath,
+  declaredBreaks, goldenRules, mathScopeOf, parseNumberRule, readMath, repairGoldenRules, writeMath,
 } from "../pipeline/design-rules.js";
 import type { DesignSpec } from "../pipeline/publication-design.js";
 
@@ -37,6 +37,26 @@ describe("golden rules a spec can answer", () => {
     const busy = spec({ 1: page("top", { blocks: [{ kind: "a", slot: "x" }, { kind: "b", slot: "y" }, { kind: "c", slot: "z" }] }) });
     expect(goldenRules(busy, sections, { maxBlocksPerPage: 2 })).toEqual(["page 1 carries 3 blocks - the law is 2"]);
     expect(goldenRules(busy, sections)).toEqual([]);
+  });
+});
+
+describe("mending a spec before it is refused", () => {
+  it("ends a run of full-bleeds, rations breaks and trims blocks, and says what it did", () => {
+    const blocks = (n: number) => Array.from({ length: n }, (_, i) => ({ kind: "b" + i, slot: "x" }));
+    const broken = spec({
+      1: page("full-bleed"), 2: page("full-bleed"), 3: page("full-bleed"), 4: page("full-bleed"),
+      5: page("top", { breaks: ["a"] }), 6: page("top", { breaks: ["b"], blocks: blocks(5) }),
+    });
+    const { spec: mended, repairs } = repairGoldenRules(broken, sections, { maxBlocksPerPage: 3 });
+    expect(repairs).toEqual([
+      "page 3: full-bleed became a top picture, to end a run of 3",
+      "page 6: dropped a break past the section's 1",
+      "page 6: kept the first 3 of 5 blocks",
+    ]);
+    expect(goldenRules(mended, sections, { maxBlocksPerPage: 3 })).toEqual([]);
+    // The original is not touched, and a clean spec comes back unchanged.
+    expect(goldenRules(broken, sections).length).toBeGreaterThan(0);
+    expect(repairGoldenRules(mended, sections, { maxBlocksPerPage: 3 }).repairs).toEqual([]);
   });
 });
 

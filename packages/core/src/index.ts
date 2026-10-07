@@ -927,8 +927,17 @@ export {
 } from "./pipeline/typeset.js";
 export type { PrintEdition } from "./pipeline/typeset.js";
 export {
-  BARS, DEFAULT_MIX, audienceOf, gradeOf, prescreen, readabilityFindings, surfaceMix,
+  BARS, DEFAULT_MIX, audienceOf, gradeOf, pageCap, prescreen, readabilityFindings, surfaceMix,
 } from "./pipeline/magazine-bar.js";
+export {
+  DIMS, DIM_NAME, FIX_FOR, PASS_EACH, PASS_TOTAL, WEIGHTS, improvePage, readScore, saveScore, scorePage, scorePath,
+  type Checkpoint, type Dim, type Fix, type Improved, type MeasuredAsset, type MeasuredPage, type PageScore,
+  type PageScoreInput, type ScoreFile, type ScoreType, type LayoutReport, type LaidFrame,
+} from "./pipeline/page-score.js";
+export {
+  layoutScored, logScore, problemsFor, scoreAndSave, scoreIssuePage, variantFor,
+} from "./pipeline/page-score-run.js";
+export { issueDir as publicationIssueDir } from "./pipeline/publication-runner.js";
 export type { Audience, PageMetrics, SurfaceMix } from "./pipeline/magazine-bar.js";
 export {
   loadPersonalItems, noteItem, personalConfigPath, personalSource, readMarkdownFolder,
@@ -1028,7 +1037,7 @@ export {
 export { PublicationIssueSchema, validateIssue as validatePublicationIssue } from "./pipeline/publication-schema.js";
 export { briefsOf as publicationPageBriefs } from "./pipeline/publication-runner.js";
 export {
-  DEFAULT_MATH, declaredBreaks, goldenRules, mathScopeOf, parseNumberRule, readMath, writeMath,
+  DEFAULT_MATH, declaredBreaks, goldenRules, mathScopeOf, parseNumberRule, readMath, repairGoldenRules, writeMath,
   type DesignMath,
 } from "./pipeline/design-rules.js";
 export { nextIssueDue, setIssueSchedule, startNextIssue } from "./pipeline/publication-runner.js";

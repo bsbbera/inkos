@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { readMath } from "@actalk/quire-core";
 import { describe, expect, it } from "vitest";
 import { bytesOfDataUrl, safeName } from "./final.js";
+import { writeFindings } from "./findings-store.js";
 import {
   appendFeedback, appendProposals, checkVerdict, readFeedback, readProposals, registerTasteRoutes, settleProposal,
 } from "./taste.js";
@@ -67,6 +68,17 @@ describe("what an accepted proposal does (Phase 3)", () => {
     const [p] = await appendProposals(root, [{ scope: {}, text: "Cut hedges.", kind: "sentence", evidence: [e.id], source: "distill" }]);
     const out = await (await appFor(root).request(`http://localhost/api/v1/taste/proposals/${p!.id}/evidence`)).json() as { evidence: Array<{ passage: string; note: string }> };
     expect(out.evidence).toMatchObject([{ passage: "She seemed to perhaps almost smile.", note: "Hedging" }]);
+  });
+
+  it("finds the passage of a verdict recorded before passages were, from its finding", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quire-taste-"));
+    await writeFindings(root, [{ id: "f1", path: "Books/b/ch1.md", title: "Hedging", quote: "It was almost perhaps blue." } as never]);
+    const e = await appendFeedback(root, {
+      ref: { type: "book", id: "b" }, surface: "content", verdict: "reject", source: "audit", note: "Hedging", target: "Books/b/ch1.md",
+    });
+    const [p] = await appendProposals(root, [{ scope: {}, text: "Cut hedges.", kind: "sentence", evidence: [e.id], source: "distill" }]);
+    const out = await (await appFor(root).request(`http://localhost/api/v1/taste/proposals/${p!.id}/evidence`)).json() as { evidence: Array<{ passage: string }> };
+    expect(out.evidence[0]!.passage).toBe("It was almost perhaps blue.");
   });
 });
 

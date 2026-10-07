@@ -54,7 +54,12 @@ export interface PageLayout {
   readonly note?: string;
   /** Rule-breaking this page does on purpose, one sentence each; rationed per section (08 §5 rule 7). */
   readonly breaks?: readonly string[];
+  /** An arrangement the page score chose when the page failed by W or H (page-score-run.ts). */
+  readonly variant?: PageVariant;
 }
+
+/** What `onePageScript` (cli-shim/affinity.mjs) can do differently on an editorial page. */
+export type PageVariant = "small-band" | "large-band" | "pull" | "big-deck";
 
 /**
  * Check a spec before anything consumes it.

@@ -61,6 +61,17 @@ export function audienceOf(text: string | undefined | null): Audience {
   return "general";
 }
 
+/** The word cap a page of this density holds for this audience (0 when the definition has no such density). */
+export function pageCap(
+  densities: PublicationDefinition["densities"],
+  density: string,
+  audience: string | undefined | null,
+): number {
+  const order = Object.entries(densities).sort((a, b) => a[1][1] - b[1][1]).map(([code]) => code);
+  const rank = Math.max(0, order.indexOf(density));
+  return BARS[audienceOf(audience)].caps[Math.min(2, rank)] ?? 0;
+}
+
 const isZh = (text: string) => (text.match(/\p{Script=Han}/gu) ?? []).length > text.length * 0.15;
 
 export function sentencesOf(text: string): string[] {

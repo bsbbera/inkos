@@ -99,6 +99,66 @@ export function goldenRules(
   return bad;
 }
 
+/**
+ * Repair what a spec breaks, the cheapest way, without asking a model.
+ *
+ * A run of full-bleeds loses its later pages to a top-set picture, surplus
+ * breaks past the section's ration are dropped (the later ones), and a page
+ * carrying too many blocks keeps the first ones. What it changed is returned,
+ * so the person is told rather than surprised. Anything it cannot mend (a break
+ * with no explanation) is left for the check to report.
+ */
+export function repairGoldenRules(
+  spec: DesignSpec,
+  sections: ReadonlyArray<SectionSpan> | undefined,
+  math: DesignMath = {},
+): { spec: DesignSpec; repairs: string[] } {
+  const law = { ...DEFAULT_MATH, ...math };
+  const repairs: string[] = [];
+  const pages: Record<string, PageLayoutLike> = {};
+  for (const [k, v] of Object.entries(spec.pages ?? {})) pages[k] = { ...v };
+  const numbers = Object.keys(pages).map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+
+  let run = 0, prev = -2;
+  for (const n of numbers) {
+    const bleed = pages[String(n)]!.imageSlot === "full-bleed";
+    run = bleed ? (n === prev + 1 ? run + 1 : 1) : 0;
+    prev = bleed ? n : -2;
+    if (bleed && run > law.maxFullBleedRun) {
+      pages[String(n)] = { ...pages[String(n)]!, imageSlot: "top" };
+      repairs.push(`page ${n}: full-bleed became a top picture, to end a run of ${law.maxFullBleedRun + 1}`);
+      run = 0; prev = -2;
+    }
+  }
+
+  const sectionOf = (n: number) => sections?.find((s) => n >= s.from && n <= s.to);
+  const used = new Map<string, number>();
+  for (const n of numbers) {
+    const layout = pages[String(n)]!;
+    if (!layout.breaks?.length) continue;
+    const key = String(sectionOf(n)?.n ?? "none");
+    const keep: string[] = [];
+    for (const note of layout.breaks) {
+      if ((used.get(key) ?? 0) < law.maxBreaksPerSection) { keep.push(note); used.set(key, (used.get(key) ?? 0) + 1); }
+      else repairs.push(`page ${n}: dropped a break past the section's ${law.maxBreaksPerSection}`);
+    }
+    pages[String(n)] = { ...layout, breaks: keep };
+  }
+
+  if (math.maxBlocksPerPage !== undefined) {
+    for (const n of numbers) {
+      const blocks = pages[String(n)]!.blocks;
+      if (blocks && blocks.length > math.maxBlocksPerPage) {
+        pages[String(n)] = { ...pages[String(n)]!, blocks: blocks.slice(0, math.maxBlocksPerPage) };
+        repairs.push(`page ${n}: kept the first ${math.maxBlocksPerPage} of ${blocks.length} blocks`);
+      }
+    }
+  }
+  return { spec: { ...spec, pages: pages as DesignSpec["pages"] }, repairs };
+}
+
+type PageLayoutLike = { -readonly [K in keyof DesignSpec["pages"][string]]: DesignSpec["pages"][string][K] };
+
 /*
  * ------------------------------------------------------------- number rules
  */

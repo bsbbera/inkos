@@ -15,7 +15,7 @@
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { PublicationDefinition } from "../publications/types.js";
 import { renderTemplate } from "../publications/types.js";
 import {
@@ -69,7 +69,7 @@ import {
   designReferences,
   type DesignSpec,
 } from "./publication-design.js";
-import { goldenRules, readMath } from "./design-rules.js";
+import { goldenRules, readMath, repairGoldenRules } from "./design-rules.js";
 
 /* ------------------------------------------------------------------- types */
 
@@ -360,6 +360,7 @@ const seriesDirOf = (ctx: RunnerContext, issue: PublicationIssue) =>
  */
 const brandDirOf = (ctx: RunnerContext) => join(ctx.projectRoot, ctx.definition.outDir);
 const dirOf = (ctx: RunnerContext, id: string) => join(rootFor(ctx), id);
+export const issueDir = dirOf;
 const fileOf = (ctx: RunnerContext, id: string) => join(dirOf(ctx, id), "publication.json");
 
 const emit = (ctx: RunnerContext, type: string, data: Record<string, unknown> = {}) => {
@@ -1674,7 +1675,7 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
   // The section worlds come back beside the spec, not inside it: the spec is
   // the whole issue's law, and a world is one section's look (08 §2).
   const { sections: rawWorlds, fixed: rawFixed, ...specOnly } = out as Record<string, unknown>;
-  const spec = specOnly as unknown as DesignSpec;
+  let spec = specOnly as unknown as DesignSpec;
   /*
    * The furniture is kept beside the spec, where the law looks for it.
    *
@@ -1692,10 +1693,18 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     ) as PublicationDesign["fixed"]
     : undefined;
   const worlds = worldsFrom(rawWorlds, issue, spec);
+  // The golden rules, with whatever numbers the taste engine has taught this scope.
+  const math = await readMath(ctx.projectRoot, { type: "publication", id, worlds: worlds.map((w) => w.register) });
+  // What can be mended without a model is mended first, and said: a run of
+  // full-bleeds is a fault to fix, not a reason to throw away the design.
+  const mended = spec ? repairGoldenRules(spec, issue.sections, math) : null;
+  if (mended?.repairs.length) {
+    spec = mended.spec;
+    emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Repaired the spec: ${mended.repairs.join("; ")}` });
+  }
   const problems = [
     ...checkSpec(spec, issue.pages.map((p) => p.n)),
-    // The golden rules, with whatever numbers the taste engine has taught this scope.
-    ...goldenRules(spec, issue.sections, await readMath(ctx.projectRoot, { type: "publication", id, worlds: worlds.map((w) => w.register) })),
+    ...goldenRules(spec, issue.sections, math),
   ];
   // Print is less forgiving than a backlit screen, which is why the style law
   // already sets 7:1 for ink on paper. A palette that fails it fails here,
@@ -1904,15 +1913,26 @@ export async function placePage(
     body: JSON.stringify({ issue, issueDir: dirOf(ctx, id), page: Number(n) }),
   });
   const body = await res.json().catch(() => ({})) as {
-    ok?: boolean; error?: string; findings?: string[];
+    ok?: boolean; error?: string; findings?: Array<{ level?: string; what?: string } | string>;
+    frames?: unknown[]; grid?: unknown; cols?: unknown; leaks?: string[]; warnings?: string[];
   };
   if (!res.ok || body.ok === false) {
     const why = body.error ?? `HTTP ${res.status}`;
     emit(ctx, "publication:stage", { id, stage: "design", state: "error", page: Number(n), error: why });
     throw new Error(`layout p${n}: ${why}`);
   }
+  // The geometry the page score reads for G, H and T, beside the render it will take.
+  if (body.frames) {
+    const file = join(dirOf(ctx, id), "pages", String(n).padStart(2, "0"), "layout.json");
+    await mkdir(dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({
+      at: new Date().toISOString(), frames: body.frames, grid: body.grid, findings: body.findings ?? [],
+      cols: body.cols ?? null, leaks: body.leaks ?? [], warnings: body.warnings ?? [],
+    }, null, 2), "utf-8");
+  }
   emit(ctx, "publication:stage", { id, stage: "design", state: "done", page: Number(n) });
-  return { page: Number(n), findings: body.findings ?? [] };
+  const said = (body.findings ?? []).map((f) => (typeof f === "string" ? f : `${f.level ?? "info"}: ${f.what ?? ""}`));
+  return { page: Number(n), findings: [...said, ...(body.leaks?.length ? [`error: markup printed: ${body.leaks.join(" ")}`] : [])] };
 }
 
 /**

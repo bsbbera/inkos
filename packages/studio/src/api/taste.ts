@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import type { Hono } from "hono";
+import { readFindings } from "./findings-store.js";
 import {
   addRule, auditProposals, buildDistillPrompt, causeProposals, cloneTaste, distillGroups, enqueueJob,
   exportTastePack,
@@ -309,10 +310,14 @@ export function registerTasteRoutes(app: Hono, deps: TasteRouteDeps): void {
     if (!proposal) return c.json({ error: "no such proposal" }, 404);
     const wanted = new Set(proposal.evidence);
     const events = (await readFeedback(root)).filter((e) => wanted.has(e.id));
+    // Verdicts recorded before `passage` existed: the finding they were about
+    // is still in the store with its quote, found by file and title.
+    const findings = events.some((e) => !e.passage && e.source === "audit") ? await readFindings(root) : [];
+    const quoteOf = (e: FeedbackEvent) => findings.find((f) => f.path === e.target && f.title === e.note)?.quote?.slice(0, 400) ?? "";
     return c.json({
       evidence: events.map((e) => ({
         id: e.id, at: e.at, verdict: e.verdict, source: e.source,
-        passage: e.passage ?? "", note: e.note ?? "", target: e.target ?? "",
+        passage: e.passage ?? quoteOf(e), note: e.note ?? "", target: e.target ?? "",
       })),
     });
   });

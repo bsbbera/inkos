@@ -560,20 +560,26 @@ export const layout: StageExecutor = async (ctx) => {
   // Imported here rather than at the top because the publication runner
   // reports into the orchestrator, which owns this table: importing it up
   // there would close a cycle.
-  const [{ openIssueContext }, runner] = await Promise.all([
+  const [{ openIssueContext }, { layoutScored }] = await Promise.all([
     import("./publication-context.js"),
-    import("./publication-runner.js"),
+    import("./page-score-run.js"),
   ]);
   try {
     const { ctx: issueCtx } = await openIssueContext(ctx.projectRoot, ctx.id, {
       ...(ctx.shimUrl ? { shimUrl: ctx.shimUrl } : {}),
     });
-    const out = await runner.placePage(issueCtx, ctx.id, ctx.unit);
+    // Placed, rendered, scored, and mended by its cause at most twice (Phase 4),
+    // so a bad page is redesigned before the design gate shows it.
+    const { findings, result } = await layoutScored(issueCtx, ctx.id, ctx.unit, {
+      ...(ctx.onProgress ? { onProgress: ctx.onProgress } : {}),
+    });
     // Findings are what the layout inspector noticed, not a failure: a page
     // can break a rule and still be the page. They belong on the progress
     // line so the person at the design gate sees them before signing.
-    for (const finding of out.findings) ctx.onProgress?.(`p${ctx.unit}: ${finding}`);
-    ctx.onProgress?.(`Page ${ctx.unit} laid out`);
+    for (const finding of findings) ctx.onProgress?.(`p${ctx.unit}: ${finding}`);
+    const s = result.final;
+    ctx.onProgress?.(`Page ${ctx.unit} laid out - score ${s.total}${s.pass ? "" : `, ${s.causeLine}`}`
+      + (result.passes.length ? ` (${result.passes.length} redesign${result.passes.length === 1 ? "" : "s"})` : ""));
     return { ok: true, artifacts: [] };
   } catch (error) {
     return { ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error) };

@@ -233,6 +233,7 @@ import { isApproved, readAuditState, updateFileAudit } from "./audit-state.js";
 import { blockersFor, readFindings, readPassage } from "./findings-store.js";
 import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
+import { registerPageScoreRoutes } from "./page-score.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
 import { access, appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -3929,7 +3930,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * second emptied the provider list whenever the shim was slow to start, so
    * the app came up claiming the user had no models at all.
    */
-  type ShimAgents = Map<string, { enabled: boolean; fallback: string[]; authed: boolean | null }>;
+  type ShimAgents = Map<string, { enabled: boolean; fallback: string[]; authed: boolean | null; failing: { code: string; reason: string } | null }>;
   // One request at a time and one answer per minute. The shim checks sign-in by
   // running each CLI, which blocks it; four CLI tests asking at once each, with
   // retries, queued enough of those to stop it answering anything at all.
@@ -3952,12 +3953,12 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       });
       if (!r.ok) return null;
       const body = await r.json() as {
-        agents?: { id: string; enabled: boolean; fallback?: string[]; authed?: boolean | null }[];
+        agents?: { id: string; enabled: boolean; fallback?: string[]; authed?: boolean | null; failing?: { code: string; reason: string } | null }[];
       };
       // Endpoint ids are the CLI id plus "Cli" — claude -> claudeCli.
       return new Map((body.agents ?? []).map((a) => [
         `${a.id}Cli`,
-        { enabled: a.enabled, fallback: a.fallback ?? [], authed: a.authed ?? null },
+        { enabled: a.enabled, fallback: a.fallback ?? [], authed: a.authed ?? null, failing: a.failing ?? null },
       ]));
     } catch {
       return null;
@@ -4084,6 +4085,9 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         if (!agent) return fail("Not installed on this machine.");
         if (!agent.enabled) return fail("Switched off.");
         if (agent.authed === false) return fail("Installed but signed out. Sign in with the CLI, then test again.");
+        // Listing models is not a call: a CLI whose last real call failed this
+        // way stays out of the pickers and presets until one succeeds (shim callHealth).
+        if (agent.failing) return fail(`Its last call failed (${agent.failing.code}): ${agent.failing.reason}`);
         const baseUrl = getEndpoint(id)?.baseUrl;
         let models = baseUrl ? await probeModelsFromUpstream(baseUrl, "", 60_000) : [];
         // A signed-in CLI that lists nothing on a cold start has usually lost a
@@ -4946,6 +4950,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
     broadcast,
   });
+  registerPageScoreRoutes(app, { root, broadcast, shimUrl: () => shimUrl() });
 
   // The same checks, for anything already written. A publication had a page of
   // its own and everything else had buttons that expired with the chat session
