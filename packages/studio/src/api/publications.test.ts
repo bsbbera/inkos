@@ -145,6 +145,27 @@ describe("the gates, and what is holding them", () => {
     expect(gates.copy.warnings).toContain("the issue has not been audited");
   });
 
+  it("holds the copy gate on a finding in one of the pack's blocking categories", () => {
+    const audited = issue({
+      audit: {
+        at: "now", complete: true,
+        findings: [
+          { page: 4, severity: "warning", category: "readability/grade", description: "grade 12", suggestion: "" },
+          { page: 5, severity: "warning", category: "readability/sentence", description: "long", suggestion: "" },
+        ],
+      },
+    } as Partial<PublicationIssue>);
+    const pack = { blocking: new Set(["readability/grade"]), suppress: new Set<string>() };
+
+    const held = gateState(audited, pack).copy;
+    expect(held.canApprove).toBe(false);
+    expect(held.blockers).toEqual(["p4: readability/grade - grade 12"]);
+
+    // No pack, or the category silenced ("never flag this again"), and it is a warning only.
+    expect(gateState(audited).copy.canApprove).toBe(true);
+    expect(gateState(audited, { ...pack, suppress: new Set(["readability"]) }).copy.canApprove).toBe(true);
+  });
+
   // Unlike copy, an unsound design cannot be signed off: build reads the spec,
   // so approving a broken one only moves the failure later.
   it("refuses a design approval while the design is unsound", () => {

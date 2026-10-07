@@ -52,6 +52,8 @@ export interface PageLayout {
   /** Where each block goes, in the order they should be placed. */
   readonly blocks?: readonly { kind: string; slot: string }[];
   readonly note?: string;
+  /** Rule-breaking this page does on purpose, one sentence each; rationed per section (08 §5 rule 7). */
+  readonly breaks?: readonly string[];
 }
 
 /**
@@ -163,7 +165,7 @@ Return ONLY JSON:
   "type": {"display": "...", "text": "...", "scale": [48, 24, 10]},
   "grid": {"columns": 12, "gutterMm": 5, "marginMm": 15, "baselineMm": 4},
   "imageDirection": "one paragraph, no single subject",
-  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": ""}},
+  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": "", "breaks": []}},
   "sections": [{"n": 1, "register": "...", "technique": "...", "idiom": "...", "paper": "#rrggbb", "ink": "#rrggbb", "hue": "#rrggbb", "imagePrompt": "under 60 words, no single subject", "negative": "..."}]
 }
 "sections" holds one world per section listed above, and is [] when none are.

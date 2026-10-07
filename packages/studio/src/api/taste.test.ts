@@ -1,9 +1,13 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Hono } from "hono";
+import { readMath } from "@actalk/quire-core";
 import { describe, expect, it } from "vitest";
 import { bytesOfDataUrl, safeName } from "./final.js";
-import { appendFeedback, appendProposals, checkVerdict, readFeedback, readProposals, settleProposal } from "./taste.js";
+import {
+  appendFeedback, appendProposals, checkVerdict, readFeedback, readProposals, registerTasteRoutes, settleProposal,
+} from "./taste.js";
 
 describe("the verdict (04 §7)", () => {
   it("holds a verdict to its surface's causes", () => {
@@ -27,6 +31,42 @@ describe("the verdict (04 §7)", () => {
     expect(p!.state).toBe("pending");
     await settleProposal(root, p!.id, "accepted", "Keep sentences near 11 words.");
     expect(await readProposals(root)).toMatchObject([{ state: "accepted", text: "Keep sentences near 11 words." }]);
+  });
+});
+
+describe("what an accepted proposal does (Phase 3)", () => {
+  const appFor = (root: string) => {
+    const app = new Hono();
+    registerTasteRoutes(app, { root, broadcast: () => undefined } as never);
+    return app;
+  };
+  const post = (app: Hono, path: string) => app.request(`http://localhost${path}`, { method: "POST", body: "{}" });
+
+  it("writes a number rule into the scope's math, so the next design check holds it", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quire-taste-"));
+    const [p] = await appendProposals(root, [{
+      scope: { work: "publication/i1" }, text: "No more than 1 full-bleed in a row", kind: "number", evidence: [], source: "distill",
+    }]);
+    const app = appFor(root);
+    const out = await (await post(app, `/api/v1/taste/proposals/${p!.id}/accept`)).json() as { enforced: unknown };
+    expect(out.enforced).toEqual({ key: "maxFullBleedRun", value: 1, scope: "work:publication/i1" });
+    expect(await readMath(root, { type: "publication", id: "i1" })).toEqual({ maxFullBleedRun: 1 });
+
+    // A number the checker cannot hold is still a prompt line, and the answer says it is not enforced.
+    const [q] = await appendProposals(root, [{ scope: {}, text: "Keep sentences near 12 words.", kind: "number", evidence: [], source: "distill" }]);
+    const soft = await (await post(app, `/api/v1/taste/proposals/${q!.id}/accept`)).json() as { enforced: unknown };
+    expect(soft.enforced).toBeNull();
+  });
+
+  it("shows the passages a proposal rests on, not the finding titles", async () => {
+    const root = await mkdtemp(join(tmpdir(), "quire-taste-"));
+    const e = await appendFeedback(root, {
+      ref: { type: "book", id: "b" }, surface: "content", verdict: "reject", source: "audit",
+      note: "Hedging", passage: "She seemed to perhaps almost smile.",
+    });
+    const [p] = await appendProposals(root, [{ scope: {}, text: "Cut hedges.", kind: "sentence", evidence: [e.id], source: "distill" }]);
+    const out = await (await appFor(root).request(`http://localhost/api/v1/taste/proposals/${p!.id}/evidence`)).json() as { evidence: Array<{ passage: string; note: string }> };
+    expect(out.evidence).toMatchObject([{ passage: "She seemed to perhaps almost smile.", note: "Hedging" }]);
   });
 });
 

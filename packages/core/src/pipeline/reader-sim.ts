@@ -10,6 +10,7 @@
  * — and every one of them can be handed to "Rewrite it".
  */
 import { locate, type Finding } from "./findings.js";
+import { audienceOf } from "./magazine-bar.js";
 import { languageOf, type StoryAskFn } from "./story-audit.js";
 
 export interface ReaderPersona {
@@ -40,8 +41,24 @@ export const CHILD_PERSONA: ReaderPersona = {
   asks: true,
 };
 
-export function personasFor(type: string): ReadonlyArray<ReaderPersona> {
-  return type === "storybook" ? [...READER_PERSONAS, CHILD_PERSONA] : READER_PERSONAS;
+/**
+ * Who reads, from who the work is for (Phase 3).
+ *
+ * The two adult personas become readers of that audience, so a magazine for
+ * nine-year-olds is not judged by someone who reads "this kind of book every
+ * week". A work for young children, or any storybook, also gets the listener,
+ * named for the age the audience field gives.
+ */
+export function personasFor(type: string, audience?: string | null): ReadonlyArray<ReaderPersona> {
+  const who = audience?.trim();
+  const base = who
+    ? READER_PERSONAS.map((p) => ({ ...p, brief: `${p.brief}. You are one of this work's intended readers: ${who}` }))
+    : READER_PERSONAS;
+  const bar = audienceOf(who);
+  const young = bar === "child-5" || bar === "child-9";
+  if (type !== "storybook" && !young) return base;
+  const age = bar === "child-5" ? "Five" : bar === "child-9" ? "Nine" : "Seven";
+  return [...base, { ...CHILD_PERSONA, label: `${age}-year-old listener` }];
 }
 
 export interface ReaderPoint {
@@ -154,13 +171,15 @@ export function readerFindings(
 export async function runReaderMap(input: {
   readonly markdown: string;
   readonly type: string;
+  /** The work's audience field, when it has one. */
+  readonly audience?: string | null;
   readonly ask: StoryAskFn;
   readonly onProgress?: (message: string) => void;
   readonly signal?: AbortSignal;
 }): Promise<ReaderMap[]> {
   const language = languageOf(input.markdown);
   const maps: ReaderMap[] = [];
-  for (const persona of personasFor(input.type)) {
+  for (const persona of personasFor(input.type, input.audience)) {
     input.signal?.throwIfAborted();
     input.onProgress?.(`${persona.label} is reading…`);
     const out = await input.ask(buildReaderPrompt(persona, input.markdown, language), `reader-${persona.id}`);

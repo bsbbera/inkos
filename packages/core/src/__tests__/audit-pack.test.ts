@@ -4,12 +4,24 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   activeDimensions, applyWordDelta, auditPackIn, customDimensionPrompt, noAuditPack,
-  isSuppressed, parseAuditPack, readAuditPacks, readCatalogues, resolveAuditPack, DEFAULT_SCORING,
+  holdsGate, isSuppressed, parseAuditPack, readAuditPacks, readCatalogues, resolveAuditPack, DEFAULT_SCORING,
 } from "../pipeline/audit-pack.js";
 import { analyzeAITells } from "../agents/ai-tells.js";
 import {
   buildFindingRewritePrompt, buildStoryAuditPrompt, STORY_DIMENSIONS,
 } from "../pipeline/story-audit.js";
+
+describe("what holds a gate", () => {
+  it("holds on a blocking severity or a category the pack lists, unless it is silenced", () => {
+    const p = resolveAuditPack({ available: [pack({ blocking: ["readability/grade"], dimensions: { disable: ["readability/paragraph"] } })], selected: ["p"] });
+    expect(holdsGate(p, { category: "x", severity: "blocking" })).toBe(true);
+    expect(holdsGate(p, { category: "readability/grade", severity: "warning" })).toBe(true);
+    expect(holdsGate(p, { category: "readability/sentence", severity: "warning" })).toBe(false);
+    const silenced = resolveAuditPack({ available: [pack({ blocking: ["readability"], dimensions: { disable: ["readability/grade"] } })], selected: ["p"] });
+    expect(holdsGate(silenced, { category: "readability/grade", severity: "blocking" })).toBe(false);
+    expect(holdsGate(silenced, { category: "readability/over-cap", severity: "warning" })).toBe(true);
+  });
+});
 
 const pack = (over: Record<string, unknown>) => parseAuditPack({ id: "p", version: 1, ...over })!;
 

@@ -33,12 +33,13 @@ import {
   type Finding,
   type StoryAudit,
   locate,
+  holdsGate,
 } from "@actalk/quire-core";
 import {
   blendTarget, loadPipeline, pipelineFor, readLexicon, readSetting, refFromPath, reportUnitDone,
   type StyleProfileV2,
 } from "@actalk/quire-core";
-import { gateState, publicationWorkflow, stageStates } from "./publications.js";
+import { gateState, publicationMath, publicationPack, publicationWorkflow, stageStates } from "./publications.js";
 import { projectWorkflow, type Workflow } from "./workflow.js";
 import {
   isApproved, passCounts, readAuditState, updateFileAudit, type FileAudit,
@@ -802,6 +803,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): { readonly
       const maps = await runReaderMap({
         markdown,
         type,
+        audience: await workAudience(root, path),
         ask: createStoryAsk(await deps.pipeline(), control.signal),
         signal: control.signal,
         onProgress: (message: string) => broadcast("audit:progress", { path, message }),
@@ -990,6 +992,7 @@ export function registerAuditRoutes(app: Hono, deps: AuditRouteDeps): { readonly
         target: outcome.finding.path,
         source: "audit",
         note: outcome.finding.title,
+        ...(outcome.finding.quote ? { passage: outcome.finding.quote.slice(0, 400) } : {}),
         scope: { audit: outcome.finding.category },
       }).catch(() => undefined);
     }
@@ -1407,6 +1410,18 @@ export async function workspaceSummary(root: string): Promise<WorkspaceSummary> 
   };
 }
 
+/** The audience field of the work a file belongs to: a storybook's or an issue's own record. */
+async function workAudience(root: string, path: string): Promise<string | undefined> {
+  const parts = path.split("/");
+  for (const depth of [2, 3]) {
+    for (const name of ["storybook.json", "publication.json"]) {
+      const found = await readJson<{ audience?: unknown }>(join(root, ...parts.slice(0, depth), name));
+      if (typeof found?.audience === "string" && found.audience.trim()) return found.audience;
+    }
+  }
+  return undefined;
+}
+
 async function readJson<T>(path: string): Promise<T | null> {
   try { return JSON.parse(await readFile(path, "utf-8")) as T; } catch { return null; }
 }
@@ -1437,6 +1452,7 @@ export function syncPublicationAudits(root: string): Promise<void> {
       const audit = (await readJson<PublicationIssue>(join(dir, id, "publication.json")))?.audit;
       if (!audit?.reviewed) continue;
       const pages = await readdir(join(dir, id, "pages")).catch(() => [] as string[]);
+      const pack = await publicationPack(root, id);
       const fresh: Finding[] = [];
       const read: string[] = [];
       for (const [n, page] of Object.entries(audit.reviewed)) {
@@ -1447,7 +1463,9 @@ export function syncPublicationAudits(root: string): Promise<void> {
         const markdown = await readFile(join(root, path), "utf-8").catch(() => "");
         fresh.push(...page.findings.map((f) => locate({
           path,
-          severity: f.severity === "warning" ? "warning" : "note",
+          // A category the pack makes non-negotiable is rated so here too, or the
+          // queue's own counts and the gate would disagree about the same finding.
+          severity: holdsGate(pack, f) ? "blocking" : f.severity === "warning" ? "warning" : "note",
           category: f.category,
           description: f.description,
           suggestion: f.suggestion,
@@ -1512,13 +1530,15 @@ export async function readAuditProject(
       join(root, spec.outDir, "issues", id, "publication.json"),
     );
     if (issue) {
+      const pack = await publicationPack(root, id);
+      const math = await publicationMath(root, issue);
       return {
         ...base,
         title: issue.title || issue.subject || id,
         subtitle: `${issue.type} · ${issue.pages.length} pages · ${issue.status}`,
         stages: stageStates(issue),
-        gates: gateState(issue),
-        workflow: publicationWorkflow(issue, false),
+        gates: gateState(issue, pack, math),
+        workflow: publicationWorkflow(issue, false, null, pack, math),
         /* Only a publication keeps a ladder of stages its runner can re-enter. */
         resumable: true,
         findings: (issue.audit?.findings ?? []).map((f) => ({

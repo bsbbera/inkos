@@ -391,12 +391,32 @@ export async function auditPackIn(
   });
 }
 
-/** Whether a pack has silenced this finding category (19 §4.4). */
-export function isSuppressed(pack: ResolvedAuditPack, category: string): boolean {
-  for (const name of pack.suppress) {
+const inFamily = (names: Iterable<string>, category: string): boolean => {
+  for (const name of names) {
     if (category === name || category.startsWith(`${name}/`)) return true;
   }
   return false;
+};
+
+/** Whether a pack has silenced this finding category (19 §4.4). */
+export function isSuppressed(pack: ResolvedAuditPack, category: string): boolean {
+  return inFamily(pack.suppress, category);
+}
+
+/**
+ * Whether a finding holds the content gate shut (Phase 3).
+ *
+ * A finding the checker called blocking holds it, and so does one whose
+ * category the pack lists under `blocking` however the checker rated it: the
+ * readability checks speak "warning" and the pack is where a house decides
+ * which warnings are not negotiable. "Never flag this again" still wins.
+ */
+export function holdsGate(
+  pack: Pick<ResolvedAuditPack, "blocking" | "suppress">,
+  finding: { readonly category: string; readonly severity?: string },
+): boolean {
+  if (inFamily(pack.suppress, finding.category)) return false;
+  return finding.severity === "blocking" || inFamily(pack.blocking, finding.category);
 }
 
 /** Apply a pack's `{add, remove}` to a builtin word list, case-insensitively. */

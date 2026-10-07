@@ -16,7 +16,11 @@
 import type { Hono } from "hono";
 import { gate, type StageState, type Workflow } from "./workflow.js";
 import { appendFeedback } from "./taste.js";
-import { locate, normalizeSeverity, type Finding } from "@actalk/quire-core";
+import { join } from "node:path";
+import {
+  PRODUCTIONS, auditPackIn, goldenRules, holdsGate, locate, normalizeSeverity, readMath,
+  declaredBreaks, type DesignMath, type Finding, type ResolvedAuditPack,
+} from "@actalk/quire-core";
 import {
   approvePublication,
   approvePublicationDesign,
@@ -239,15 +243,36 @@ function baseStageStates(issue: PublicationIssue): Array<{ stage: PublicationSta
  * "Cannot build" with no reason is what makes a gate feel like a bug. Every
  * blocked gate names its own remedy.
  */
-export function gateState(issue: PublicationIssue) {
+/** The pack an issue resolves to: its type's defaults, the packs chosen on it, its own override. */
+export const publicationPack = (root: string, id: string): Promise<ResolvedAuditPack> =>
+  auditPackIn(join(root, PRODUCTIONS.find((p) => p.id === "publication")?.outDir ?? "Magazine", "issues", id), "publication");
+
+/** The numbers this issue's design is held to: defaults, then what accepted taste rules taught its type, worlds and itself. */
+export const publicationMath = (root: string, issue: PublicationIssue): Promise<DesignMath> =>
+  readMath(root, { type: "publication", id: issue.id, worlds: (issue.design?.sections ?? []).map((w) => w.register) });
+
+export function gateState(
+  issue: PublicationIssue,
+  pack?: Pick<ResolvedAuditPack, "blocking" | "suppress">,
+  math?: DesignMath,
+) {
   const written = issue.pages.filter(isPublicationPageWritten).length;
-  const designProblems = issue.design ? checkPublicationDesign(issue.design) : ["no design has been run"];
+  const designProblems = issue.design
+    ? [...checkPublicationDesign(issue.design), ...goldenRules(issue.design.spec, issue.sections, math)]
+    : ["no design has been run"];
 
   const copyBlockers: string[] = [];
   if (issue.pages.length === 0) copyBlockers.push("there is no flatplan yet");
   else if (written < issue.pages.length) copyBlockers.push(`${issue.pages.length - written} pages are still unwritten`);
   if (!issue.audit) copyBlockers.push("the issue has not been audited");
   else if (issue.audit.complete === false) copyBlockers.push("the audit has not finished");
+
+  /* What the pack says may not be waved through: a finding in one of its
+     blocking categories holds the copy gate until it is fixed or silenced. */
+  const held = pack
+    ? (issue.audit?.findings ?? []).filter((f) => holdsGate(pack, f))
+      .map((f) => `p${f.page}: ${f.category} - ${f.description}`.slice(0, 160))
+    : [];
 
   const buildBlockers: string[] = [];
   if (!issue.approved) buildBlockers.push("the copy is not approved");
@@ -259,6 +284,9 @@ export function gateState(issue: PublicationIssue) {
       approved: issue.approved ?? null,
       /** Approving is always allowed; these are what an editor should know first. */
       warnings: copyBlockers,
+      /** Findings in the pack's blocking categories: unlike warnings, these stop the sign-off. */
+      blockers: held,
+      canApprove: held.length === 0,
     },
     design: {
       approved: issue.designApproved ?? null,
@@ -318,8 +346,10 @@ export function publicationWorkflow(
   issue: PublicationIssue,
   isRunning: boolean,
   inFlight?: { readonly stage: string; readonly message?: string } | null,
+  pack?: Pick<ResolvedAuditPack, "blocking" | "suppress">,
+  math?: DesignMath,
 ): Workflow {
-  const g = gateState(issue);
+  const g = gateState(issue, pack, math);
   return {
     kind: issue.type || "publication",
     stages: stageStates(issue, inFlight).map((s) => ({
@@ -330,10 +360,12 @@ export function publicationWorkflow(
       detail: s.detail,
     })),
     gates: [
-      /* Copy has warnings and no blockers on purpose: an editor may sign off
-         an unfinished issue, and always could. Design is the opposite - build
-         reads it, so an unsound design cannot be waved through. */
-      gate("copy", "Copy", g.copy.approved, [], g.copy.warnings),
+      /* Copy has warnings, and blockers only from the pack's blocking
+         categories: an editor may sign off an unfinished issue, and always
+         could, but not past a finding the house marked non-negotiable. Design
+         is the opposite - build reads it, so an unsound design cannot be
+         waved through. */
+      gate("copy", "Copy", g.copy.approved, g.copy.blockers, g.copy.warnings),
       gate("design", "Design", g.design.approved, g.design.blockers),
     ],
     done: { can: g.build.canBuild, blockers: g.build.blockers },
@@ -369,19 +401,25 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     });
   };
 
-  const detail = async (issue: PublicationIssue) => ({
+  const detail = async (issue: PublicationIssue) => {
+    const pack = await publicationPack(root, issue.id);
+    const math = await publicationMath(root, issue);
+    return {
     inputs: await researchInputs(root, issue),
     issue,
     stages: stageStates(issue, liveJobFor({ type: "publication", id: issue.id })),
-    gates: gateState(issue),
+    gates: gateState(issue, pack, math),
+    /* Rule-breaking the design declared on purpose: shown as a badge, never a warning. */
+    breaks: declaredBreaks(issue.design?.spec),
     running: isRunning(issue.id),
     /* The shared shape, alongside the two the existing screen reads. Both are
        derived from the same issue, so they cannot disagree. */
-    workflow: publicationWorkflow(issue, isRunning(issue.id), liveJobFor({ type: "publication", id: issue.id })),
+    workflow: publicationWorkflow(issue, isRunning(issue.id), liveJobFor({ type: "publication", id: issue.id }), pack, math),
     /* Findings that know where they are, so the screen can mark the sentence
        rather than paraphrase it. */
     located: locatedFindings(issue),
-  });
+    };
+  };
 
   // Everything about one issue, in the shape the detail page needs: what has
   // run, what is gated on what, and every finding the audit left standing.
@@ -398,6 +436,11 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     const what = body.what === "design" ? "design" : "copy";
     const yes = body.approve !== false;
     const { ctx } = await open(id, false);
+
+    if (yes && what === "copy") {
+      const held = gateState((await open(id, false)).issue, await publicationPack(root, id)).copy.blockers;
+      if (held.length) return c.json({ error: held.join("; "), blockers: held }, 409);
+    }
 
     const issue = what === "design"
       ? yes ? await approvePublicationDesign(ctx, id) : await unapprovePublicationDesign(ctx, id)

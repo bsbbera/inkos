@@ -40,6 +40,8 @@ interface Rule {
 
 type Ref = { type: string; id: string };
 
+interface Evidence { readonly id: string; readonly verdict: string; readonly passage: string; readonly note: string }
+
 /* The feedback surfaces (api/taste.ts), in the words a person uses, with what
    feeds each one and where it is applied. */
 const SURFACES: ReadonlyArray<{ id: string; label: string; from: string; used: string }> = [
@@ -123,6 +125,14 @@ export function TastePage() {
   const surfaceWord = (scope: Readonly<Record<string, string>>) =>
     SURFACES.find((s) => s.id === surfaceOf(scope))?.label ?? "Everywhere";
 
+  /* The passages a proposal rests on, fetched when its row is opened. */
+  const [proof, setProof] = useState<Record<string, ReadonlyArray<Evidence>>>({});
+  const showProof = async (id: string) => {
+    if (proof[id]) return;
+    const out = await api(`/taste/proposals/${encodeURIComponent(id)}/evidence`);
+    setProof((prev) => ({ ...prev, [id]: Array.isArray(out.evidence) ? out.evidence as Evidence[] : [] }));
+  };
+
   const proposalRow = (p: Proposal) => (
     <div className="row py-2.5 px-0 gap-2.5 items-start" key={p.id}>
       <div className="grow stack-xs min-w-0">
@@ -135,6 +145,20 @@ export function TastePage() {
         <span className="dim text-cap">
           {surfaceWord(p.scope)} · {reach(p.scope)} · {p.evidence.length} verdict{p.evidence.length === 1 ? "" : "s"} behind it
         </span>
+        {p.evidence.length ? (
+          <details onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) void showProof(p.id); }}>
+            <summary className="dim text-cap cursor-pointer">Show the passages</summary>
+            <ul className="stack-xs mt-1">
+              {(proof[p.id] ?? []).map((e) => (
+                <li key={e.id} className="text-small">
+                  {e.passage ? <q>{e.passage}</q> : <span className="dim">{e.note || "no passage kept"}</span>}
+                  <span className="dim text-cap"> - {e.verdict}{e.passage && e.note ? ` · ${e.note}` : ""}</span>
+                </li>
+              ))}
+              {proof[p.id] === undefined ? <li className="dim text-cap">Loading…</li> : null}
+            </ul>
+          </details>
+        ) : null}
       </div>
       <button type="button" className="btn btn-sm" onClick={() => void settle(p, "accept")}>Accept</button>
       <button type="button" className="btn btn-quiet btn-sm" onClick={() => void settle(p, "ignore")}>Ignore</button>

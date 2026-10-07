@@ -18,7 +18,8 @@ import type { Hono } from "hono";
 import {
   addRule, auditProposals, buildDistillPrompt, causeProposals, cloneTaste, distillGroups, enqueueJob,
   exportTastePack,
-  importTastePack, noteTrial, parseDistill, readRules, retireRule, type TasteEvent,
+  importTastePack, mathScopeOf, noteTrial, parseDistill, parseNumberRule, readRules, retireRule, writeMath,
+  type TasteEvent,
 } from "@actalk/quire-core";
 
 export const SURFACES = ["content", "design", "image", "build"] as const;
@@ -58,6 +59,8 @@ export interface FeedbackEvent {
   readonly source: FeedbackSource;
   readonly scope?: Readonly<Record<string, string>>;
   readonly diff?: unknown;
+  /** The words the verdict was about, so the evidence shows the passage and not just a title. */
+  readonly passage?: string;
   /** What the app did about it. */
   readonly acted?: string;
 }
@@ -266,6 +269,21 @@ export function registerTasteRoutes(app: Hono, deps: TasteRouteDeps): void {
       ? await addRule(root, { text: out.text, kind: out.kind, scope: out.scope, evidence: out.evidence, source: out.source })
       : null;
     /*
+     * A number rule is a limit, not a prompt line: written into the scope's
+     * math block, the next design check holds the spec to it before any render
+     * (18 §4). A sentence that names no limit the checker knows stays a
+     * prompt line, and the answer says so rather than claiming it is enforced.
+     */
+    let enforced: { key: string; value: number; scope: string } | null = null;
+    if (out.state === "accepted" && out.kind === "number") {
+      const parsed = parseNumberRule(out.text);
+      if (parsed) {
+        const scope = mathScopeOf(out.scope);
+        await writeMath(root, scope, parsed.key, parsed.value);
+        enforced = { ...parsed, scope };
+      }
+    }
+    /*
      * An audit proposal is not a prompt line — it is a check to stop running,
      * so accepting it has to reach the pack as well (19 §5.3). Scoped to the
      * one work whose verdicts asked for it; another book keeps the check.
@@ -278,7 +296,25 @@ export function registerTasteRoutes(app: Hono, deps: TasteRouteDeps): void {
         .catch(() => null) ?? null;
     }
     broadcast("taste:changed", { id: out.id });
-    return c.json({ ok: true, proposal: out, rule, ...(silenced ? { silenced } : {}) });
+    return c.json({ ok: true, proposal: out, rule, ...(silenced ? { silenced } : {}), ...(out.kind === "number" ? { enforced } : {}) });
+  });
+
+  /*
+   * What a proposal rests on, in the person's own words: each verdict with the
+   * passage it was given about. The Taste page shows this under the row; a
+   * count of verdicts gives nobody a way to judge whether the rule is right.
+   */
+  app.get("/api/v1/taste/proposals/:id/evidence", async (c) => {
+    const proposal = (await readProposals(root)).find((p) => p.id === c.req.param("id"));
+    if (!proposal) return c.json({ error: "no such proposal" }, 404);
+    const wanted = new Set(proposal.evidence);
+    const events = (await readFeedback(root)).filter((e) => wanted.has(e.id));
+    return c.json({
+      evidence: events.map((e) => ({
+        id: e.id, at: e.at, verdict: e.verdict, source: e.source,
+        passage: e.passage ?? "", note: e.note ?? "", target: e.target ?? "",
+      })),
+    });
   });
 
   app.get("/api/v1/taste/rules", async (c) => c.json({ rules: (await readRules(root)).reverse() }));

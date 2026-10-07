@@ -69,6 +69,7 @@ import {
   designReferences,
   type DesignSpec,
 } from "./publication-design.js";
+import { goldenRules, readMath } from "./design-rules.js";
 
 /* ------------------------------------------------------------------- types */
 
@@ -1691,7 +1692,11 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     ) as PublicationDesign["fixed"]
     : undefined;
   const worlds = worldsFrom(rawWorlds, issue, spec);
-  const problems = checkSpec(spec, issue.pages.map((p) => p.n));
+  const problems = [
+    ...checkSpec(spec, issue.pages.map((p) => p.n)),
+    // The golden rules, with whatever numbers the taste engine has taught this scope.
+    ...goldenRules(spec, issue.sections, await readMath(ctx.projectRoot, { type: "publication", id, worlds: worlds.map((w) => w.register) })),
+  ];
   // Print is less forgiving than a backlit screen, which is why the style law
   // already sets 7:1 for ink on paper. A palette that fails it fails here,
   // before an Affinity document is built out of it.
@@ -1836,7 +1841,12 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
   requireApproval(issue, "build");
   await requireDesigner(ctx.shimUrl, "building the document");
   requireDesignApproval(issue, "build");
-  const designProblems = checkSpec(issue.design?.spec, issue.pages.map((p) => p.n));
+  const designProblems = [
+    ...checkSpec(issue.design?.spec, issue.pages.map((p) => p.n)),
+    ...goldenRules(issue.design?.spec, issue.sections, await readMath(ctx.projectRoot, {
+      type: "publication", id, worlds: (issue.design?.sections ?? []).map((w) => w.register),
+    })),
+  ];
   if (designProblems.length) {
     throw new Error(`the design does not pass its own law:\n- ${designProblems.join("\n- ")}`);
   }

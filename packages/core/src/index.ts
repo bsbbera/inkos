@@ -943,7 +943,7 @@ export type { SlopScore } from "./agents/slop-score.js";
 export type { BenchCase, BenchResult, BenchRun } from "./pipeline/audit-bench.js";
 export {
   DEFAULT_SCORING, activeDimensions, applyWordDelta, auditPackIn, customDimensionPrompt,
-  isSuppressed, noAuditPack, parseAuditPack, readAuditPacks, readCatalogues, resolveAuditPack,
+  holdsGate, isSuppressed, noAuditPack, parseAuditPack, readAuditPacks, readCatalogues, resolveAuditPack,
 } from "./pipeline/audit-pack.js";
 export type {
   AuditPack, CatalogueDimension, CustomDimension, DimensionCatalogue, ResolvedAuditPack, WordDelta,
@@ -1027,6 +1027,10 @@ export {
 } from "./pipeline/publication-memory.js";
 export { PublicationIssueSchema, validateIssue as validatePublicationIssue } from "./pipeline/publication-schema.js";
 export { briefsOf as publicationPageBriefs } from "./pipeline/publication-runner.js";
+export {
+  DEFAULT_MATH, declaredBreaks, goldenRules, mathScopeOf, parseNumberRule, readMath, writeMath,
+  type DesignMath,
+} from "./pipeline/design-rules.js";
 export { nextIssueDue, setIssueSchedule, startNextIssue } from "./pipeline/publication-runner.js";
 export type { PageBrief as PublicationPageBrief } from "./pipeline/publication-runner.js";
 export type {
