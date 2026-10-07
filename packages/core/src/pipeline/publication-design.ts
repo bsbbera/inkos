@@ -17,6 +17,8 @@
  * differs, and that comes from the definition.
  */
 
+import type { PageBlock } from "./page-blocks.js";
+
 /** Colour, type and grid for the whole publication. */
 export interface DesignSpec {
   readonly palette: {
@@ -49,8 +51,12 @@ export interface PageLayout {
   readonly layout: string;
   /** Where the image sits, or none if the page carries no image. */
   readonly imageSlot: "full-bleed" | "top" | "bottom" | "left" | "right" | "inset" | "none";
-  /** Where each block goes, in the order they should be placed. */
-  readonly blocks?: readonly { kind: string; slot: string }[];
+  /**
+   * Where each block goes, in the order they should be placed. A grid slot
+   * (`{col, span, row, rows}`) is built; a prose slot is a legacy block the
+   * builder leaves to the page type's own arrangement (page-blocks.ts).
+   */
+  readonly blocks?: readonly PageBlock[];
   readonly note?: string;
   /** Rule-breaking this page does on purpose, one sentence each; rationed per section (08 §5 rule 7). */
   readonly breaks?: readonly string[];
@@ -157,6 +163,28 @@ Decide, for the whole publication:
 
 Then, for every page listed above, a layout: the arrangement, where the image
 sits, and where each of that page's blocks goes.
+
+PAGE BLOCKS. A page is built from its blocks, placed on the grid you chose.
+Kinds, spelled exactly: image, drawn, figure, title, deck, kicker, body,
+dropcap, pull, panel, runhead, wordmark, rule, folio.
+- slot: {"col": 1-based column, "span": columns, "row": baselines from the head
+  of the live area, "rows": baselines tall}. Add "bleed": true to run a picture
+  to the trim on the sides it touches. The live area is
+  floor((297 - 2 x marginMm - 10) / baselineMm) baselines deep.
+- image: the page's picture. drawn: art drawn as vectors instead of a picture
+  ("drawn": "contours" | "rain" | "contours+rain", "seed": a number, "text": a
+  place to pin). figure: the page's pull-number, oversized. panel: the page's
+  sidefacts as label/value rows on the field colour ("text": its heading).
+  dropcap: "lines": how many body lines it stands in. wordmark: the magazine's
+  name, fitted to its slot. runhead: the line at the head of the page.
+- "color": "ink" | "paper" | "accent" | "field", when the default is wrong.
+- One dominant per page (a picture, a drawn field or a figure), holding 40-60 %
+  of its weight. Type sizes on a page at least 1.2x apart. Blocks of type never
+  sit on each other. A block that crosses a picture's edge sets
+  "crosses": "image-edge" and the page declares that break.
+- Only a page whose blocks all have grid slots is built from them; otherwise
+  it gets its type's standard arrangement.
+{{fontBlock}}
 {{sectionBlock}}
 Also decide the FIXED FURNITURE — the few things that never change from
 section to section, and are what make several different-looking sections one
@@ -166,11 +194,11 @@ the grid in one line, and the divider that marks a section break.
 Return ONLY JSON:
 {
   "palette": {"paper": "#rrggbb", "ink": "#rrggbb", "accent": "#rrggbb"},
-  "fixed": {"folio": "...", "trim": "...", "grid": "...", "divider": "..."},
+  "fixed": {"folio": "...", "trim": "...", "grid": "...", "divider": "...", "blocks": [{"kind": "runhead", "slot": {"col": 1, "span": 12, "row": 0, "rows": 1}}]},
   "type": {"display": "...", "text": "...", "scale": [48, 24, 10]},
   "grid": {"columns": 12, "gutterMm": 5, "marginMm": 15, "baselineMm": 4},
   "imageDirection": "one paragraph, no single subject",
-  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "...", "slot": "..."}], "note": "", "breaks": []}},
+  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "drawn", "slot": {"col": 1, "span": 12, "row": 0, "rows": 30, "bleed": true}, "drawn": "contours+rain", "seed": 7}, {"kind": "title", "slot": {"col": 1, "span": 8, "row": 33, "rows": 4}}, {"kind": "body", "slot": {"col": 1, "span": 8, "row": 38, "rows": 16}, "columns": 2}], "note": "", "breaks": []}},
   "sections": [{"n": 1, "register": "...", "technique": "...", "idiom": "...", "paper": "#rrggbb", "ink": "#rrggbb", "hue": "#rrggbb", "imagePrompt": "under 60 words, no single subject", "negative": "..."}]
 }
 "sections" holds one world per section listed above, and is [] when none are.

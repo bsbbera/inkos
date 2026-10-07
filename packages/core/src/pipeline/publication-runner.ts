@@ -35,6 +35,7 @@ import {
   researchPublication,
   type ResearchReport,
 } from "./publication-research.js";
+import { cleanBlocks, placedBlocks, type PageBlock } from "./page-blocks.js";
 import { resolveVoice } from "./publication-voice.js";
 import { rulesFor } from "./taste-engine.js";
 import {
@@ -239,7 +240,11 @@ export interface DesignWorld {
 
 export interface PublicationDesign {
   sections: DesignWorld[];
-  fixed?: { folio?: string; trim?: string; grid?: string; divider?: string };
+  fixed?: {
+    folio?: string; trim?: string; grid?: string; divider?: string;
+    /** Brand furniture placed on every page built from blocks (runhead, rule, folio). */
+    blocks?: PageBlock[];
+  };
   /** What the design stage decided: the one source both renderers read. */
   spec?: DesignSpec | null;
 }
@@ -1578,6 +1583,26 @@ function sectionBlock(issue: PublicationIssue): string {
 }
 
 /**
+ * The faces the art director may choose from: the ones Affinity has (font
+ * preflight, Phase 5). Without the list a design names fonts this machine
+ * does not have, and the build quietly sets everything in the house face.
+ */
+async function fontBlock(ctx: RunnerContext): Promise<string> {
+  if (!ctx.shimUrl) return "";
+  try {
+    const res = await fetch(`${ctx.shimUrl}/affinity/fonts`, { signal: AbortSignal.timeout(60_000) });
+    const out = await res.json() as { fonts?: string[] };
+    if (!res.ok || !out.fonts?.length) return "";
+    return `
+INSTALLED FONTS. type.display and type.text must each be one of these, spelled exactly:
+${out.fonts.join(", ")}
+`;
+  } catch {
+    return "";
+  }
+}
+
+/**
  * The brand's design constants, said to the art director (13 rev. A).
  *
  * The type pair and grid never change between issues; what changes is one
@@ -1670,6 +1695,7 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     ].filter(Boolean).join("\n\n"),
     pageDigest: pageDigest(issue),
     sectionBlock: sectionBlock(issue),
+    fontBlock: await fontBlock(ctx),
   }), "design");
 
   // The section worlds come back beside the spec, not inside it: the spec is
@@ -1684,9 +1710,10 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
    * asked and this function threw the field away with the rest of the reply.
    * Every design the stage made was unsignable for want of four sentences.
    */
-  const fixed = rawFixed && typeof rawFixed === "object"
+  const fixedRaw = rawFixed && typeof rawFixed === "object" ? rawFixed as Record<string, unknown> : null;
+  let fixed = fixedRaw
     ? Object.fromEntries(
-      Object.entries(rawFixed as Record<string, unknown>)
+      Object.entries(fixedRaw)
         .filter(([key]) => ["folio", "trim", "grid", "divider"].includes(key))
         .map(([key, value]) => [key, String(value ?? "").trim()])
         .filter(([, value]) => value),
@@ -1701,6 +1728,20 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
   if (mended?.repairs.length) {
     spec = mended.spec;
     emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Repaired the spec: ${mended.repairs.join("; ")}` });
+  }
+  // Blocks the builder cannot place are dropped and said, never thrown (page-blocks.ts).
+  if (spec?.pages) {
+    const cleaned = cleanBlocks(spec);
+    spec = cleaned.spec;
+    const furniture = Array.isArray(fixedRaw?.blocks)
+      ? cleanBlocks({ ...spec, pages: { fixed: { layout: "fixed", imageSlot: "none", blocks: fixedRaw!.blocks as PageBlock[] } } })
+      : null;
+    const kept = placedBlocks(furniture?.spec.pages.fixed);
+    if (kept.length) fixed = { ...(fixed ?? {}), blocks: kept };
+    const dropped = [...cleaned.dropped, ...(furniture?.dropped ?? []).map((d) => d.replace(/^page fixed/, "brand furniture"))];
+    if (dropped.length) {
+      emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Left out: ${dropped.join("; ")}` });
+    }
   }
   const problems = [
     ...checkSpec(spec, issue.pages.map((p) => p.n)),
@@ -1914,7 +1955,7 @@ export async function placePage(
   });
   const body = await res.json().catch(() => ({})) as {
     ok?: boolean; error?: string; findings?: Array<{ level?: string; what?: string } | string>;
-    frames?: unknown[]; grid?: unknown; cols?: unknown; leaks?: string[]; warnings?: string[];
+    frames?: unknown[]; grid?: unknown; cols?: unknown; leaks?: string[]; warnings?: string[]; measure?: unknown; built?: string;
   };
   if (!res.ok || body.ok === false) {
     const why = body.error ?? `HTTP ${res.status}`;
@@ -1928,11 +1969,12 @@ export async function placePage(
     await writeFile(file, JSON.stringify({
       at: new Date().toISOString(), frames: body.frames, grid: body.grid, findings: body.findings ?? [],
       cols: body.cols ?? null, leaks: body.leaks ?? [], warnings: body.warnings ?? [],
+      measure: body.measure ?? null, built: body.built ?? "type",
     }, null, 2), "utf-8");
   }
   emit(ctx, "publication:stage", { id, stage: "design", state: "done", page: Number(n) });
   const said = (body.findings ?? []).map((f) => (typeof f === "string" ? f : `${f.level ?? "info"}: ${f.what ?? ""}`));
-  return { page: Number(n), findings: [...said, ...(body.leaks?.length ? [`error: markup printed: ${body.leaks.join(" ")}`] : [])] };
+  return { page: Number(n), findings: [...said, ...(body.warnings ?? []).map((w) => `warn: ${w}`), ...(body.leaks?.length ? [`error: markup printed: ${body.leaks.join(" ")}`] : [])] };
 }
 
 /**

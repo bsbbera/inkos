@@ -69,6 +69,8 @@ export interface LayoutReport {
   readonly cols?: { readonly words: ReadonlyArray<number>; readonly overset: number } | null;
   /** Markup that reached the page as characters ("###", "**"). */
   readonly leaks?: ReadonlyArray<string>;
+  /** Characters a body line holds, from column width and body size (block pages). */
+  readonly measure?: { readonly chars: number } | null;
 }
 
 /** What the shim measured on one placed picture (`assetCheck`). */
@@ -100,6 +102,10 @@ export interface PageScoreInput {
   readonly layout?: LayoutReport;
   /** The least share of the page's visual weight the dominant must hold (math `dominantMin`, default 0.4). */
   readonly dominantMin?: number;
+  /** What the page's blocks break, read from the spec (page-blocks.ts `blockRules`). */
+  readonly blockNotes?: ReadonlyArray<{ readonly dim: "G" | "H" | "C" | "T"; readonly penalty: number; readonly says: string }>;
+  /** Characters per body line the page may hold (math `measureMin`/`measureMax`, default 35-75). */
+  readonly measure?: { readonly min: number; readonly max: number };
 }
 
 export interface SubMetric { readonly dim: Dim; readonly penalty: number; readonly says: string }
@@ -137,6 +143,8 @@ export function scorePage(input: PageScoreInput): PageScore {
   // W — whitespace and balance (render).
   const m = input.measured;
   let W: number | null = null;
+  for (const b of input.blockNotes ?? []) penalty(b.dim, b.penalty, b.says);
+
   if (m) {
     const floor = input.whitespaceFloor ?? 0.25;
     const ceil = floor + 0.25;
@@ -169,8 +177,8 @@ export function scorePage(input: PageScoreInput): PageScore {
     penalty("C", 35 * m.offPalette, `${pct(m.offPalette)} of the page is outside the palette`);
     if (input.contrastFailures) penalty("C", 15 * input.contrastFailures, `${input.contrastFailures} contrast failure${input.contrastFailures === 1 ? "" : "s"}`);
     C = clamp(100 - sum(notes, "C"));
-  } else if (input.contrastFailures !== undefined) {
-    penalty("C", 15 * input.contrastFailures, `${input.contrastFailures} contrast failure${input.contrastFailures === 1 ? "" : "s"}`);
+  } else if (input.contrastFailures !== undefined || notes.some((n) => n.dim === "C")) {
+    if (input.contrastFailures) penalty("C", 15 * input.contrastFailures, `${input.contrastFailures} contrast failure${input.contrastFailures === 1 ? "" : "s"}`);
     C = clamp(100 - sum(notes, "C"));
   }
 
@@ -209,7 +217,7 @@ export function scorePage(input: PageScoreInput): PageScore {
     // Placed frames start on a column edge (1.2 mm of slack).
     const edges = Array.from({ length: grid.ncol + 1 }, (_, i) => grid.x0 + i * (grid.col + grid.gut));
     const onGrid = (x: number) => edges.some((e) => Math.abs(x - e) <= 1.2) || edges.some((e) => Math.abs(x - (e - grid.gut)) <= 1.2);
-    const placed = lay.frames.filter((f) => ["title", "deck", "body", "pull", "image"].includes(f.role) && f.w < 205);
+    const placed = lay.frames.filter((f) => ["title", "deck", "body", "pull", "image", "drawn", "figure", "kicker", "panel"].includes(f.role) && f.w < 205);
     const off = placed.filter((f) => !onGrid(f.x) && !onGrid(f.x + f.w));
     if (off.length) penalty("G", 10 * off.length, `${off.length} frame${off.length === 1 ? "" : "s"} off the column grid (${off.map((f) => f.role).join(", ")})`);
     G = clamp(100 - sum(notes, "G"));
@@ -223,7 +231,7 @@ export function scorePage(input: PageScoreInput): PageScore {
       ? m.weights.filter((x) => x.role && x.role !== "ground" && x.role !== "folio")
       : lay.frames.filter((f) => f.role && f.role !== "ground" && f.role !== "folio").map((f) => ({ role: f.role, weight: f.w * f.h }));
     const total = weighed.reduce((t, x) => t + x.weight, 0) || 1;
-    const leads = weighed.filter((x) => ["image", "title", "pull", "deck"].includes(x.role)).sort((a, b) => b.weight - a.weight);
+    const leads = weighed.filter((x) => ["image", "drawn", "figure", "title", "pull", "deck"].includes(x.role)).sort((a, b) => b.weight - a.weight);
     const lo = input.dominantMin ?? 0.4, hi = Math.max(lo, 0.6);
     const dom = leads[0];
     const share = dom ? dom.weight / total : 0;
@@ -246,6 +254,10 @@ export function scorePage(input: PageScoreInput): PageScore {
       if (a + b > 60 && ratio < 0.7) penalty("T", 30 * (0.7 - ratio) / 0.7, `columns unbalanced: ${a} words against ${b}`);
     }
     if ((lay.findings ?? []).some((f) => f.what === "text frame oversets") && !(cols && cols.overset)) penalty("T", 20, "a text frame oversets");
+    // A line a reader can follow back: 35-75 characters (design-skill §12b).
+    const span = input.measure ?? { min: 35, max: 75 };
+    const chars = lay.measure?.chars;
+    if (chars && (chars < span.min || chars > span.max)) penalty("T", 15, `body lines hold ${Math.round(chars)} characters, outside ${span.min}-${span.max}`);
     T = clamp(100 - sum(notes, "T"));
   }
 

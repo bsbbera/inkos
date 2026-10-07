@@ -28,6 +28,11 @@ export interface DesignMath {
   /** Kept for the render-time measurement; not checkable from a spec. */
   readonly minWhitespace?: number;
   readonly dominantMin?: number;
+  /** Least ratio between two type sizes on a page (page-blocks.ts, default 1.2). */
+  readonly minScaleStep?: number;
+  /** Characters a body line may hold (default 35-75). */
+  readonly measureMin?: number;
+  readonly measureMax?: number;
 }
 
 export const DEFAULT_MATH = { maxFullBleedRun: 2, maxBreaksPerSection: 1 } as const;
@@ -186,6 +191,12 @@ export function parseNumberRule(text: string): { key: keyof DesignMath; value: n
 
   const ws = share(t.match(/whitespace[^0-9]*?(\d+(?:\.\d+)?)\s*%?/));
   if (ws !== null && ws > 0 && ws <= 1) return { key: "minWhitespace", value: ws };
+
+  m = t.match(/(?:sizes?|scale|steps?)[^0-9]*?(\d+(?:\.\d+)?)\s*(?:x|×|times)/);
+  if (m && Number(m[1]) > 1 && Number(m[1]) < 4) return { key: "minScaleStep", value: Number(m[1]) };
+
+  m = t.match(/(\d+)\s*(?:-|to|–)\s*(\d+)\s*char/);
+  if (m) return { key: "measureMax", value: Number(m[2]) };
 
   const dom = share(t.match(/dominant[^0-9]*?(\d+(?:\.\d+)?)\s*%?/));
   if (dom !== null && dom > 0 && dom <= 1) return { key: "dominantMin", value: dom };

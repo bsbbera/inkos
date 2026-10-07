@@ -937,6 +937,10 @@ export {
 export {
   layoutScored, logScore, problemsFor, scoreAndSave, scoreIssuePage, variantFor,
 } from "./pipeline/page-score-run.js";
+export {
+  BLOCK_KINDS, blockRules, cleanBlocks, gridOf, placedBlocks, sizeOf,
+  type BlockGrid, type BlockKind, type BlockNote, type BlockSlot, type PageBlock, type PlacedBlock,
+} from "./pipeline/page-blocks.js";
 export { issueDir as publicationIssueDir } from "./pipeline/publication-runner.js";
 export type { Audience, PageMetrics, SurfaceMix } from "./pipeline/magazine-bar.js";
 export {

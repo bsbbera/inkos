@@ -16,6 +16,7 @@ import { appendFile, copyFile, mkdir, readFile, writeFile } from "node:fs/promis
 import { dirname, isAbsolute, join } from "node:path";
 import { goldenRules, readMath, repairGoldenRules, type DesignMath } from "./design-rules.js";
 import { pageCap } from "./magazine-bar.js";
+import { blockRules, placedBlocks } from "./page-blocks.js";
 import {
   improvePage, saveScore, scorePage,
   type Checkpoint, type Dim, type Fix, type Improved, type LayoutReport, type MeasuredAsset,
@@ -103,7 +104,17 @@ export async function scoreIssuePage(
     ...(math.minWhitespace !== undefined ? { whitespaceFloor: math.minWhitespace } : {}),
     ...(math.dominantMin !== undefined ? { dominantMin: math.dominantMin } : {}),
   };
-  if (spec) input.specProblems = problemsFor(goldenRules(spec, issue.sections, math), n);
+  if (spec) {
+    input.specProblems = problemsFor(goldenRules(spec, issue.sections, math), n);
+    const blockNotes = blockRules(spec, n, {
+      paper: palette.paper ?? "", ink: palette.ink ?? "", accent: spec.palette?.accent || palette.hue || "",
+      ...(palette.field ? { field: palette.field } : {}),
+    }, math);
+    if (blockNotes.length) input.blockNotes = blockNotes;
+  }
+  if (math.measureMin !== undefined || math.measureMax !== undefined) {
+    input.measure = { min: math.measureMin ?? 35, max: math.measureMax ?? 75 };
+  }
   if (laid && checkpoint !== "spec-lint") input.layout = laid;
 
   if (checkpoint === "page-score" && rendered) {
@@ -218,7 +229,9 @@ export async function layoutScored(
         } else if (cause === "T" && hasImage && cur?.variant !== "small-band" && /overset/.test(current.causeLine)) {
           changed = await setVariant(ctx, id, n, "small-band");
         }
-      } else if (fix === "re-archetype") {
+      } else if (fix === "re-archetype" && !placedBlocks(cur).length) {
+        // A page built from its spec's blocks is the designer's arrangement:
+        // variants rearrange the type's default, so there is nothing to swap.
         const v = variantFor(cause, current, page, hasImage, cur?.variant);
         if (v) changed = await setVariant(ctx, id, n, v);
       }
