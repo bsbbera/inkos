@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Type } from "@mariozechner/pi-ai";
+import { Type } from "@earendil-works/pi-ai";
 import { BaseAgent, type AgentContext } from "../agents/base.js";
 import {
   PlayActionIntentSchema,

@@ -162,6 +162,13 @@ export const ProjectConfigSchema = z.object({
   }),
   researchSearch: ResearchSearchConfigSchema,
   modelOverrides: z.record(z.string(), ModelOverrideValueSchema).optional(),
+  /** Routes unpinned agents among the connected models (llm/model-presets.ts). */
+  modelPreset: z.enum(["best", "balanced", "frugal"]).optional(),
+  /** Per-run ceiling; a run pauses on reaching it (llm/telemetry.ts). */
+  budget: z.object({
+    perRunUsd: z.number().positive().optional(),
+    perRunTokens: z.number().int().positive().optional(),
+  }).optional(),
   daemon: z.object({
     schedule: z.object({
       radarCron: z.string().default("0 */6 * * *"),

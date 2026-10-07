@@ -20,6 +20,7 @@
 
 import type { AgentLLMOverride } from "../models/project.js";
 import { canonicalAgentId } from "./agent-roster.js";
+import { pickForAgent, type ModelCard, type ModelPreset } from "./model-presets.js";
 
 /** What a pin can be. A bare string is a model on the project's own client. */
 export type ModelPin = string | AgentLLMOverride;
@@ -30,7 +31,7 @@ export interface RouteTarget {
   readonly model: string;
 }
 
-export type RouteSource = "pin" | "global";
+export type RouteSource = "pin" | "preset" | "global";
 
 export interface ResolvedRoute extends RouteTarget {
   readonly source: RouteSource;
@@ -40,6 +41,8 @@ export interface ResolvedRoute extends RouteTarget {
    * Set only when a pin was found and refused. The route is the global one; this
    * says what was asked for and why it could not be honoured.
    */
+  /** Why a preset chose this model, or why it could not choose one. */
+  readonly reason?: string;
   readonly droppedPin?: {
     readonly model: string;
     readonly service?: string;
@@ -57,6 +60,8 @@ export interface RouteInput {
    * is correct offline, in tests, and anywhere the caller has no live roster.
    */
   readonly isAvailable?: (target: RouteTarget) => boolean;
+  /** Chooses for an unpinned agent among the connected models (model-presets.ts). */
+  readonly preset?: { readonly name: ModelPreset; readonly cards: ReadonlyArray<ModelCard> };
 }
 
 function targetOf(pin: ModelPin): RouteTarget {
@@ -74,15 +79,15 @@ function targetOf(pin: ModelPin): RouteTarget {
 export function resolveAgentRoute(input: RouteInput): ResolvedRoute {
   const canonical = canonicalAgentId(input.agent);
   const pin = input.overrides?.[canonical] ?? input.overrides?.[input.agent];
-  if (pin === undefined) return { ...input.global, source: "global" };
+  if (pin === undefined) return byPreset(input);
 
   const target = targetOf(pin);
   if (!target.model) return { ...input.global, source: "global" };
 
   if (input.isAvailable && !input.isAvailable(target)) {
     return {
-      ...input.global,
-      source: "global",
+      // An unreachable pin falls to the preset, then the default, like no pin.
+      ...byPreset(input),
       droppedPin: {
         model: target.model,
         ...(target.service ? { service: target.service } : {}),
@@ -98,6 +103,14 @@ export function resolveAgentRoute(input: RouteInput): ResolvedRoute {
   };
 }
 
+/** pin → preset → global: the step after a missing pin. */
+function byPreset(input: RouteInput): ResolvedRoute {
+  if (!input.preset) return { ...input.global, source: "global" };
+  const pick = pickForAgent(input.agent, input.preset.name, input.preset.cards);
+  if (!pick) return { ...input.global, source: "global", reason: "no connected model meets its needs; uses the default" };
+  return { service: pick.card.service, model: pick.card.model, source: "preset", reason: pick.reason };
+}
+
 /**
  * Every agent's route in one pass, for the settings page.
  *
@@ -110,6 +123,7 @@ export function resolveRoutingTable(input: {
   readonly overrides?: Readonly<Record<string, ModelPin>> | undefined;
   readonly global: RouteTarget;
   readonly isAvailable?: (target: RouteTarget) => boolean;
+  readonly preset?: RouteInput["preset"];
 }): Readonly<Record<string, ResolvedRoute>> {
   const out: Record<string, ResolvedRoute> = {};
   for (const agent of input.agents) {
@@ -118,6 +132,7 @@ export function resolveRoutingTable(input: {
       ...(input.overrides ? { overrides: input.overrides } : {}),
       global: input.global,
       ...(input.isAvailable ? { isAvailable: input.isAvailable } : {}),
+      ...(input.preset ? { preset: input.preset } : {}),
     });
   }
   return out;

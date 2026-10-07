@@ -13,6 +13,7 @@
 import { readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { GLOBAL_CONFIG_DIR } from "../utils/llm-env.js";
+import { connectVia, SUBSCRIPTION_KEY } from "./subscription.js";
 
 export interface SecretsFile {
   services: Record<string, { apiKey: string }>;
@@ -91,6 +92,9 @@ export async function getServiceApiKey(
   projectRoot: string,
   service: string,
 ): Promise<string | null> {
+  // 0. connected through a subscription or the CLI: no key is sent (subscription.ts)
+  if (connectVia(service) !== "api-key") return SUBSCRIPTION_KEY;
+
   // 1. the machine's key store
   const secrets = await loadSecrets(projectRoot);
   const entry = secrets.services[service];

@@ -1,11 +1,12 @@
 import type { LLMClient, LLMMessage, LLMResponse, OnStreamProgress } from "../llm/provider.js";
 import { supportsNativeWebSearch } from "../llm/provider.js";
 import { runWorkerAgent, runWorkerAgentTool, type WorkerResultTool } from "../agent/worker-agent.js";
-import type { Static, TSchema } from "@sinclair/typebox";
+import type { Static, TSchema } from "typebox";
 import { appendPromptPackGuidance } from "../prompts/prompt-pack.js";
 import { searchWeb, fetchUrl } from "../utils/web-search.js";
 import { modelSearchesWeb } from "../llm/providers/lookup.js";
 import type { Logger } from "../utils/logger.js";
+import { asAgent } from "../llm/telemetry.js";
 import {
   hydrateActivatedSkillGuidance,
   type ActivatedSkillGuidance,
@@ -81,11 +82,13 @@ export abstract class BaseAgent {
     messages: ReadonlyArray<LLMMessage>,
     options?: { readonly temperature?: number; readonly maxTokens?: number },
   ): Promise<LLMResponse> {
-    return this.meter(await runWorkerAgent(this.ctx.client, this.ctx.model, await this.appendTaskSkillGuidance(messages), {
+    const guided = await this.appendTaskSkillGuidance(messages);
+    // Named for the run's telemetry, so the Run screen can say who wrote what.
+    return this.meter(await asAgent(this.ctx.agent ?? "", () => runWorkerAgent(this.ctx.client, this.ctx.model, guided, {
       ...options,
       onStreamProgress: this.ctx.onStreamProgress,
       signal: this.ctx.signal,
-    }));
+    })));
   }
 
   protected async submitStructured<TParameters extends TSchema>(
@@ -93,16 +96,17 @@ export abstract class BaseAgent {
     resultTool: WorkerResultTool<TParameters>,
     options?: { readonly temperature?: number; readonly maxTokens?: number },
   ): Promise<Static<TParameters>> {
-    return runWorkerAgentTool(
+    const guided = await this.appendTaskSkillGuidance(messages);
+    return asAgent(this.ctx.agent ?? "", () => runWorkerAgentTool(
       this.ctx.client,
       this.ctx.model,
-      await this.appendTaskSkillGuidance(messages),
+      guided,
       resultTool,
       {
         ...options,
         signal: this.ctx.signal,
       },
-    );
+    ));
   }
 
   protected async withPromptPackGuidance(basePrompt: string, promptId: string): Promise<string> {

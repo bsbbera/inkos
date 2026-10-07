@@ -27,13 +27,15 @@ import {
   withJobPin,
   withPin,
   type ModelPin,
+  type ModelPreset,
   type RoutingTable,
 } from "./model-routing-state";
 import { Failed } from "../components/ui/states";
 
-const TONE: Record<"default" | "pinned" | "dropped", string> = {
+const TONE: Record<"default" | "pinned" | "preset" | "dropped", string> = {
   default: "text-muted-foreground italic",
   pinned: "",
+  preset: "text-muted-foreground",
   dropped: "text-destructive",
 };
 
@@ -122,6 +124,19 @@ export function ModelRouting({
     }
   }, [choices, load]);
 
+  const saveRouting = useCallback(async (patch: { preset?: ModelPreset | null; budget?: RoutingTable["budget"] }) => {
+    setSaving(true);
+    try {
+      await putApi("/project/model-routing", { overrides: table?.overrides ?? {}, ...patch });
+      await load();
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }, [table?.overrides, load]);
+
   const save = useCallback(async (overrides: Record<string, ModelPin>) => {
     setSaving(true);
     // Optimistic: the row must not snap back while the write is in flight, and
@@ -179,6 +194,43 @@ export function ModelRouting({
         <p className="mt-2 text-xs text-muted-foreground">
           Used by chat and by every agent below that has no pin of its own.
         </p>
+        <label className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Without a pin, choose by</span>
+          <select
+            className="input py-1.5 px-2 text-small w-auto"
+            value={table?.preset ?? ""}
+            disabled={saving}
+            onChange={(e) => { void saveRouting({ preset: (e.target.value || null) as ModelPreset | null }); }}
+          >
+            <option value="">the default model</option>
+            <option value="best">Best: the strongest reasoner</option>
+            <option value="balanced">Balanced: quality for the cost</option>
+            <option value="frugal">Frugal: the cheapest that qualifies</option>
+          </select>
+        </label>
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="font-semibold">Pause a run at</span>
+          <input
+            key={`usd-${table?.budget?.perRunUsd ?? ""}`}
+            className="input py-1.5 px-2 text-small w-24 tnum"
+            type="number" min="0" step="0.5" placeholder="$ no limit"
+            aria-label="Dollar ceiling per run"
+            defaultValue={table?.budget?.perRunUsd ?? ""}
+            disabled={saving}
+            onBlur={(e) => { void saveRouting({ budget: { ...table?.budget, perRunUsd: Number(e.target.value) || undefined } }); }}
+          />
+          <span>dollars or</span>
+          <input
+            key={`tok-${table?.budget?.perRunTokens ?? ""}`}
+            className="input py-1.5 px-2 text-small w-32 tnum"
+            type="number" min="0" step="10000" placeholder="no limit"
+            aria-label="Token ceiling per run"
+            defaultValue={table?.budget?.perRunTokens ?? ""}
+            disabled={saving}
+            onBlur={(e) => { void saveRouting({ budget: { ...table?.budget, perRunTokens: Number(e.target.value) || undefined } }); }}
+          />
+          <span>tokens. A CLI has no price, so only tokens limit it.</span>
+        </div>
       </div>
 
       {error ? (

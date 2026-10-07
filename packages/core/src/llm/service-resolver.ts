@@ -1,5 +1,5 @@
-import { getModel } from "@mariozechner/pi-ai";
-import type { Model, Api } from "@mariozechner/pi-ai";
+import { getModel } from "@earendil-works/pi-ai/compat";
+import type { Model, Api } from "@earendil-works/pi-ai";
 import { resolveServicePiProvider, resolveServicePreset } from "./service-presets.js";
 import { getServiceApiKey } from "./secrets.js";
 import { getEndpoint } from "./providers/index.js";

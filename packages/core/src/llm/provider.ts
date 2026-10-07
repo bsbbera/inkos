@@ -3,7 +3,9 @@ import {
   streamSimple as piStreamSimple,
   completeSimple as piCompleteSimple,
   createAssistantMessageEventStream,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai/compat";
+import { connectVia, viaStream } from "./subscription.js";
+import { priceOf, recordLlmCall, roughTokens } from "./telemetry.js";
 import type {
   Api as PiApi,
   Model as PiModel,
@@ -11,7 +13,7 @@ import type {
   AssistantMessage,
   AssistantMessageEvent,
   AssistantMessageEventStream,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import { resolveServicePreset } from "./service-presets.js";
 import { getEndpoint } from "./providers/index.js";
 import { lookupModel } from "./providers/lookup.js";
@@ -125,6 +127,8 @@ export function guardAssistantMessageStream<TApi extends PiApi>(
   start: (signal: AbortSignal) => AssistantMessageEventStream,
   callerSignal?: AbortSignal,
   deadlineOptions?: StreamDeadlineOptions,
+  /** Told the finished message, for the run's telemetry (pi-stream.ts). */
+  onDone?: (message: AssistantMessage) => void,
 ): AssistantMessageEventStream {
   const guarded = createAssistantMessageEventStream();
   const deadline = createStreamActivityDeadline(callerSignal, undefined, deadlineOptions);
@@ -140,6 +144,7 @@ export function guardAssistantMessageStream<TApi extends PiApi>(
         const event = next.value;
         deadline.activity();
         terminalSeen ||= event.type === "done" || event.type === "error";
+        if (event.type === "done") onDone?.(event.message);
         guarded.push(event);
       }
       if (!terminalSeen) throw new Error("LLM stream ended without a terminal event");
@@ -599,6 +604,12 @@ export function estimatePiContextTokens(context: PiContext): number {
   let total = estimateTextTokens(context.systemPrompt ?? "");
   for (const message of context.messages) {
     total += estimateTextTokens(message.role);
+    // pi 1.0 carries the prompt and the tool declarations in system messages,
+    // not in systemPrompt/tools, so the whole message is what gets sent.
+    if ((message.role as string) === "system") {
+      total += estimateJsonTokens(message);
+      continue;
+    }
     if (message.role === "assistant") {
       total += estimatePiContentTokens(message.content);
       total += estimateTextTokens(message.model ?? "");
@@ -1566,7 +1577,25 @@ async function chatCompletionViaCustomOpenAICompatible(
 
 // === Simple Chat (used by all agents via BaseAgent.chat()) ===
 
+/** Every pipeline call, metered against the open run (telemetry.ts). */
 export async function chatCompletion(
+  ...args: Parameters<typeof chatCompletionUnmetered>
+): Promise<LLMResponse> {
+  const [client, model] = args;
+  const res = await chatCompletionUnmetered(...args);
+  const reported = res.usage.promptTokens + res.usage.completionTokens > 0;
+  const input = reported ? res.usage.promptTokens : roughTokens(args[2].reduce((n, m) => n + m.content.length, 0));
+  const output = reported ? res.usage.completionTokens : roughTokens(res.content.length);
+  recordLlmCall({
+    ...(client.service ? { service: client.service } : {}),
+    model, input, output,
+    costUsd: priceOf(client._piModel?.cost, input, output),
+    ...(reported ? {} : { estimated: true }),
+  });
+  return res;
+}
+
+async function chatCompletionUnmetered(
   client: LLMClient,
   model: string,
   messages: ReadonlyArray<LLMMessage>,
@@ -1742,7 +1771,9 @@ async function chatCompletionViaPiAi(
   };
 
   if (!client.stream) {
-    const response = await piCompleteSimple(piModel, context, streamOpts);
+    const response = connectVia(piModel.provider) === "api-key"
+      ? await piCompleteSimple(piModel, context, streamOpts)
+      : await viaStream(piModel, context, streamOpts, piStreamSimple).result();
     if (response.stopReason === "error" && response.errorMessage) {
       throw new Error(response.errorMessage);
     }
@@ -1772,7 +1803,7 @@ async function chatCompletionViaPiAi(
     };
   }
 
-  const eventStream = piStreamSimple(piModel, context, streamOpts);
+  const eventStream = viaStream(piModel, context, streamOpts, piStreamSimple);
   const chunks: string[] = [];
   const monitor = createStreamMonitor(onStreamProgress);
   let inputTokens = 0;

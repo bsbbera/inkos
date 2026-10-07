@@ -1,17 +1,18 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { Agent } from "@earendil-works/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import {
   createAssistantMessageEventStream,
+  getSystemMessageText,
   type Api,
   type AssistantMessage,
   type Context,
   type Message,
   type Model,
-  type Provider,
+  type ProviderId,
   type SimpleStreamOptions,
-} from "@mariozechner/pi-ai";
-import type { Static, TSchema } from "@sinclair/typebox";
-import { Value } from "@sinclair/typebox/value";
+} from "@earendil-works/pi-ai";
+import type { Static, TSchema } from "typebox";
+import { Value } from "typebox/value";
 import {
   chatCompletion,
   type LLMClient,
@@ -61,7 +62,7 @@ export function workerModel(client: LLMClient, modelId: string, maxTokens?: numb
     id: modelId,
     name: modelId,
     api: (client.apiFormat === "responses" ? "openai-responses" : "openai-completions") as Api,
-    provider: client.provider as Provider,
+    provider: client.provider as ProviderId,
     baseUrl: "",
     reasoning: false,
     input: ["text"],
@@ -137,6 +138,11 @@ function contextMessages(context: Context): LLMMessage[] {
   for (const message of context.messages) {
     if (message.role === "user") {
       messages.push({ role: "user", content: textFromContent(message.content) });
+      continue;
+    }
+    // pi 1.0 carries later instructions as system messages in the transcript.
+    if (message.role === "system") {
+      messages.push({ role: "system", content: getSystemMessageText(message) });
       continue;
     }
     if (message.role === "assistant") {

@@ -21,6 +21,23 @@ import { Empty, ErrorLine, Failed, Loading } from "../components/ui/states";
 import { when } from "../lib/when";
 
 type Kind = "api" | "cli" | "local";
+type Via = "api-key" | "subscription" | "cli";
+
+const VIAS: ReadonlyArray<{ value: Via; label: string }> = [
+  { value: "api-key", label: "API key" },
+  { value: "subscription", label: "Subscription" },
+  { value: "cli", label: "Installed CLI" },
+];
+
+interface Login {
+  readonly state: "none" | "waiting" | "done" | "error";
+  readonly url?: string;
+  readonly userCode?: string;
+  readonly message?: string;
+  readonly error?: string;
+  readonly awaitingCode?: boolean;
+  readonly choice?: { readonly message: string; readonly options: ReadonlyArray<{ readonly id: string; readonly label: string }> };
+}
 
 interface Check {
   readonly ok: boolean;
@@ -34,6 +51,8 @@ export interface Connection {
   readonly label: string;
   readonly kind: Kind;
   readonly hasKey: boolean;
+  /** Anthropic and OpenAI only: reached with a key, a subscription, or the installed CLI. */
+  readonly via?: Via;
   readonly connected: boolean;
   readonly check: Check | null;
 }
@@ -107,9 +126,83 @@ function Row({ c, onChanged }: { readonly c: Connection; readonly onChanged: () 
     }
   };
 
+  const [login, setLogin] = useState<Login | null>(null);
+  const [code, setCode] = useState("");
+  const path = `/connections/${encodeURIComponent(c.service)}`;
+
+  // A sign-in finishes in the browser, so the row asks how it went until it ends.
+  useEffect(() => {
+    if (login?.state !== "waiting") return;
+    const t = setInterval(() => {
+      void fetchJson<Login>(`${path}/login`).then((l) => {
+        // The link can arrive after a choice was made: open it the first time it shows.
+        setLogin((prev) => { if (l.url && !prev?.url) window.open(l.url, "_blank", "noopener"); return l; });
+        if (l.state === "done") { toast(`${c.label}: signed in.`); onChanged(); }
+        if (l.state === "error") setError(l.error ?? "Sign-in failed.");
+      }).catch(() => { /* next tick */ });
+    }, 2000);
+    return () => clearInterval(t);
+  }, [login?.state, path, c.label, onChanged]);
+
+  const choose = async (via: Via) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetchJson<{ check: Check }>(`${path}/via`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ via }) });
+      if (!res.check.ok) setError(res.check.error ?? "Not connected.");
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signIn = async () => {
+    setError(null);
+    try {
+      const l = await fetchJson<Login>(`${path}/login`, { method: "POST" });
+      setLogin(l);
+      if (l.state === "error") setError(l.error ?? "Sign-in failed.");
+      else if (l.url) window.open(l.url, "_blank", "noopener");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const pick = async (id: string) => {
+    try {
+      const l = await fetchJson<Login>(`${path}/login/code`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ choice: id }) });
+      setLogin((prev) => { if (l.url && !prev?.url) window.open(l.url, "_blank", "noopener"); return l; });
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const sendCode = async () => {
+    try {
+      setLogin(await fetchJson<Login>(`${path}/login/code`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code: code.trim() }) }));
+      setCode("");
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      await fetchJson(`${path}/login`, { method: "DELETE" });
+      setLogin(null);
+      toast(`${c.label}: signed out.`);
+      onChanged();
+    } catch (e) {
+      toastError(e, "Could not sign out.");
+    }
+  };
+
   // Grey when it was connected once and is not now; red only for a test that just failed here.
   const dot = c.connected ? "dot-clean" : c.check && !c.check.ok ? "dot-bad" : "dot-never";
-  const needsKey = c.kind === "api" && !c.service.startsWith("custom:");
+  const via = c.via ?? "api-key";
+  const needsKey = c.kind === "api" && !c.service.startsWith("custom:") && via === "api-key";
 
   return (
     <li className="row still flex-wrap" aria-busy={busy}>
@@ -118,6 +211,27 @@ function Row({ c, onChanged }: { readonly c: Connection; readonly onChanged: () 
         <span className="name">{c.label}</span>
         <span className={`meta ${c.connected ? "" : "dim"}`}>{statusLine(c)}</span>
       </span>
+      {c.via ? (
+        <select
+          className="input py-1.5 px-2 text-small w-auto"
+          aria-label={`Connect ${c.label} via`}
+          value={via}
+          disabled={busy}
+          onChange={(e) => void choose(e.target.value as Via)}
+        >
+          {VIAS.map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
+        </select>
+      ) : null}
+      {via === "subscription" ? (
+        c.connected
+          ? <button type="button" className="btn btn-quiet btn-sm" onClick={() => void signOut()}>Sign out</button>
+          : (
+            <button type="button" className="btn btn-sm" disabled={login?.state === "waiting"} onClick={() => void signIn()}>
+              {login?.state === "waiting" ? <Orb state="connecting" /> : <Icon name="plug" size={14} />}
+              {login?.state === "waiting" ? "Waiting for sign-in…" : "Sign in"}
+            </button>
+          )
+      ) : null}
       {needsKey ? (
         <input
           type="password"
@@ -139,8 +253,28 @@ function Row({ c, onChanged }: { readonly c: Connection; readonly onChanged: () 
         {busy ? <Orb state="connecting" /> : <Icon name="plug" size={14} />}
         {busy ? "Testing…" : "Test connection"}
       </button>
-      {c.hasKey ? (
+      {c.hasKey && via === "api-key" ? (
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => void forget()}>Remove key</button>
+      ) : null}
+      {login?.state === "waiting" ? (
+        <div className="basis-full rowflex gap-2 flex-wrap items-center">
+          {login.url ? <a className="link text-small" href={login.url} target="_blank" rel="noopener noreferrer">Open the sign-in page</a> : null}
+          {login.choice ? (
+            <>
+              <span className="text-small">{login.choice.message}</span>
+              {login.choice.options.map((o) => (
+                <button key={o.id} type="button" className="btn btn-line btn-sm" onClick={() => void pick(o.id)}>{o.label}</button>
+              ))}
+            </>
+          ) : null}
+          {login.userCode ? <span className="text-small">Code to enter: <b className="mono">{login.userCode}</b></span> : null}
+          {login.awaitingCode ? (
+            <>
+              <input className="input w-56 max-w-full" placeholder="Paste the code it shows" aria-label="Sign-in code" value={code} onChange={(e) => setCode(e.target.value)} />
+              <button type="button" className="btn btn-line btn-sm" disabled={!code.trim()} onClick={() => void sendCode()}>Send code</button>
+            </>
+          ) : null}
+        </div>
       ) : null}
       {error ? <ErrorLine className="basis-full">{error}</ErrorLine> : null}
     </li>

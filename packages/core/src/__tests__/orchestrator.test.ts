@@ -302,3 +302,47 @@ describe("a runner that walks its own loop", () => {
     expect((await loadPipeline(root, issue))?.stage).toBe("content.audit");
   });
 });
+
+describe("the budget ceiling", () => {
+  // Phase 2: a run pauses at its ceiling with a reason, and does not fail.
+  it("meters each call and pauses the run before the unit past the ceiling", async () => {
+    const { recordLlmCall, readRunTotals } = await import("../llm/telemetry.js");
+    const { pipelinePath } = await import("../pipeline/orchestrator.js");
+    await writeFile(join(root, "quire.json"), JSON.stringify({ budget: { perRunTokens: 100 } }), "utf-8");
+    const seen: number[] = [];
+    registerExecutor("content.research", async (ctx) => {
+      seen.push(ctx.unit);
+      recordLlmCall({ model: "m", input: 60, output: 0, costUsd: 0 });
+      return { ok: true, artifacts: [] };
+    }, "book");
+
+    await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 4 });
+    const blocked: string[] = [];
+    await runStage({ projectRoot: root, ref: book, emit: (e) => { if (e.kind === "stage:blocked") blocked.push(e.reason ?? ""); } });
+    await new Promise((r) => setTimeout(r, 50)); // the appends are fire-and-forget
+
+    expect(seen).toEqual([1, 2]);
+    const state = await loadPipeline(root, book);
+    expect(state?.status).toBe("idle");
+    expect(state?.units.failed).toEqual([]);
+    expect(blocked.at(-1)).toMatch(/Paused at the budget ceiling: 120 of 100 tokens/);
+    const runDir = join(pipelinePath(root, book), "..");
+    expect(await readRunTotals(runDir)).toMatchObject({ calls: 2, input: 120 });
+  });
+});
+
+describe("a production's own model pins", () => {
+  it("reach every call the stage makes, over the project's", async () => {
+    const { currentRunPins } = await import("../llm/telemetry.js");
+    const { savePipeline } = await import("../pipeline/orchestrator.js");
+    let seen: unknown;
+    registerExecutor("content.research", async () => {
+      seen = currentRunPins();
+      return { ok: true, artifacts: [] };
+    }, "book");
+    const state = await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 1 });
+    await savePipeline(root, book, { ...state, modelOverrides: { writer: "claude/opus" } });
+    await runStage({ projectRoot: root, ref: book });
+    expect(seen).toEqual({ writer: "claude/opus" });
+  });
+});

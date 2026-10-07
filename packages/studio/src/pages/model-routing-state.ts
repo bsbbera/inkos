@@ -21,7 +21,9 @@ export interface AgentRole {
 export interface ResolvedRoute {
   readonly service?: string;
   readonly model: string;
-  readonly source: "pin" | "global";
+  readonly source: "pin" | "preset" | "global";
+  /** Why a preset chose this model, or why it could not. */
+  readonly reason?: string;
   readonly droppedPin?: {
     readonly model: string;
     readonly service?: string;
@@ -45,7 +47,13 @@ export interface RoutingTable {
   readonly global: { readonly service: string | null; readonly model: string | null };
   readonly overrides: Readonly<Record<string, ModelPin>>;
   readonly routes: Readonly<Record<string, ResolvedRoute>>;
+  /** Chooses for unpinned agents; null routes them all to the default. */
+  readonly preset?: ModelPreset | null;
+  /** Per-run ceiling: a run pauses on reaching it. */
+  readonly budget?: { readonly perRunUsd?: number; readonly perRunTokens?: number } | null;
 }
+
+export type ModelPreset = "best" | "balanced" | "frugal";
 
 export interface RoutingRow {
   readonly role: AgentRole;
@@ -112,7 +120,7 @@ export function routingGroups(table: RoutingTable | null): ReadonlyArray<Routing
  */
 export function routeSummary(route: ResolvedRoute): {
   readonly text: string;
-  readonly tone: "default" | "pinned" | "dropped";
+  readonly tone: "default" | "pinned" | "preset" | "dropped";
 } {
   if (route.droppedPin) {
     const asked = route.droppedPin.service
@@ -120,7 +128,8 @@ export function routeSummary(route: ResolvedRoute): {
       : route.droppedPin.model;
     return { text: `${asked} is not reachable — using the default`, tone: "dropped" };
   }
-  if (route.source === "global") return { text: "uses the default", tone: "default" };
+  if (route.source === "preset") return { text: route.reason ?? modelName(route.service, route.model), tone: "preset" };
+  if (route.source === "global") return { text: route.reason ?? "uses the default", tone: "default" };
   return {
     text: modelName(route.service, route.model),
     tone: "pinned",
@@ -147,7 +156,7 @@ export interface JobRow {
   readonly job: AgentJob;
   /** "" when the job has no pin, or when its members disagree. */
   readonly value: string;
-  readonly summary: { readonly text: string; readonly tone: "default" | "pinned" | "dropped" };
+  readonly summary: { readonly text: string; readonly tone: "default" | "pinned" | "preset" | "dropped" };
 }
 
 /**

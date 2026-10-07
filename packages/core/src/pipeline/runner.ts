@@ -2,6 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { LLMClient, OnStreamProgress } from "../llm/provider.js";
 import { createLLMClient } from "../llm/provider.js";
 import { resolveAgentRoute, type ModelPin, type RouteTarget } from "../llm/model-routing.js";
+import type { ModelCard, ModelPreset } from "../llm/model-presets.js";
+import { currentRunPins } from "../llm/telemetry.js";
 import { canonicalAgentId } from "../llm/agent-roster.js";
 import { runWorkerAgent } from "../agent/worker-agent.js";
 import type { Logger } from "../utils/logger.js";
@@ -265,6 +267,8 @@ export interface PipelineConfig {
   readonly radarSources?: ReadonlyArray<RadarSource>;
   readonly externalContext?: string;
   readonly modelOverrides?: Record<string, ModelPin>;
+  /** Routes an unpinned agent among the connected models (model-presets.ts). */
+  readonly modelPreset?: { readonly name: ModelPreset; readonly cards: ReadonlyArray<ModelCard> };
   /**
    * Whether a pinned model can actually be reached right now. Supplied by the
    * host, which is the only layer that knows which CLIs are detected and which
@@ -710,17 +714,24 @@ export class PipelineRunner {
   private resolveOverride(agentName: string): { model: string; client: LLMClient } {
     const route = resolveAgentRoute({
       agent: agentName,
-      ...(this.config.modelOverrides ? { overrides: this.config.modelOverrides } : {}),
+      // This production's pins (pipeline.json) over the project's (21).
+      ...(this.config.modelOverrides || currentRunPins()
+        ? { overrides: { ...this.config.modelOverrides, ...currentRunPins() } as Record<string, ModelPin> }
+        : {}),
       global: { model: this.config.model },
       ...(this.config.isModelAvailable ? { isAvailable: this.config.isModelAvailable } : {}),
+      ...(this.config.modelPreset ? { preset: this.config.modelPreset } : {}),
     });
     if (route.droppedPin) {
       this.config.logger?.warn?.(
         `${canonicalAgentId(agentName)}: pinned model ${route.droppedPin.model} is not reachable; using the project default`,
       );
     }
-    const override = route.source === "pin" ? route.override : undefined;
-    if (route.source !== "pin") {
+    // A preset's choice is carried out exactly like a service pin.
+    const override = route.source === "pin" ? route.override
+      : route.source === "preset" ? { service: route.service, model: route.model }
+        : undefined;
+    if (route.source === "global") {
       return { model: this.config.model, client: this.config.client };
     }
     if (!override) {

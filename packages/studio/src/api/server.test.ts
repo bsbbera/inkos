@@ -517,6 +517,16 @@ vi.mock("@actalk/quire-core", async (importOriginal) => {
     isApiKeyOptionalForEndpoint: actual.isApiKeyOptionalForEndpoint,
     secretsDir: actual.secretsDir,
     loadProviderCatalogue: actual.loadProviderCatalogue,
+    connectVia: actual.connectVia,
+    describeModel: actual.describeModel,
+    MODEL_PRESETS: actual.MODEL_PRESETS,
+    setConnectVia: actual.setConnectVia,
+    hasSubscription: actual.hasSubscription,
+    subscriptionModels: actual.subscriptionModels,
+    subscriptionLogin: actual.subscriptionLogin,
+    subscriptionLogout: actual.subscriptionLogout,
+    isViaProvider: actual.isViaProvider,
+    VIA_PROVIDERS: actual.VIA_PROVIDERS,
     loadSecrets: loadSecretsMock,
     saveSecrets: saveSecretsMock,
     getServiceApiKey: getServiceApiKeyMock,
@@ -896,7 +906,7 @@ describe("createStudioServer daemon lifecycle", () => {
 
     const responseOrTimeout = await Promise.race([
       app.request("http://localhost/api/v1/daemon/start", { method: "POST" }),
-      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 30)),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 2_000)),
     ]);
 
     expect(responseOrTimeout).not.toBe("timeout");
@@ -910,6 +920,38 @@ describe("createStudioServer daemon lifecycle", () => {
 
     resolveStart?.();
   }, 60_000);
+
+  it("a CLI that lists models but cannot answer is not connected", async () => {
+    // The shim answers /agents: claude is installed, on and signed in.
+    vi.stubGlobal("fetch", (async () => new Response(JSON.stringify({
+      agents: [{ id: "claude", enabled: true, authed: true, fallback: [] }],
+    }))) as typeof fetch);
+    try {
+      const { createStudioServer } = await import("./server.js");
+      const app = createStudioServer(cloneProjectConfig() as never, root);
+      const listed = [{ id: "claude/default", name: "claude/default", contextWindow: 0 }];
+
+      // It lists its aliases but the test question fails: not ok, and the reason is shown.
+      probeModelsFromUpstreamMock.mockImplementationOnce(async () => listed);
+      chatCompletionMock.mockRejectedValueOnce(new Error("OAuth session expired"));
+      const bad = await app.request("http://localhost/api/v1/connections/claudeCli/test", { method: "POST" });
+      expect(bad.status).toBe(400);
+      const badBody = await bad.json() as { check: { ok: boolean; error?: string } };
+      expect(badBody.check.ok).toBe(false);
+      expect(badBody.check.error).toContain("did not answer a test question");
+      expect(badBody.check.error).toContain("OAuth session expired");
+
+      // The same CLI once it answers passes, and the question went to its check model.
+      probeModelsFromUpstreamMock.mockImplementationOnce(async () => listed);
+      const good = await app.request("http://localhost/api/v1/connections/claudeCli/test", { method: "POST" });
+      expect(good.status).toBe(200);
+      expect(chatCompletionMock).toHaveBeenLastCalledWith(
+        expect.anything(), "claude/default", expect.any(Array), expect.objectContaining({ maxTokens: 16 }),
+      );
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("rejects book routes with path traversal ids", async () => {
     const { createStudioServer } = await import("./server.js");

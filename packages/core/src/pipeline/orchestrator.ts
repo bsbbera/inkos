@@ -14,11 +14,12 @@
  * here knows what a chapter is.
  */
 
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import { commitAtomicFileSet } from "../utils/atomic-file-set.js";
 import { PRODUCTIONS, type ProductionPipeline, type ProductionSpec, type PipelineGate } from "../productions/registry.js";
 import { executorFor, type StageExecutor, type StageResult } from "./executors.js";
+import { overBudget, runTotals, withRunMeter, type Budget } from "../llm/telemetry.js";
 import {
   advance as advanceState,
   approve as approveState,
@@ -497,6 +498,14 @@ export function unitsRunning(ref: ProductionRef): ReadonlyArray<number> {
  * cannot run is a state the screen has to show, and a rejected promise on a
  * background call is a state nothing shows.
  */
+/** quire.json `budget`: { perRunUsd?, perRunTokens? }. Absent means no ceiling. */
+async function readBudget(projectRoot: string): Promise<Budget | undefined> {
+  try {
+    const b = (JSON.parse(await readFile(join(projectRoot, "quire.json"), "utf-8")) as { budget?: Budget }).budget;
+    return b && typeof b === "object" ? b : undefined;
+  } catch { return undefined; }
+}
+
 export async function runStage(input: {
   readonly projectRoot: string;
   readonly ref: ProductionRef;
@@ -563,8 +572,20 @@ export async function runStage(input: {
 
   const stage = state.stage;
   const artifacts: string[] = [];
+  // Every model call this stage makes is metered against the run (telemetry.ts).
+  const runDir = dirname(pipelinePath(input.projectRoot, input.ref));
+  const budget = await readBudget(input.projectRoot);
   for (let unit = 1; unit <= state.units.total; unit += 1) {
     if (state.units.done.includes(unit)) continue;
+    // ponytail: the ceiling is checked between units, so one unit can overshoot it by its own cost.
+    const over = overBudget(await runTotals(runDir), budget);
+    if (over) {
+      // A pause, not a failure: raise the ceiling and resume picks up this unit.
+      await pause({ projectRoot: input.projectRoot, ref: input.ref, note: over });
+      input.onProgress?.(over);
+      input.emit?.({ kind: "stage:blocked", ref: input.ref, stage, reason: over });
+      return { ran: true, stage, artifacts, advanced: false };
+    }
     if (input.signal?.aborted) {
       // Units already finished stay finished; the run simply stands where it
       // is, which is the same state a crash would leave and the same one
@@ -586,7 +607,7 @@ export async function runStage(input: {
     unitsInFlight.set(flightKey(input.ref), flight);
     input.onUnit?.(unit);
 
-    const result = await executor({
+    const result = await withRunMeter(runDir, () => executor({
       projectRoot: input.projectRoot,
       type: input.ref.type,
       id: input.ref.id,
@@ -594,7 +615,7 @@ export async function runStage(input: {
       ...(input.shimUrl ? { shimUrl: input.shimUrl } : {}),
       ...(input.onProgress ? { onProgress: input.onProgress } : {}),
       signal: perUnit.signal,
-    }).catch((error: unknown): StageResult => ({
+    }), state.modelOverrides).catch((error: unknown): StageResult => ({
       ok: false, artifacts: [], error: error instanceof Error ? error.message : String(error),
     })).finally(() => {
       input.signal?.removeEventListener("abort", relay);
@@ -752,6 +773,8 @@ export async function markInterrupted(projectRoot: string): Promise<ReadonlyArra
 export async function pause(input: {
   readonly projectRoot: string;
   readonly ref: ProductionRef;
+  /** Why, when it was not a person: the budget ceiling. */
+  readonly note?: string;
 }): Promise<PipelineState | null> {
   const state = await loadPipeline(input.projectRoot, input.ref);
   if (!state || state.status !== "running") return state;
@@ -760,6 +783,7 @@ export async function pause(input: {
     status: "idle",
     history: [...state.history, {
       at: new Date().toISOString(), event: "run:cancelled", stage: state.stage,
+      ...(input.note ? { note: input.note } : {}),
     }],
   };
   await savePipeline(input.projectRoot, input.ref, next);

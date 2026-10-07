@@ -8,8 +8,8 @@
  * call it — the way Claude Code defers MCP tools. Calls still go through the
  * shim and are executed by this host, never inside a CLI's own loop.
  */
-import { Type, type Static } from "@mariozechner/pi-ai";
-import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import { Type, type Static } from "@earendil-works/pi-ai";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 
 const shimBase = () => `http://127.0.0.1:${process.env.SHIM_PORT || "8787"}`;
 

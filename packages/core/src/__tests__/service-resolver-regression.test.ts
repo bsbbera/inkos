@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 
 // Simulate pi-ai returning MiniMax's stale Anthropic-compatible route.
 // Our resolveServiceModel should override it with the current OpenAI-compatible preset.
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai/compat", () => ({
   getModel: vi.fn((provider: string, modelId: string) => {
     if (modelId === "MiniMax-M2.7") {
       return {

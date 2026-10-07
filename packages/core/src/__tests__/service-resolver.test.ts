@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 const KNOWN_MODELS = new Set(["gpt-4o", "kimi-k2.5", "MiniMax-M2.7"]);
 
 // Mock pi-ai's getModel — returns undefined for models not in registry (like the real implementation)
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai/compat", () => ({
   getModel: vi.fn((provider: string, modelId: string) => {
     if (!KNOWN_MODELS.has(modelId)) return undefined;
     if (modelId === "MiniMax-M2.7" && provider === "anthropic") {

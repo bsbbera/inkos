@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { createExternalMcpTools } from "./mcp-tools.js";
 import { lookupModel } from "../llm/providers/lookup.js";
-import { Agent } from "@mariozechner/pi-agent-core";
-import type { AgentEvent, AgentMessage } from "@mariozechner/pi-agent-core";
-import { getModel, getEnvApiKey, createAssistantMessageEventStream } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage } from "@earendil-works/pi-agent-core";
+import { getModel, getEnvApiKey, createAssistantMessageEventStream } from "@earendil-works/pi-ai/compat";
 import { isApiKeyOptionalForEndpoint } from "../utils/llm-endpoint-auth.js";
 import type {
   Model,
@@ -16,7 +16,7 @@ import type {
   SimpleStreamOptions,
   ToolResultMessage,
   UserMessage,
-} from "@mariozechner/pi-ai";
+} from "@earendil-works/pi-ai";
 import type { PipelineRunner } from "../pipeline/runner.js";
 import { buildAgentSystemPrompt } from "./agent-system-prompt.js";
 import {
@@ -577,13 +577,11 @@ function convertAgentMessagesForModel(messages: AgentMessage[], model: Model<Api
     if (raw.role === "user" || raw.role === "assistant" || raw.role === "toolResult") {
       return [message as Message];
     }
-    if (raw.role === "system" && typeof raw.content === "string") {
-      return [{
-        role: "user",
-        content: raw.content,
-        timestamp: messageTimestamp(message),
-      }];
-    }
+    // pi 1.0 carries the system prompt and the tool declarations as system
+    // messages in the transcript. Folding them into user text (as this did when
+    // pi had no system role) sent every chat turn with no prompt and no tools.
+    // pi resolves a mid-conversation one for models that cannot take it.
+    if (raw.role === "system") return [message as Message];
     return [];
   });
 

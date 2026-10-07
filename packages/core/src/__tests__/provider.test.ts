@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AssistantMessage, Model, Api } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Model, Api } from "@earendil-works/pi-ai";
 import {
   __resetFixedTemperatureWarnings,
   chatCompletion,
@@ -7,15 +7,15 @@ import {
 } from "../llm/provider.js";
 import { runWithAgentTrajectory } from "../llm/agent-trajectory.js";
 
-// ── Mock @mariozechner/pi-ai ──────────────────────────────────────────────────
+// ── Mock @earendil-works/pi-ai ──────────────────────────────────────────────────
 // We intercept streamSimple so tests don't hit the network.
 
 const mockStreamSimple = vi.fn();
 const mockCompleteSimple = vi.fn();
 const mockComplete = vi.fn();
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("@earendil-works/pi-ai/compat", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@earendil-works/pi-ai/compat")>();
   return {
     ...original,
     streamSimple: (...args: unknown[]) => mockStreamSimple(...args),

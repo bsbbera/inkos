@@ -1,4 +1,4 @@
-import { Type, type Static } from "@sinclair/typebox";
+import { Type, type Static } from "typebox";
 
 const VarValueToolSchema = Type.Union([Type.Number(), Type.String(), Type.Boolean()]);
 

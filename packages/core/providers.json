@@ -1,15 +1,16 @@
 {
   "//": "The connections the app offers, by kind. An id names an endpoint in src/llm/providers (base URL, protocol, model cards live there). ~/.quire/providers.json adds entries or overrides labels; it cannot remove one.",
+  "//cli": "A cli entry is run by the shim. Its id is the shim agent plus \"Cli\" (devin -> devinCli). protocol: acp | plain | claude-json | codex-json. A new CLI that speaks ACP needs only this entry: id, kind, label, protocol acp, bins, acpArgs. ~ and %VAR% expand in bins; * globs one level.",
   "providers": [
     { "id": "anthropic", "kind": "api", "label": "Anthropic" },
     { "id": "openai", "kind": "api", "label": "OpenAI" },
     { "id": "google", "kind": "api", "label": "Google" },
     { "id": "openrouter", "kind": "api", "label": "OpenRouter" },
     { "id": "deepseek", "kind": "api", "label": "DeepSeek" },
-    { "id": "claudeCli", "kind": "cli", "label": "Claude Code" },
-    { "id": "codexCli", "kind": "cli", "label": "Codex" },
-    { "id": "devinCli", "kind": "cli", "label": "Devin" },
-    { "id": "antigravityCli", "kind": "cli", "label": "Antigravity" },
+    { "id": "claudeCli", "kind": "cli", "label": "Claude Code", "protocol": "claude-json", "bins": ["claude", "openclaude"], "fallback": ["default", "opus", "sonnet", "haiku"] },
+    { "id": "codexCli", "kind": "cli", "label": "Codex", "protocol": "codex-json", "bins": ["codex", "%LOCALAPPDATA%/OpenAI/Codex/bin/*/codex.exe"], "fallback": ["default", "gpt-5.6-terra", "gpt-5.3-codex", "gpt-5-codex", "gpt-5"] },
+    { "id": "devinCli", "kind": "cli", "label": "Devin", "protocol": "acp", "bins": ["devin", "~/AppData/Local/devin/cli/bin/devin.exe"], "acpArgs": ["--permission-mode", "dangerous", "--respect-workspace-trust", "false", "acp"], "fallback": ["default", "adaptive", "swe", "opus", "sonnet", "codex", "gpt", "gemini"] },
+    { "id": "antigravityCli", "kind": "cli", "label": "Antigravity", "protocol": "plain", "bins": ["agy", "~/AppData/Local/agy/bin/agy.exe"], "fallback": ["default", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-high", "gemini-3.5-flash-medium", "gemini-3.5-flash-low", "gemini-3.1-pro-high", "gemini-3.1-pro-low", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"] },
     { "id": "ollama", "kind": "local", "label": "Ollama" },
     { "id": "lmstudio", "kind": "local", "label": "LM Studio" }
   ]

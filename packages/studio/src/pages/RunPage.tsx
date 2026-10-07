@@ -10,6 +10,7 @@
  * think / tool / stream / fail - and when it lands only `line()` below changes;
  * the transcript, the stage list and the clock are already shaped for it.
  */
+import { RunPins } from "./RunPins";
 import { when } from "../lib/when";
 import { useTitles } from "../hooks/use-titles";
 import { plainError } from "../lib/error-copy";
@@ -38,6 +39,20 @@ function line(m: SSEMessage): string {
   if (typeof pick === "string") return pick;
   const keys = Object.keys(d);
   return keys.length ? keys.map((k) => `${k}: ${String(d[k])}`).join(" · ") : m.event;
+}
+
+/** What a run has spent so far (core llm/telemetry.ts). */
+interface Spend { readonly calls: number; readonly input: number; readonly output: number; readonly costUsd: number; readonly estimated?: boolean }
+interface Budget { readonly perRunUsd?: number; readonly perRunTokens?: number }
+interface Who { readonly agent: string; readonly model: string; readonly calls: number; readonly tokens: number }
+
+/** "$0.42 of $5 · 12,400 tokens": dollars only when a priced model ran. */
+export function spendLine(s: Spend & { budget: Budget | null }): string {
+  // ~ when a CLI reported nothing and the count is chars/4.
+  const tokens = `${s.estimated ? "~" : ""}${(s.input + s.output).toLocaleString("en")}`;
+  const dollars = s.costUsd > 0 ? `$${s.costUsd.toFixed(2)}${s.budget?.perRunUsd ? ` of $${s.budget.perRunUsd}` : ""} · ` : "";
+  const ceiling = s.budget?.perRunTokens ? ` of ${s.budget.perRunTokens.toLocaleString("en")}` : "";
+  return `${dollars}${tokens}${ceiling} tokens`;
 }
 
 export interface Stage {
@@ -177,6 +192,8 @@ export function RunPage({
    */
   const runRef = lead?.ref ?? null;
   const [graph, setGraph] = useState<RunGraph | null>(null);
+  const [spend, setSpend] = useState<(Spend & { budget: Budget | null }) | null>(null);
+  const [who, setWho] = useState<ReadonlyArray<Who>>([]);
   const pipelineTicks = useMemo(
     () => sse.messages.filter((m) => m.event === "pipeline:stage").length,
     [sse.messages],
@@ -194,6 +211,11 @@ export function RunPage({
       fetch(base).then((r) => r.json()).catch(() => null),
     ]).then(([run, all]) => {
       const state = (run as { state?: { stage?: string; status?: string } } | null)?.state;
+      const meter = run as { spend?: Spend | null; budget?: Budget | null; who?: ReadonlyArray<Who> } | null;
+      if (live) {
+        setSpend(meter?.spend ? { ...meter.spend, budget: meter.budget ?? null } : null);
+        setWho(meter?.who ?? []);
+      }
       const spec = (all as {
         productions?: Array<{
           id: string;
@@ -269,8 +291,24 @@ export function RunPage({
               {head.where ? ` · ${head.where}` : ""}
             </h3>
           </div>
-          <span className="pill">{clock(Date.now() - head.startedAt)}</span>
+          <span className="rowflex gap-2">
+            {spend && spend.calls > 0 ? <span className="pill tnum" title={`${spend.calls} model calls`}>{spendLine(spend)}</span> : null}
+            <span className="pill">{clock(Date.now() - head.startedAt)}</span>
+          </span>
         </div>
+
+        {runRef ? <RunPins type={runRef.type} id={runRef.id} /> : null}
+
+        {/* Who wrote it: every agent and the model it ran on, from the run's telemetry. */}
+        {who.length > 0 ? (
+          <div className="rowflex flex-wrap gap-1.5 mb-4 relative" aria-label="Who wrote it">
+            {who.map((w) => (
+              <span key={`${w.agent}|${w.model}`} className="pill tnum" title={`${w.calls} calls · ${w.tokens.toLocaleString("en")} tokens`}>
+                {w.agent ? `${w.agent.replace(/^publication-/, "")} · ` : ""}{w.model}
+              </span>
+            ))}
+          </div>
+        ) : null}
 
         <div className="thread relative">
           {transcript.map((m) => (

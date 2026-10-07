@@ -25,7 +25,7 @@ vi.mock("../utils/proxy-fetch.js", () => ({
   }),
 }));
 
-vi.mock("@mariozechner/pi-ai", () => ({
+vi.mock("@earendil-works/pi-ai/compat", () => ({
   completeSimple: vi.fn(async () => {
     throw new Error("MiniMax OpenAI-compatible requests must use Quire native transport");
   }),

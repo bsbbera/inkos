@@ -28,8 +28,8 @@ vi.mock("../agent/mcp-tools.js", () => ({
   createExternalMcpTools: async () => [],
 }));
 
-vi.mock("@mariozechner/pi-agent-core", async () => {
-  const actual = await vi.importActual<any>("@mariozechner/pi-agent-core");
+vi.mock("@earendil-works/pi-agent-core", async () => {
+  const actual = await vi.importActual<any>("@earendil-works/pi-agent-core");
   class SpyAgent extends actual.Agent {
     constructor(options: any) {
       super(options);
@@ -39,8 +39,8 @@ vi.mock("@mariozechner/pi-agent-core", async () => {
   return { ...actual, Agent: SpyAgent };
 });
 
-vi.mock("@mariozechner/pi-ai", async () => {
-  const actual = await vi.importActual<any>("@mariozechner/pi-ai");
+vi.mock("@earendil-works/pi-ai/compat", async () => {
+  const actual = await vi.importActual<any>("@earendil-works/pi-ai/compat");
 
   function clone(value: unknown): unknown {
     return JSON.parse(JSON.stringify(value));
@@ -437,7 +437,7 @@ describe("runAgentSession cache — bookId switch", () => {
       "hi",
     );
     expect(agentInstances).toHaveLength(1);
-    expect(String(streamCalls.at(-1)?.context.systemPrompt)).not.toContain("后台任务状态");
+    expect(JSON.stringify(streamCalls.at(-1)?.context.messages.filter((m: { role: string }) => m.role === "system"))).not.toContain("后台任务状态");
 
     // 任务开始运行：注入状态块，缓存的 Agent 必须重建（否则系统提示词是旧的）
     await runAgentSession(
@@ -445,7 +445,7 @@ describe("runAgentSession cache — bookId switch", () => {
       "任务在跑吗？",
     );
     expect(agentInstances).toHaveLength(2);
-    expect(String(streamCalls.at(-1)?.context.systemPrompt)).toContain("短篇生产正在后台运行");
+    expect(JSON.stringify(streamCalls.at(-1)?.context.messages.filter((m: { role: string }) => m.role === "system"))).toContain("短篇生产正在后台运行");
 
     // 任务结束：状态块移除，Agent 再次重建，系统提示词不再包含任务状态
     await runAgentSession(
@@ -453,7 +453,17 @@ describe("runAgentSession cache — bookId switch", () => {
       "现在呢？",
     );
     expect(agentInstances).toHaveLength(3);
-    expect(String(streamCalls.at(-1)?.context.systemPrompt)).not.toContain("后台任务状态");
+    expect(JSON.stringify(streamCalls.at(-1)?.context.messages.filter((m: { role: string }) => m.role === "system"))).not.toContain("后台任务状态");
+  });
+
+  // pi 1.0 moved the prompt and the tool list into system messages. A converter
+  // that kept only user/assistant/toolResult sent every turn with neither.
+  it("hands the model its system prompt and its tools", async () => {
+    const model = { provider: "x", id: "y", api: "anthropic-messages" } as any;
+    await runAgentSession({ sessionId: "s-sys", bookId: null, language: "en", pipeline: {} as any, projectRoot, model }, "hi");
+    const system = streamCalls.at(-1)?.context.messages.filter((m: { role: string }) => m.role === "system") ?? [];
+    expect(system.length).toBeGreaterThan(0);
+    expect(JSON.stringify(system)).toContain("toolsAdded");
   });
 
   it("keeps cached Agents isolated by projectRoot for the same sessionId", async () => {

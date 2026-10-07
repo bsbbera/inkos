@@ -2,6 +2,7 @@ import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ProjectConfigSchema, type LLMConfig, type ProjectConfig } from "../models/project.js";
 import { loadSecrets } from "../llm/secrets.js";
+import { connectVia, SUBSCRIPTION_KEY } from "../llm/subscription.js";
 import { getEndpoint } from "../llm/providers/index.js";
 import { guessServiceFromBaseUrl, resolveServicePreset, resolveServiceProviderFamily } from "../llm/service-presets.js";
 import { isApiKeyOptionalForEndpoint } from "./llm-endpoint-auth.js";
@@ -384,6 +385,8 @@ function applyCommonEnv(
 }
 
 async function getStudioServiceApiKey(projectRoot: string, serviceKey: string): Promise<string> {
+  // Connected through a subscription or the CLI: no key is sent (subscription.ts).
+  if (connectVia(serviceKey) !== "api-key") return SUBSCRIPTION_KEY;
   const secrets = await loadSecrets(projectRoot);
   return secrets.services[serviceKey]?.apiKey ?? "";
 }

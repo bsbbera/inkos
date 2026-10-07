@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { readTranscriptEvents } from "./session-transcript.js";
 import {
   BookSessionSchema,
@@ -9,15 +9,22 @@ import {
 } from "./session.js";
 import type { MessageEvent, SessionKind, TranscriptEvent } from "./session-transcript-schema.js";
 
-function isObject(value: unknown): value is Record<string, unknown> {
+// A message keeps its own type through the guard. Narrowed to a Record, pi 1.0's
+// message union kept only its one type-literal member and every role check broke.
+function isObject(value: AgentMessage | undefined): value is AgentMessage;
+function isObject(value: unknown): value is Record<string, unknown>;
+function isObject(value: unknown): boolean {
   return !!value && typeof value === "object";
 }
 
-function contentBlocks(message: Record<string, unknown>): unknown[] {
+/** The fields these helpers read. Optional props, so a typed message is accepted as it is. */
+type MessageFields = { readonly content?: unknown; readonly api?: unknown; readonly provider?: unknown; readonly model?: unknown };
+
+function contentBlocks(message: MessageFields): unknown[] {
   return Array.isArray(message.content) ? message.content : [];
 }
 
-function hasTextContent(message: Record<string, unknown>): boolean {
+function hasTextContent(message: MessageFields): boolean {
   return contentBlocks(message).some(
     (block) =>
       isObject(block) &&
@@ -27,13 +34,13 @@ function hasTextContent(message: Record<string, unknown>): boolean {
   );
 }
 
-function hasToolCallContent(message: Record<string, unknown>): boolean {
+function hasToolCallContent(message: MessageFields): boolean {
   return contentBlocks(message).some(
     (block) => isObject(block) && block.type === "toolCall" && typeof block.id === "string",
   );
 }
 
-function toolCallIds(message: Record<string, unknown>): string[] {
+function toolCallIds(message: MessageFields): string[] {
   return contentBlocks(message)
     .filter(
       (block): block is Record<string, unknown> =>
@@ -185,7 +192,7 @@ function requiresAssistantAfterToolResult(target: TargetModelIdentity): boolean 
   );
 }
 
-function isSameAssistantModel(message: Record<string, unknown>, target: TargetModelIdentity): boolean {
+function isSameAssistantModel(message: MessageFields, target: TargetModelIdentity): boolean {
   return (
     typeof message.api === "string" &&
     typeof message.provider === "string" &&
@@ -204,7 +211,7 @@ export function adaptRestoredAgentMessagesForModel(
 
   const pushToolResultsAsSystem = (toolResults: AgentMessage[]) => {
     const lines = toolResults.flatMap((message) => {
-      const raw: Record<string, unknown> = isObject(message) ? message : {};
+      const raw: Record<string, unknown> = isObject(message) ? message as Record<string, unknown> : {};
       const toolName = typeof raw.toolName === "string" ? raw.toolName : "tool";
       const toolCallId = typeof raw.toolCallId === "string" ? raw.toolCallId : "unknown";
       const text = contentBlocks(raw)

@@ -28,6 +28,7 @@ import { runWorkerAgent, workerModel } from "../agent/worker-agent.js";
 import { parseJson } from "../publications/parse-json.js";
 import type { PipelineRunner } from "./runner.js";
 import type { AskFn } from "./publication-runner.js";
+import { asAgent } from "../llm/telemetry.js";
 
 export interface PublicationSessionOptions {
   /** Supplies the configured client/model and backs sub-agent delegation. */
@@ -159,7 +160,8 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
       );
     };
 
-    const result = await talk(prompt, "");
+    // Named for the run's telemetry: the agent this stage routes to.
+    const result = await asAgent(agentForStage(tag), () => talk(prompt, ""));
     if (result.errorMessage) {
       throw new Error(`${tag}: ${result.errorMessage}`);
     }
@@ -178,12 +180,12 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
       const said = result.responseText.trim().slice(0, 400);
       const why = error instanceof Error ? error.message : String(error);
       signal?.throwIfAborted();
-      const retry = await talk(
+      const retry = await asAgent(agentForStage(tag), () => talk(
         `${prompt}\n\nYour last answer could not be read as JSON (${why}). `
         + "Send the same answer again as one valid JSON document and nothing else: "
         + "no prose around it, no code fence, and every newline inside a string written as \\n.",
         "-repair",
-      );
+      ));
       if (!retry.errorMessage) {
         try {
           return parseJson(retry.responseText);

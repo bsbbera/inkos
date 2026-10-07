@@ -501,6 +501,10 @@ export { resolveServiceModel, type ResolvedModel } from "./llm/service-resolver.
 export { loadSecrets, saveSecrets, getServiceApiKey, secretsDir, type SecretsFile } from "./llm/secrets.js";
 export { loadProviderCatalogue, type CatalogueEntry, type ConnectionKind } from "./llm/provider-catalogue.js";
 export {
+  connectVia, setConnectVia, hasSubscription, subscriptionLogin, subscriptionLogout, subscriptionModels,
+  isViaProvider, VIA_PROVIDERS, SUBSCRIPTION_KEY, type ConnectVia, type ViaProvider,
+} from "./llm/subscription.js";
+export {
   COVER_PROVIDER_PRESETS,
   coverSecretKey,
   normalizeCoverBaseUrl,
@@ -851,6 +855,7 @@ export {
   openGate as openPipelineGate,
   pipelineFor,
   pipelinePath,
+  savePipeline,
   reject as rejectPipelineGate,
   reportUnitDone,
   runStage,
@@ -1063,3 +1068,11 @@ export {
   type RouteSource,
   type RouteTarget,
 } from "./llm/model-routing.js";
+export {
+  AGENT_NEEDS, MODEL_PRESETS, describeModel, meets, needsOf, pickForAgent,
+  type ModelCard, type ModelPreset, type Needs, type KnownModel, type PresetPick,
+} from "./llm/model-presets.js";
+export {
+  readRunTotals, runTotals, withRunMeter, asAgent, recordLlmCall, overBudget, telemetryFile, readWhoWrote,
+  type LlmCall, type RunTotals, type Budget, type WhoWrote,
+} from "./llm/telemetry.js";

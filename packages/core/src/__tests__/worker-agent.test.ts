@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { Type } from "@sinclair/typebox";
+import { Type } from "typebox";
 import { runWorkerAgent, runWorkerAgentTool } from "../agent/worker-agent.js";
 import { BaseAgent, type AgentContext } from "../agents/base.js";
 
@@ -137,7 +137,7 @@ describe("Pi worker harness", () => {
   });
 
   it("submits host-consumed state through one typed Pi tool call", async () => {
-    const { createAssistantMessageEventStream } = await import("@mariozechner/pi-ai");
+    const { createAssistantMessageEventStream } = await import("@earendil-works/pi-ai");
     guardedPiStreamMock.mockImplementation((model: AgentContext["client"]["_piModel"]) => {
       const stream = createAssistantMessageEventStream();
       const message = {

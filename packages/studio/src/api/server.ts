@@ -34,6 +34,17 @@ import {
   loadSecrets,
   saveSecrets,
   loadProviderCatalogue,
+  connectVia,
+  setConnectVia,
+  describeModel,
+  MODEL_PRESETS,
+  type ModelCard,
+  type ModelPreset,
+  hasSubscription,
+  subscriptionModels,
+  isViaProvider,
+  VIA_PROVIDERS,
+  type ConnectVia,
   type CatalogueEntry,
   type ConnectionKind,
   listModelsForService,
@@ -172,6 +183,10 @@ import {
   openPublicationIssue,
   ensurePipeline,
   loadPipeline,
+  pipelinePath,
+  savePipeline,
+  runTotals,
+  readWhoWrote,
   openPipelineGate,
   pipelineFor,
   pipelineWaitingOn,
@@ -226,6 +241,7 @@ import { isSafeBookId } from "./safety.js";
 import { ApiError } from "./errors.js";
 import { isServiceAvailable } from "./service-availability.js";
 import { isStale, readChecks, writeCheck, type ConnectionCheck } from "./connections.js";
+import { registerSubscriptionLogin } from "./subscription-login.js";
 import { buildStudioBookConfig } from "./book-create.js";
 import {
   deleteStudioTaskSnapshot,
@@ -3009,6 +3025,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       chapterReviewMode,
       revisionGate: overrides?.revisionGate ?? revisionGate,
       modelOverrides: currentConfig.modelOverrides,
+      ...(currentConfig.modelPreset ? { modelPreset: { name: currentConfig.modelPreset, cards: modelCards } } : {}),
       // The two halves of a pin the engine cannot work out for itself: whether
       // the service is up, and where it lives. Without these a pin naming
       // another vendor resolved to its model id on the project's own client,
@@ -3974,6 +3991,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // the opposite of the intent. Nothing known means nothing claimed.
   let reachableServices: Set<string> | null = null;
   let serviceEndpoints: Record<string, { baseUrl: string; apiKey?: string }> = {};
+  /** What a preset chooses among: one card per connected model (model-presets.ts). */
+  let modelCards: ModelCard[] = [];
   let refreshing: Promise<void> | null = null;
 
   async function refreshRoutingSnapshot(): Promise<void> {
@@ -3991,6 +4010,11 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       }
       reachableServices = new Set(services.filter((s) => s.connected).map((s) => s.service));
       serviceEndpoints = next;
+      // Only with a preset set: listing every provider's models is a probe, and
+      // a workspace that never chose a preset should not pay for one.
+      const wantsPreset = presetOf(((await loadRawConfig(root).catch(() => ({}))) as { modelPreset?: unknown }).modelPreset);
+      modelCards = !wantsPreset ? [] : (await connectedModelGroups()).flatMap((g) => g.models.map((m) =>
+        describeModel(g.service, m.id, "contextWindow" in m && typeof m.contextWindow === "number" ? { contextWindow: m.contextWindow } : {})));
     } catch {
       // A snapshot that cannot be taken must not stop a run: availability stays
       // unknown, every pin is trusted, and behaviour is what it was before.
@@ -4068,7 +4092,26 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
           await new Promise((r) => setTimeout(r, 5_000));
           models = await probeModelsFromUpstream(baseUrl, "", 60_000);
         }
-        return models.length ? { ok: true, at, models: models.length } : fail("The CLI listed no models.");
+        if (!models.length) return fail("The CLI listed no models.");
+        // A model list proves the CLI is installed, not that it can answer: a
+        // signed-out or misrouted one lists its static aliases all the same, and
+        // a preset then picked it. One short real question settles it.
+        const checkModel = getEndpoint(id)?.checkModel;
+        if (baseUrl && checkModel) {
+          try {
+            const client = createLLMClient({
+              provider: resolveServiceProviderFamily(id) ?? "openai", service: id, configSource: "studio",
+              baseUrl, apiKey: "local", model: checkModel, temperature: 0.7, maxTokens: 16, thinkingBudget: 0, apiFormat: "chat", stream: false,
+            } as ProjectConfig["llm"]);
+            await withTimeout(
+              chatCompletion(client, checkModel, [{ role: "user", content: "Reply with OK only." }], { maxTokens: 16, retry: false }),
+              CLI_CHAT_PROBE_TIMEOUT_MS, "service connection test", "en",
+            );
+          } catch (e) {
+            return fail(`Installed, but it did not answer a test question: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+        return { ok: true, at, models: models.length };
       }
       const baseUrl = await resolveConfiguredServiceBaseUrl(root, id);
       if (!baseUrl) return fail("No address for this connection.");
@@ -4077,6 +4120,18 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         const key = given.apiKey?.trim() || (await loadSecrets(root)).services[id]?.apiKey || "";
         const models = await probeModelsFromUpstream(baseUrl, key, 3_000);
         return models.length ? { ok: true, at, models: models.length } : fail(`Not running at ${baseUrl.replace(/\/v1$/, "")}.`);
+      }
+      // Connected another way (subscription.ts): the key is not what is tested.
+      if (kind === "api" && isViaProvider(id) && connectVia(id) !== "api-key") {
+        if (connectVia(id) === "subscription") {
+          // getAuth refreshes an expired token against the provider: a real call.
+          return await hasSubscription(id)
+            ? { ok: true, at, models: subscriptionModels().getModels(id).length }
+            : fail("Not signed in. Sign in with your subscription, or switch to an API key.");
+        }
+        const cli = `${VIA_PROVIDERS[id].cli}Cli`;
+        const viaCheck = (await readChecks(root))[cli];
+        return viaCheck?.ok ? { ok: true, at, models: viaCheck.models } : fail(`Connected through the ${cli} connection, which is not connected.`);
       }
       const apiKey = given.apiKey?.trim() || (await loadSecrets(root)).services[id]?.apiKey || "";
       const optional = isApiKeyOptionalForEndpoint({
@@ -4167,7 +4222,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     // Never tested and testable: test now, so a fresh machine's CLIs are in the
     // picker on the first load. Tested but stale: answer with what is known and
     // re-test behind it. An API with no key has nothing to test.
-    const testable = (r: (typeof rows)[number]) => r.kind !== "api" || r.hasKey || isCustomServiceId(r.id);
+    const testable = (r: (typeof rows)[number]) =>
+      r.kind !== "api" || r.hasKey || isCustomServiceId(r.id) || connectVia(r.id) !== "api-key";
     // CLIs one at a time: the shim lists every CLI's models in one pass, and
     // four tests asking at once on a cold start left one of them empty-handed.
     const untested = rows.filter((r) => test && testable(r) && !checks[r.id]);
@@ -4191,6 +4247,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
         kind: r.kind,
         group: isCustomServiceId(r.id) ? undefined : getEndpoint(r.id)?.group,
         hasKey: r.hasKey,
+        // Anthropic and OpenAI only: how they are reached (subscription.ts).
+        ...(isViaProvider(r.id) ? { via: connectVia(r.id) } : {}),
         apiKeyOptional: r.kind !== "api",
         connected: check?.ok === true,
         check: check ?? null,
@@ -4223,6 +4281,22 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
     return c.json({ ok: check.ok, check }, check.ok ? 200 : 400);
   });
+
+  const presetOf = (v: unknown): ModelPreset | null =>
+    typeof v === "string" && (MODEL_PRESETS as ReadonlyArray<string>).includes(v) ? v as ModelPreset : null;
+
+  /** How Anthropic or OpenAI is reached: an API key, a subscription, or the installed CLI. */
+  app.put("/api/v1/connections/:id/via", async (c) => {
+    const id = c.req.param("id");
+    const { via } = await c.req.json<{ via?: ConnectVia }>().catch(() => ({ via: undefined }));
+    if (!isViaProvider(id)) return c.json({ error: "Only Anthropic and OpenAI can connect another way." }, 400);
+    if (via !== "api-key" && via !== "subscription" && via !== "cli") return c.json({ error: "via is api-key, subscription or cli" }, 400);
+    await setConnectVia(id, via);
+    const check = await recordTest(id, "api");
+    return c.json({ ok: check.ok, via, check });
+  });
+
+  registerSubscriptionLogin(app, (id) => recordTest(id, "api"));
 
   /** Forget a key and its result. The provider stays listed, unconnected. */
   app.delete("/api/v1/connections/:id/key", async (c) => {
@@ -4643,7 +4717,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     }
   }
 
-  app.get("/api/v1/services/models", async (c) => {
+  app.get("/api/v1/services/models", async (c) => c.json({ groups: await connectedModelGroups() }));
+
+  /** Every connected provider's models: the picker's list, and the cards a preset chooses from. */
+  async function connectedModelGroups() {
     const config = await loadRawConfig(root).catch(() => ({} as Record<string, unknown>));
     const configuredServices = normalizeServiceConfig(
       (config.llm as Record<string, unknown> | undefined)?.services,
@@ -4678,8 +4755,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return { service: ep.id, label: ep.label, models };
     }));
 
-    return c.json({ groups });
-  });
+    return groups;
+  }
 
   app.get("/api/v1/services/models/custom", async (c) => {
     const secrets = await loadSecrets(root);
@@ -6525,9 +6602,26 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return c.json({ error: `${ref.type} does not run a pipeline` }, 400);
     }
     const state = await loadPipeline(root, ref);
+    // What the run has spent, and its ceiling, for the cost meter (telemetry.ts).
+    const runDir = dirname(pipelinePath(root, ref));
+    const spend = state ? await runTotals(runDir) : null;
+    const who = state ? await readWhoWrote(runDir) : [];
+    const budget = ((await loadRawConfig(root).catch(() => ({}))) as { budget?: unknown }).budget ?? null;
     // Absent is not an error: a production that has never been advanced simply
     // has no run yet, and the caller needs to tell that from a failure.
-    return c.json({ ref, state });
+    return c.json({ ref, state, spend, budget, who });
+  });
+
+  /** This production's own model pins, over the project's (21). An empty map clears them. */
+  app.put("/api/v1/productions/:type/:id/model-overrides", async (c) => {
+    const ref = productionRefFrom(c);
+    const state = await loadPipeline(root, ref);
+    if (!state) return c.json({ error: "no run yet for this production" }, 404);
+    const body = await c.req.json<{ overrides?: Record<string, ModelPin> }>().catch(() => ({} as { overrides?: Record<string, ModelPin> }));
+    const overrides = normalizeOverrides(body.overrides);
+    const { modelOverrides: _old, ...rest } = state;
+    await savePipeline(root, ref, Object.keys(overrides).length ? { ...rest, modelOverrides: overrides } : rest);
+    return c.json({ ok: true, overrides });
   });
 
   app.post("/api/v1/productions/:type/:id/pipeline", async (c) => {
@@ -7364,6 +7458,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const reachable = new Set(
       (await serviceAvailability()).filter((s) => s.connected).map((s) => s.service),
     );
+    const preset = presetOf((raw as { modelPreset?: unknown }).modelPreset);
+    if (preset && modelCards.length === 0) await refreshRoutingSnapshot();
     const isAvailable = (target: { service?: string }) =>
       !target.service || reachable.has(target.service);
 
@@ -7373,27 +7469,43 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       groups: AGENT_GROUP_LABELS,
       global: { service: globalService ?? null, model: globalModel || null },
       overrides,
+      preset: preset ?? null,
+      budget: (raw as { budget?: unknown }).budget ?? null,
       routes: resolveRoutingTable({
         agents: AGENT_ROSTER.map((role) => role.id),
         overrides,
         global: { ...(globalService ? { service: globalService } : {}), model: globalModel },
         isAvailable,
+        ...(preset ? { preset: { name: preset, cards: modelCards } } : {}),
       }),
     });
   });
 
   app.put("/api/v1/project/model-routing", async (c) => {
-    const body = await c.req.json<{ overrides?: Record<string, ModelPin> }>()
-      .catch(() => ({} as { overrides?: Record<string, ModelPin> }));
+    const body = await c.req.json<{ overrides?: Record<string, ModelPin>; preset?: string | null; budget?: { perRunUsd?: number; perRunTokens?: number } | null }>()
+      .catch(() => ({} as { overrides?: Record<string, ModelPin>; preset?: string | null; budget?: { perRunUsd?: number; perRunTokens?: number } | null }));
     // Normalised on the way in, so the file converges on one spelling per agent
     // instead of accumulating `stateValidator` beside `state-validator`.
     const overrides = normalizeOverrides(body.overrides);
     const configPath = join(root, "quire.json");
     const raw = JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
     raw.modelOverrides = overrides;
+    // Absent leaves the preset alone; null clears it.
+    if (body.preset !== undefined) {
+      const preset = presetOf(body.preset);
+      if (preset) raw.modelPreset = preset; else delete raw.modelPreset;
+    }
+    // The run ceiling (telemetry.ts). Absent leaves it; null or no positive numbers clears it.
+    if (body.budget !== undefined) {
+      const pos = (n: unknown) => typeof n === "number" && Number.isFinite(n) && n > 0 ? n : undefined;
+      const usd = pos(body.budget?.perRunUsd);
+      const tokens = pos(body.budget?.perRunTokens);
+      if (usd || tokens) raw.budget = { ...(usd ? { perRunUsd: usd } : {}), ...(tokens ? { perRunTokens: Math.round(tokens) } : {}) };
+      else delete raw.budget;
+    }
     await writeFile(configPath, JSON.stringify(raw, null, 2), "utf-8");
     touchRoutingSnapshot();
-    return c.json({ ok: true, overrides });
+    return c.json({ ok: true, overrides, preset: raw.modelPreset ?? null, budget: raw.budget ?? null });
   });
 
   app.get("/api/v1/project/model-overrides", async (c) => {

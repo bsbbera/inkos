@@ -1,5 +1,5 @@
-import { Type, type Static } from "@mariozechner/pi-ai";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@mariozechner/pi-agent-core";
+import { Type, type Static } from "@earendil-works/pi-ai";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import type { PipelineRunner } from "../pipeline/runner.js";
 import { ArchitectIncompleteFoundationError } from "../agents/architect.js";
 import { type ReviseMode } from "../agents/reviser.js";
@@ -62,6 +62,17 @@ import {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/*
+ * A tool whose parameters are typed at its own execute, not by the schema.
+ *
+ * typebox 1 (pi 1.0) reads Static<any> as unknown, so a tool declared
+ * AgentTool<any> can no longer take typed params. This keeps what the old
+ * Static<any> meant: the schema still validates, execute names the shape.
+ */
+type LooseAgentTool = Omit<AgentTool<any>, "execute"> & {
+  execute: (id: string, params: any, signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback<any>) => Promise<AgentToolResult<any>>;
+};
 
 function textResult(text: string): AgentToolResult<undefined>;
 function textResult<T>(text: string, details: T): AgentToolResult<T>;
@@ -963,7 +974,7 @@ export function createSubAgentTool(
     readonly activeSkills?: () => ReadonlyArray<ActivatedSkillGuidance>;
     readonly workerSkills?: (agent: string) => ReadonlyArray<ActivatedSkillGuidance>;
   } = {},
-): AgentTool<any> {
+): LooseAgentTool {
   const sessionIsZh = (options.language ?? "zh") !== "en";
   return {
     name: "sub_agent",
@@ -2414,7 +2425,7 @@ export function createPublicationProductionTools(
    */
   pipeline?: PipelineRunner,
   lang?: string,
-): AgentTool<any>[] {
+): LooseAgentTool[] {
   const open = async (id: string, onEvent?: (e: unknown) => void) => {
     const { openIssueContext } = await import("../pipeline/publication-context.js");
     return openIssueContext(projectRoot, id, { onEvent: onEvent as never });
