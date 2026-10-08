@@ -118,3 +118,18 @@ describe("searchAllSources", () => {
     expect(sweep.failures[0]).toMatch(/no search source/);
   });
 });
+
+describe("which MCP tools are web searches", () => {
+  it("reads snake_case tool names, which is how MCP servers name them", async () => {
+    const { isWebSearchTool } = await import("../utils/search-sources.js");
+    const d = "Performs a web search using the Brave Search API, ideal for general queries, news, articles, and online content.";
+    expect(isWebSearchTool({ name: "brave_web_search", description: d })).toBe(true);
+    expect(isWebSearchTool({ name: "tavily-search", description: "A powerful web search tool" })).toBe(true);
+    expect(isWebSearchTool({ name: "search", description: "Search the internet" })).toBe(true);
+    expect(isWebSearchTool({ name: "search_sdk_hints", description: "Search hints about the Affinity SDK" })).toBe(false);
+    expect(isWebSearchTool({ name: "ppt_find_replace_text", description: "Find and replace text in slides" })).toBe(false);
+    expect(isWebSearchTool({ name: "brave_local_search", description: "Searches for local businesses" })).toBe(false);
+    expect(isWebSearchTool({ name: "search_files" })).toBe(false);
+    expect(isWebSearchTool({ name: "read_file" })).toBe(false);
+  });
+});

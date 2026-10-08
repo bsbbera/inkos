@@ -49,8 +49,12 @@ describe("researchPublication", () => {
     const dir = root();
     const savedT = process.env.TAVILY_API_KEY;
     const savedB = process.env.BRAVE_API_KEY;
+    const savedPort = process.env.SHIM_PORT;
     delete process.env.TAVILY_API_KEY;
     delete process.env.BRAVE_API_KEY;
+    // No shim either: a Quire running on this machine would lend the test its
+    // real MCP search servers (it did, once they were detected).
+    process.env.SHIM_PORT = "1";
     const ask = vi.fn();
     try {
       await expect(researchPublication({
@@ -68,6 +72,7 @@ describe("researchPublication", () => {
     } finally {
       if (savedT) process.env.TAVILY_API_KEY = savedT;
       if (savedB) process.env.BRAVE_API_KEY = savedB;
+      if (savedPort === undefined) delete process.env.SHIM_PORT; else process.env.SHIM_PORT = savedPort;
       rmSync(dir, { recursive: true, force: true });
     }
   });
