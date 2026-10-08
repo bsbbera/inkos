@@ -7,10 +7,10 @@
  * a model with nothing on screen saying so, which made a missing tool
  * impossible to tell apart from a broken one. This page is the seam.
  *
- * Read-mostly on purpose. Adding servers stays the source app's job, because a
- * server added here would be one more place to look when a tool goes missing.
- * What Quire owns is the on/off, and it keeps that in its own override file so
- * a source app's own setting is never rewritten.
+ * One place for all of them: ~/.quire/mcp.json, in the { "mcpServers": {} }
+ * shape every other agent uses. Servers other agents have are detected at
+ * launch and on Rescan and added to it; a server can be added here by pasting
+ * that same JSON, and removed. A source app's own config is never written.
  */
 import { useCallback, useEffect, useState } from "react";
 import type { Theme } from "../hooks/use-theme";
@@ -51,7 +51,31 @@ const SOURCE_LABELS: Record<string, string> = {
   "claude-code": "Claude Code",
   devin: "Devin",
   codex: "Codex",
+  cursor: "Cursor",
+  windsurf: "Windsurf",
+  antigravity: "Antigravity",
+  gemini: "Gemini CLI",
+  vscode: "VS Code",
   override: "Added here",
+  user: "Added here",
+};
+
+const EXAMPLE = `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "C:\\\\Users\\\\me\\\\Documents"]
+    }
+  }
+}`;
+
+const post = async (path: string, body: unknown) => {
+  const res = await fetch(`/api/v1/mcp/${path}`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok || out.ok === false) throw new Error(out.error || `HTTP ${res.status}`);
+  return out as { added?: string[]; removed?: string };
 };
 
 export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t: TFunction; embedded?: boolean }) {
@@ -61,6 +85,11 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
   const [open, setOpen] = useState<string | null>(null);
   const [tools, setTools] = useState<Record<string, McpTool[] | "loading" | "error">>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [config, setConfig] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -69,6 +98,7 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
       const body = await res.json();
       if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
       setServers(body.servers || {});
+      setConfig(body.config ?? null);
     } catch (e) {
       setError(String((e as Error).message));
       setServers({});
@@ -113,11 +143,58 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
     }
   };
 
+  /** Look again at every other agent's config and add what Quire does not have yet. */
+  const rescan = async () => {
+    setBusy("rescan");
+    setNote(null);
+    try {
+      const out = await post("rescan", {});
+      setNote(out.added?.length ? `Added ${out.added.length}: ${out.added.join(", ")}` : "No new servers found in other apps.");
+    } catch (e) {
+      setNote(`Rescan failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+      void load();
+    }
+  };
+
+  const add = async () => {
+    setAddError(null);
+    let json: unknown;
+    try { json = JSON.parse(draft); } catch { return setAddError("That is not valid JSON."); }
+    setBusy("add");
+    try {
+      const out = await post("add", { json });
+      setNote(`Added ${out.added?.join(", ")}`);
+      setDraft("");
+      setAdding(false);
+      void load();
+    } catch (e) {
+      setAddError((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (name: string) => {
+    setBusy(name);
+    try {
+      await post("remove", { server: name });
+      setNote(`Removed ${name}. Rescan will not bring it back; paste it again to restore it.`);
+      setOpen(null);
+    } catch (e) {
+      setNote(`Could not remove ${name}: ${(e as Error).message}`);
+    } finally {
+      setBusy(null);
+      void load();
+    }
+  };
+
   const entries = Object.entries(servers || {}).sort(([a], [b]) => a.localeCompare(b));
   const onCount = entries.filter(([, s]) => s.enabled).length;
 
   return (
-    <div className="space-y-8">
+    <div className="stack-lg">
       <div className="flex items-center justify-between gap-4">
         {embedded ? <span className="grow" /> : (
         <div>
@@ -131,10 +208,46 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
           </p>
         </div>
         )}
-        <button onClick={() => void load()} className="btn btn-line shrink-0">
-          Rescan
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button type="button" onClick={() => { setAdding((a) => !a); setAddError(null); }} className="btn btn-line btn-sm">
+            Add server
+          </button>
+          <button type="button" disabled={busy === "rescan"} onClick={() => void rescan()} className="btn btn-line btn-sm">
+            {busy === "rescan" ? "Scanning…" : "Rescan"}
+          </button>
+        </div>
       </div>
+
+      {config && (
+        <p className={`text-xs ${c.muted}`}>
+          All servers live in <span className={`font-mono ${c.code} rounded px-1`}>{config}</span>, the same
+          format as Claude, Cursor and Devin. Servers in those apps are added automatically at launch;
+          edit the file by hand or paste a config below.
+        </p>
+      )}
+
+      {adding && (
+        <div className="panel space-y-3">
+          <p className="text-sm">Paste the server's config, as its README or another app gives it.</p>
+          <textarea
+            className="input font-mono text-xs w-full"
+            rows={9}
+            value={draft}
+            placeholder={EXAMPLE}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+          />
+          {addError && <p className="hint is-bad" role="alert">{addError}</p>}
+          <div className="flex gap-2">
+            <button type="button" disabled={!draft.trim() || busy === "add"} onClick={() => void add()} className="btn btn-sm">
+              {busy === "add" ? "Adding…" : "Add"}
+            </button>
+            <button type="button" onClick={() => setAdding(false)} className="btn btn-line btn-sm">Cancel</button>
+          </div>
+        </div>
+      )}
+
+      {note && <p className={`text-xs ${c.muted}`} role="status">{note}</p>}
 
       {error && (
         <Failed what="Could not read the server list." detail={error} />
@@ -148,10 +261,9 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
         <div className={`panel  text-center ${c.muted}`}>
           <p className="text-sm">No MCP servers found.</p>
           <p className="mt-2 text-xs">
-            Quire's own server ships with the app. Servers configured in Claude
-            Desktop, Claude Code, Devin or Codex are copied into Quire's own
-            config the first time it runs, credentials included, and are yours
-            to edit from then on.
+            Quire's own server ships with the app. Servers configured in Claude,
+            Cursor, Windsurf, Devin, Codex, Antigravity or VS Code are added at
+            launch, credentials included. Use Add server to paste one in.
           </p>
         </div>
       ) : (
@@ -212,6 +324,13 @@ export function McpPage({ nav, theme, t, embedded }: { nav: Nav; theme: Theme; t
                         <p className={`text-xs ${c.code} rounded px-2 py-1 inline-block break-all`}>
                           {s.command} {(s.args || []).join(" ")}
                         </p>
+                      )}
+                      {!s.bundled && (
+                        <div>
+                          <button type="button" disabled={busy === name} onClick={() => void remove(name)} className="btn btn-line btn-sm">
+                            Remove
+                          </button>
+                        </div>
                       )}
                       {list === "loading" && (
                         <p className={`text-xs flex items-center gap-2 ${c.muted}`}>

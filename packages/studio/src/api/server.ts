@@ -8768,6 +8768,16 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return shim(`/mcp/tools?server=${encodeURIComponent(server ?? "")}`);
   });
 
+  // Detect servers other agents have, add a pasted config, remove one (cli-shim/mcp.mjs).
+  for (const route of ["rescan", "add", "remove"] as const) {
+    app.post(`/api/v1/mcp/${route}`, async (c) =>
+      shim(`/mcp/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(await c.req.json().catch(() => ({}))),
+      }));
+  }
+
   app.post("/api/v1/mcp/toggle", async (c) =>
     shim("/mcp/toggle", {
       method: "POST",
