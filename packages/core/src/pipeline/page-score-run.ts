@@ -16,7 +16,7 @@ import { appendFile, copyFile, mkdir, readFile, writeFile } from "node:fs/promis
 import { dirname, isAbsolute, join } from "node:path";
 import { goldenRules, readMath, repairGoldenRules, type DesignMath } from "./design-rules.js";
 import { pageCap } from "./magazine-bar.js";
-import { blockRules, placedBlocks } from "./page-blocks.js";
+import { blockRules, gridOf, placedBlocks, type PageBlock } from "./page-blocks.js";
 import {
   improvePage, saveScore, scorePage,
   type Checkpoint, type Dim, type Fix, type Improved, type LayoutReport, type MeasuredAsset,
@@ -226,6 +226,8 @@ export async function layoutScored(
         if (mended.repairs.length) {
           changed = await writeSpecPage(ctx, id, n, () => mended.spec);
           opts.onProgress?.(`p${n}: repaired - ${mended.repairs.join("; ")}`);
+        } else if (cause === "T" && /overset/.test(current.causeLine) && placedBlocks(cur).length) {
+          changed = await growBody(ctx, id, n);
         } else if (cause === "T" && hasImage && cur?.variant !== "small-band" && /overset/.test(current.causeLine)) {
           changed = await setVariant(ctx, id, n, "small-band");
         }
@@ -242,6 +244,27 @@ export async function layoutScored(
     },
   });
   return { findings, result };
+}
+
+/**
+ * Overset on a page built from blocks: run the body down to the foot of the
+ * grid, as far as no other block of the page's columns is in the way. False
+ * when there is no room, so the page stops with its cause for the editor.
+ */
+async function growBody(ctx: RunnerContext, id: string, n: number): Promise<boolean> {
+  return writeSpecPage(ctx, id, n, (spec) => {
+    const key = String(n), page = spec?.pages?.[key];
+    const blocks = placedBlocks(page);
+    const body = blocks.find((b) => b.kind === "body");
+    if (!spec || !page || !body) return spec;
+    const end = body.slot.row + body.slot.rows;
+    const below = blocks.filter((b) => b !== body && b.kind !== "folio" && b.slot.row >= end
+      && b.slot.col < body.slot.col + body.slot.span && body.slot.col < b.slot.col + b.slot.span);
+    const limit = Math.min(gridOf(spec).rows, ...below.map((b) => b.slot.row));
+    if (limit <= end) return spec;
+    const grown = (page.blocks ?? []).map((b): PageBlock => (b === body ? { ...b, slot: { ...body.slot, rows: limit - body.slot.row } } : b));
+    return { ...spec, pages: { ...spec.pages, [key]: { ...page, blocks: grown } } };
+  });
 }
 
 async function setVariant(ctx: RunnerContext, id: string, n: number, variant: PageVariant): Promise<boolean> {

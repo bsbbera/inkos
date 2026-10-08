@@ -40,10 +40,14 @@ export const DEFAULT_MATH = { maxFullBleedRun: 2, maxBreaksPerSection: 1 } as co
 export interface SectionSpan { readonly n: number; readonly label?: string; readonly from: number; readonly to: number }
 
 /** Every break a spec declares, for the gate to show as a badge rather than a warning. */
+/** A model sometimes writes a break as {rule, why}; it is still a declared break. */
+const breakText = (note: unknown): string =>
+  typeof note === "string" ? note : Object.values(note ?? {}).filter(Boolean).join(": ");
+
 export function declaredBreaks(spec: DesignSpec | null | undefined): Array<{ page: number; note: string }> {
   const out: Array<{ page: number; note: string }> = [];
   for (const [key, layout] of Object.entries(spec?.pages ?? {})) {
-    for (const note of layout.breaks ?? []) out.push({ page: Number(key), note });
+    for (const note of layout.breaks ?? []) out.push({ page: Number(key), note: breakText(note) });
   }
   return out.sort((a, b) => a.page - b.page);
 }
@@ -144,7 +148,7 @@ export function repairGoldenRules(
     const key = String(sectionOf(n)?.n ?? "none");
     const keep: string[] = [];
     for (const note of layout.breaks) {
-      if ((used.get(key) ?? 0) < law.maxBreaksPerSection) { keep.push(note); used.set(key, (used.get(key) ?? 0) + 1); }
+      if ((used.get(key) ?? 0) < law.maxBreaksPerSection) { keep.push(breakText(note)); used.set(key, (used.get(key) ?? 0) + 1); }
       else repairs.push(`page ${n}: dropped a break past the section's ${law.maxBreaksPerSection}`);
     }
     pages[String(n)] = { ...layout, breaks: keep };

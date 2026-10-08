@@ -474,7 +474,11 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     if (!Number.isInteger(n) || n < 1) return c.json({ error: "a section number is required" }, 400);
     const note = typeof body.note === "string" ? body.note.trim() : "";
 
-    const { ctx } = await open(id, true);
+    const { ctx, issue } = await open(id, true);
+    // Said now, not by a job that fails a moment later out of sight.
+    if ((issue as { sectionBoard?: Record<string, { state: string }> }).sectionBoard?.[String(n)]?.state === "locked") {
+      return c.json({ error: `section ${n} is locked - unlock it on the section board first` }, 409);
+    }
     const job = enqueueJob({
       ref: { type: "publication", id },
       stage: "design.section",

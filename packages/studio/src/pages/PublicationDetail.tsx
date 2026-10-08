@@ -25,6 +25,7 @@ import { Icon } from "../components/ui/icon";
 import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Tabs, toast, useQueueKeys } from "../components/ui/vermilion";
+import { BeautyGate } from "../components/BeautyGate";
 import {
   GateCard, MarkedPassage, ReadAloud, SEV_CLASS, Suggestion, WorkflowBar,
   type Workflow,
@@ -102,6 +103,9 @@ interface Issue {
   readonly audit?: { at: string; rounds?: number } | null;
   readonly lastError?: { at: string; stage?: string; message: string } | null;
   readonly build?: { pdf?: string | null };
+  /* The section board's marks: kept, or locked against any change of world. */
+  readonly sectionBoard?: Readonly<Record<string, { readonly state: "approved" | "locked"; readonly at: string }>>;
+  readonly designApproved?: { at: string } | null;
 }
 
 interface Detail {
@@ -166,7 +170,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
   const [from, setFrom] = useState<Stage>("write");
   const [stopAt, setStopAt] = useState<Stage>("audit");
   const [openPage, setOpenPage] = useState<number | null>(null);
-  const [tab, setTab] = useState<"brief" | "sections" | "pages" | "audit" | "build">("pages");
+  const [tab, setTab] = useState<"brief" | "sections" | "pages" | "audit" | "proofs" | "build">("pages");
   const [note, setNote] = useState("");
   const [preview, setPreview] = useState<Record<number, string>>({});
   // What the machine pre-screen said about each rendered spread (13 §9).
@@ -251,6 +255,8 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
     { value: "sections" as const, label: "Sections", dot: true, done: stageDone("plan") },
     { value: "pages" as const, label: "Pages", dot: true, done: stageDone("write") },
     { value: "audit" as const, label: "Audit", dot: true, done: stageDone("audit") },
+    /* The beauty gate: rendered pages and one verdict each (13 §9). */
+    { value: "proofs" as const, label: "Proofs", dot: true, done: !!issue.designApproved },
     { value: "build" as const, label: "Build", dot: true, done: stageDone("build") },
   ];
 
@@ -446,15 +452,63 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
             to answer. Resume at <span className="mono">plan</span> on the Build tab.
           </Empty>
         ) : (
+          <div className="stack">
+          {/* The section is the unit of approval (13 §4b): its world, its
+              opener, its beats and its first page's copy, kept or locked as one. */}
+          <p className="hint">
+            {Object.values(issue.sectionBoard ?? {}).filter((m) => m.state).length} of {(issue.sections ?? []).length} sections
+            kept or locked. A locked section keeps its world through any re-design.
+          </p>
           <div className="scroll-x">
             <div className="board">
               {(issue.sections ?? []).map((s) => {
                 const world = (issue.design?.sections ?? []).find((w) => w.n === s.n);
                 const own = issue.pages.filter((p) => p.n >= s.from && p.n <= s.to);
+                const mark = issue.sectionBoard?.[String(s.n)]?.state ?? null;
+                const proof = own.find((p) => p.body);
+                const setMark = (state: "approved" | "locked" | null) =>
+                  void act(`mark-${s.n}`, () => post(`${api}/sections/${s.n}/mark`, { state }));
                 return (
                   <div key={s.n} className="col-sec">
-                    <h4>{s.label}</h4>
+                    <div className="spread items-start gap-2">
+                      <h4>{s.label}</h4>
+                      {mark ? (
+                        <span className={mark === "locked" ? "pill" : "pill pill-ok"}>
+                          {mark === "locked" ? <><Icon name="lock" size={11} /> locked</> : "kept"}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="hint mb-2.5">{s.question}</p>
+                    {/* The opener as laid out, when it has been. */}
+                    <img
+                      src={`${api}/pages/${s.from}/render.png`}
+                      alt={`The opener of ${s.label}, p${s.from}`}
+                      className="w-full max-w-56 mb-2.5 shadow-sm"
+                      onError={(e) => { e.currentTarget.style.display = "none"; }}
+                    />
+                    {proof ? (
+                      <p className="text-small muted mb-2.5 line-clamp-4">
+                        <span className="mono dim">p{proof.n} </span>{proof.body!.replace(/[#*_>`]/g, "").slice(0, 260)}…
+                      </p>
+                    ) : null}
+                    <div className="rowflex gap-1.5 mb-2.5 flex-wrap">
+                      <button
+                        type="button"
+                        className={mark === "approved" ? "btn btn-sm" : "btn btn-line btn-sm"}
+                        disabled={busy !== null}
+                        onClick={() => setMark(mark === "approved" ? null : "approved")}
+                      >
+                        <Icon name="check" size={13} />{mark === "approved" ? "Kept" : "Keep"}
+                      </button>
+                      <button
+                        type="button"
+                        className={mark === "locked" ? "btn btn-sm" : "btn btn-line btn-sm"}
+                        disabled={busy !== null}
+                        onClick={() => setMark(mark === "locked" ? null : "locked")}
+                      >
+                        <Icon name="lock" size={13} />{mark === "locked" ? "Unlock" : "Lock"}
+                      </button>
+                    </div>
                     {world ? (
                       <div className="spec mb-2.5">
                         <div><span>Register</span><span>{world.register}</span></div>
@@ -510,7 +564,8 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
                         <button
                           type="button"
                           className="btn btn-sm btn-ghost mb-2.5"
-                          disabled={busy !== null || data.running}
+                          disabled={busy !== null || data.running || mark === "locked"}
+                          title={mark === "locked" ? "Unlock the section to choose another world" : undefined}
                           onClick={() => { setReWorld(s.n); setReWorldNote(""); }}
                         >
                           <Icon name="sliders" size={13} />
@@ -535,7 +590,18 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               })}
             </div>
           </div>
+          </div>
         )
+      ) : null}
+
+      {/* ----------------------------------------------------------- proofs */}
+      {tab === "proofs" ? (
+        <BeautyGate
+          issueId={issue.id}
+          pages={issue.pages.map((p) => ({ n: p.n, title: p.title }))}
+          running={data.running}
+          onChanged={() => void load()}
+        />
       ) : null}
 
       {/* ------------------------------------------------------------ pages */}

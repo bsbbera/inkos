@@ -234,6 +234,7 @@ import { blockersFor, readFindings, readPassage } from "./findings-store.js";
 import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
 import { registerPageScoreRoutes } from "./page-score.js";
+import { registerPageReviewRoutes } from "./page-review.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
 import { access, appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -4951,6 +4952,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     broadcast,
   });
   registerPageScoreRoutes(app, { root, broadcast, shimUrl: () => shimUrl() });
+  registerPageReviewRoutes(app, {
+    root, broadcast, shimUrl: () => shimUrl(),
+    pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
+  });
 
   // The same checks, for anything already written. A publication had a page of
   // its own and everything else had buttons that expired with the chat session

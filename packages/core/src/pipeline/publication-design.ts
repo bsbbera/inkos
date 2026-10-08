@@ -139,6 +139,28 @@ export function contrast(a: string, b: string): number {
  * so adding a publication type does not mean writing a design brief from
  * scratch before it can render anything.
  */
+/** How a page is described as blocks: the design prompt and a one-page redesign both say it. */
+export const BLOCK_GUIDE = `PAGE BLOCKS. A page is built from its blocks, placed on the grid you chose.
+Kinds, spelled exactly: image, drawn, figure, title, deck, kicker, body,
+dropcap, pull, panel, runhead, wordmark, rule, folio.
+- slot: {"col": 1-based column, "span": columns, "row": baselines from the head
+  of the live area, "rows": baselines tall}. Add "bleed": true to run a picture
+  to the trim on the sides it touches. The live area is
+  floor((297 - 2 x marginMm - 10) / baselineMm) baselines deep.
+- image: the page's picture. drawn: art drawn as vectors instead of a picture
+  ("drawn": "contours" | "rain" | "contours+rain", "seed": a number, "text": a
+  place to pin). figure: the page's pull-number, oversized. panel: the page's
+  sidefacts as label/value rows on the field colour ("text": its heading).
+  dropcap: "lines": how many body lines it stands in. wordmark: the magazine's
+  name, fitted to its slot. runhead: the line at the head of the page.
+- "color": "ink" | "paper" | "accent" | "field", when the default is wrong.
+- One dominant per page (a picture, a drawn field or a figure), holding 40-60 %
+  of its weight. Type sizes on a page at least 1.2x apart. Blocks of type never
+  sit on each other. A block that crosses a picture's edge sets
+  "crosses": "image-edge" and the page declares that break.
+- Only a page whose blocks all have grid slots is built from them; otherwise
+  it gets its type's standard arrangement.`;
+
 export const DEFAULT_DESIGN_PROMPT = `
 You are art-directing "{{title}}" — {{extent}} pages about {{subject}}.
 THESIS: {{thesis}}
@@ -164,26 +186,7 @@ Decide, for the whole publication:
 Then, for every page listed above, a layout: the arrangement, where the image
 sits, and where each of that page's blocks goes.
 
-PAGE BLOCKS. A page is built from its blocks, placed on the grid you chose.
-Kinds, spelled exactly: image, drawn, figure, title, deck, kicker, body,
-dropcap, pull, panel, runhead, wordmark, rule, folio.
-- slot: {"col": 1-based column, "span": columns, "row": baselines from the head
-  of the live area, "rows": baselines tall}. Add "bleed": true to run a picture
-  to the trim on the sides it touches. The live area is
-  floor((297 - 2 x marginMm - 10) / baselineMm) baselines deep.
-- image: the page's picture. drawn: art drawn as vectors instead of a picture
-  ("drawn": "contours" | "rain" | "contours+rain", "seed": a number, "text": a
-  place to pin). figure: the page's pull-number, oversized. panel: the page's
-  sidefacts as label/value rows on the field colour ("text": its heading).
-  dropcap: "lines": how many body lines it stands in. wordmark: the magazine's
-  name, fitted to its slot. runhead: the line at the head of the page.
-- "color": "ink" | "paper" | "accent" | "field", when the default is wrong.
-- One dominant per page (a picture, a drawn field or a figure), holding 40-60 %
-  of its weight. Type sizes on a page at least 1.2x apart. Blocks of type never
-  sit on each other. A block that crosses a picture's edge sets
-  "crosses": "image-edge" and the page declares that break.
-- Only a page whose blocks all have grid slots is built from them; otherwise
-  it gets its type's standard arrangement.
+${BLOCK_GUIDE}
 {{fontBlock}}
 {{sectionBlock}}
 Also decide the FIXED FURNITURE — the few things that never change from

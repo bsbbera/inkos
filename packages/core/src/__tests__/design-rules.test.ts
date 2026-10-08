@@ -29,6 +29,9 @@ describe("golden rules a spec can answer", () => {
     expect(goldenRules(fine, sections)).toEqual([]);
     expect(declaredBreaks(fine)).toEqual([{ page: 1, note: "a" }, { page: 6, note: "b" }]);
     expect(goldenRules(spec({ 1: page("top", { breaks: [" "] }) }), sections)[0]).toContain("without saying what it breaks");
+    // A model's {rule, why} object is read as the break it declares, not a crash.
+    const objectBreak = spec({ 1: page("top", { breaks: [{ rule: "grid", why: "the title crosses the gutter" } as unknown as string] }) });
+    expect(declaredBreaks(objectBreak)).toEqual([{ page: 1, note: "grid: the title crosses the gutter" }]);
   });
 
   it("holds the numbers a taste rule has set", () => {

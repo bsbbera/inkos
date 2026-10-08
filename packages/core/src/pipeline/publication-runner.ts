@@ -36,6 +36,7 @@ import {
   type ResearchReport,
 } from "./publication-research.js";
 import { cleanBlocks, placedBlocks, type PageBlock } from "./page-blocks.js";
+import type { PageLayout } from "./publication-design.js";
 import { resolveVoice } from "./publication-voice.js";
 import { rulesFor } from "./taste-engine.js";
 import {
@@ -64,6 +65,7 @@ import { buildRuleStack } from "../utils/rule-stack.js";
 import { requireDesigner, requireRenderer } from "../utils/renderer-preflight.js";
 import { validateIssue } from "./publication-schema.js";
 import {
+  BLOCK_GUIDE,
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
   contrast,
@@ -297,6 +299,11 @@ export interface PublicationIssue {
    * issue of a series carries it; making the next one moves it along.
    */
   recurring?: "weekly" | "monthly" | null;
+  /**
+   * The section board (13 §2, §4b): a section the editor kept, or locked so
+   * no re-world and no design run changes its world. Keyed by section number.
+   */
+  sectionBoard?: Record<string, { state: "approved" | "locked"; at: string }>;
 }
 
 /** Parsed JSON from the model. The caller owns the provider and the transport. */
@@ -1719,7 +1726,13 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
         .filter(([, value]) => value),
     ) as PublicationDesign["fixed"]
     : undefined;
-  const worlds = worldsFrom(rawWorlds, issue, spec);
+  // A locked section keeps the world it had; the rest are the stage's to decide.
+  const locked = new Set(Object.entries(issue.sectionBoard ?? {}).filter(([, m]) => m.state === "locked").map(([k]) => Number(k)));
+  const before = issue.design?.sections ?? [];
+  const worlds = worldsFrom(rawWorlds, issue, spec)
+    .map((w) => (locked.has(w.n) ? before.find((b) => b.n === w.n) ?? w : w));
+  for (const w of before) if (locked.has(w.n) && !worlds.some((x) => x.n === w.n)) worlds.push(w);
+  worlds.sort((a, b) => a.n - b.n);
   // The golden rules, with whatever numbers the taste engine has taught this scope.
   const math = await readMath(ctx.projectRoot, { type: "publication", id, worlds: worlds.map((w) => w.register) });
   // What can be mended without a model is mended first, and said: a run of
@@ -1793,6 +1806,7 @@ export async function designSection(
   id: string,
   n: number,
   note?: string,
+  opts: { readonly keepSignOff?: boolean } = {},
 ): Promise<PublicationIssue> {
   const issue = await readIssue(ctx, id);
   const spec = issue.design?.spec;
@@ -1801,6 +1815,9 @@ export async function designSection(
   }
   const section = (issue.sections ?? []).find((s) => s.n === n);
   if (!section) throw new Error(`this issue has no section ${n}`);
+  if (issue.sectionBoard?.[String(n)]?.state === "locked") {
+    throw new Error(`section ${n} is locked - unlock it on the section board to choose another world`);
+  }
 
   const worlds = issue.design?.sections ?? [];
   const mine = worlds.find((w) => w.n === n);
@@ -1841,10 +1858,110 @@ export async function designSection(
     sections: [...others, world].sort((a, b) => a.n - b.n),
   };
   // A section's look is part of the design that was signed off, so the
-  // sign-off goes with it rather than standing over something it never saw.
-  issue.designApproved = null;
+  // sign-off goes with it rather than standing over something it never saw -
+  // unless the editor asked for it at the beauty gate, where the sign-off is
+  // being given page by page and the result comes straight back to be judged.
+  if (!opts.keepSignOff) issue.designApproved = null;
   emit(ctx, "publication:stage", { id, stage: "design", state: "done", section: n });
   return save(ctx, issue);
+}
+
+/** Keep or lock a section on the board, or clear its mark (null). */
+export async function markSection(
+  ctx: RunnerContext, id: string, n: number, state: "approved" | "locked" | null,
+): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  if (!(issue.sections ?? []).some((s) => s.n === n)) throw new Error(`this issue has no section ${n}`);
+  const board = { ...(issue.sectionBoard ?? {}) };
+  if (state) board[String(n)] = { state, at: new Date().toISOString() };
+  else delete board[String(n)];
+  issue.sectionBoard = board;
+  emit(ctx, "publication:stage", { id, stage: "plan", state: "done", section: n });
+  return save(ctx, issue);
+}
+
+/**
+ * Lay one page out again from new blocks, with the editor's reason (13 §9 🔁 / ✏️).
+ *
+ * Same content, new spec: one model call writes this page's blocks only, told
+ * what the page holds, what it had, why that was refused, and the rules this
+ * world has learned. Blocks it cannot place are dropped and said; with none
+ * left the page keeps its type's arrangement. The caller lays it out; layout
+ * needs the design signed off, so a redesign leaves the sign-off standing.
+ */
+export async function redesignPage(
+  ctx: RunnerContext, id: string, n: number,
+  why: { readonly note?: string; readonly cause?: ReadonlyArray<string> } = {},
+): Promise<{ issue: PublicationIssue; dropped: string[] }> {
+  const issue = await readIssue(ctx, id);
+  const spec = issue.design?.spec;
+  if (!spec) throw new Error("there is no design yet - run the design stage first");
+  const page = issue.pages.find((p) => p.n === n);
+  if (!page) throw new Error(`this issue has no page ${n}`);
+  const section = (issue.sections ?? []).find((s) => n >= s.from && n <= s.to);
+  const world = (issue.design?.sections ?? []).find((w) => w.n === section?.n);
+  const rules = await rulesFor(ctx.projectRoot, {
+    type: "publication", id, surface: "design", ...(world?.register ? { world: world.register } : {}),
+  }).catch(() => [] as string[]);
+  const current = spec.pages?.[String(n)];
+
+  const out = await ctx.ask([
+    `You are redesigning ONE page of "${issue.title || issue.subject}" (${issue.series}). Same words, new layout.`,
+    pageDigest({ ...issue, pages: [page] }),
+    page.pullQuote ? `Its pull quote: "${page.pullQuote}"` : "",
+    `The issue's grid: ${JSON.stringify(spec.grid)}; type scale ${JSON.stringify(spec.type?.scale ?? [])}.`,
+    world ? `Its section's world: ${world.register} / ${world.idiom}; paper ${world.paper}, ink ${world.ink}${world.hue ? `, hue ${world.hue}` : ""}.` : "",
+    current ? `What it had, which the editor refused: ${JSON.stringify({ layout: current.layout, blocks: current.blocks ?? [] })}` : "",
+    why.cause?.length ? `What went wrong: ${why.cause.join(", ")}.` : "",
+    why.note ? `THE EDITOR ASKS FOR: ${why.note}` : "Give it a different composition from the one above.",
+    rules.length ? `THE EDITOR'S RULES FOR THIS WORLD (follow every one):\n${rules.map((r) => `- ${r}`).join("\n")}` : "",
+    "",
+    BLOCK_GUIDE,
+    "",
+    'Return ONLY JSON: {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [...], "note": "", "breaks": []}',
+  ].filter(Boolean).join("\n"), "design-page");
+
+  const o = out as Record<string, unknown>;
+  const next: PageLayout = {
+    layout: String(o.layout ?? current?.layout ?? "editorial"),
+    imageSlot: (["full-bleed", "top", "bottom", "left", "right", "inset", "none"].includes(String(o.imageSlot))
+      ? String(o.imageSlot) : current?.imageSlot ?? "none") as PageLayout["imageSlot"],
+    blocks: Array.isArray(o.blocks) ? o.blocks as PageBlock[] : [],
+    ...(typeof o.note === "string" && o.note ? { note: o.note } : {}),
+    ...(Array.isArray(o.breaks) && o.breaks.length ? { breaks: o.breaks.map(String) } : {}),
+  };
+  const cleaned = cleanBlocks({ ...spec, pages: { [String(n)]: next } });
+  issue.design = { ...(issue.design ?? { sections: [] }), spec: { ...spec, pages: { ...spec.pages, [String(n)]: cleaned.spec.pages[String(n)]! } } };
+  // Asked for at the beauty gate, which is where the design is signed off:
+  // the sign-off stands, and the page comes back laid out to be judged again.
+  emit(ctx, "publication:stage", { id, stage: "design", state: "done", page: n });
+  return { issue: await save(ctx, issue), dropped: cleaned.dropped };
+}
+
+export interface PageReview {
+  readonly at: string;
+  readonly verdict: "keep" | "redesign" | "re-world" | "tweak";
+  readonly cause?: ReadonlyArray<string>;
+  readonly note?: string;
+  readonly world?: string;
+  /** The score the page had when it was judged. */
+  readonly total?: number;
+}
+
+const reviewsFile = (ctx: RunnerContext, id: string, n: number) =>
+  join(dirOf(ctx, id), "pages", String(n).padStart(2, "0"), "reviews.jsonl");
+
+/** One verdict on one page, kept in its own folder (13 data model). */
+export async function appendReview(ctx: RunnerContext, id: string, n: number, review: PageReview): Promise<void> {
+  const file = reviewsFile(ctx, id, n);
+  await mkdir(dirname(file), { recursive: true });
+  const { appendFile } = await import("node:fs/promises");
+  await appendFile(file, `${JSON.stringify(review)}\n`, "utf-8");
+}
+
+export async function readReviews(ctx: RunnerContext, id: string, n: number): Promise<PageReview[]> {
+  const text = await readFile(reviewsFile(ctx, id, n), "utf-8").catch(() => "");
+  return text.split("\n").filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l) as PageReview]; } catch { return []; } });
 }
 
 export async function approveDesign(ctx: RunnerContext, id: string): Promise<PublicationIssue> {

@@ -1030,6 +1030,9 @@ export {
   revisePage as revisePublicationPage, renderPage as renderPublicationPage,
   placePage as placePublicationPage, runDesign as runPublicationDesign,
   designSection as designPublicationSection,
+  markSection as markPublicationSection, redesignPage as redesignPublicationPage,
+  appendReview as appendPublicationReview, readReviews as readPublicationReviews,
+  type PageReview as PublicationPageReview,
 } from "./pipeline/publication-runner.js";
 export { openIssueContext as openPublicationIssue, listIssueIds as listPublicationIssueIds } from "./pipeline/publication-context.js";
 export { createPublicationAsk } from "./pipeline/publication-session.js";

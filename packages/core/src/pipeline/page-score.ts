@@ -247,7 +247,8 @@ export function scorePage(input: PageScoreInput): PageScore {
     // T, from what actually went onto the page.
     if (lay.leaks?.length) penalty("T", 45, `markup printed on the page: ${lay.leaks.join(" ")}`);
     const cols = lay.cols;
-    if (cols && cols.overset > 0) penalty("T", 30, `${cols.overset} words overset`);
+    // Words that did not fit are words the reader never gets: past a dozen, the page fails on T.
+    if (cols && cols.overset > 0) penalty("T", Math.min(60, 30 + 2 * cols.overset), `${cols.overset} words overset`);
     if (cols && cols.words.length === 2) {
       const [a, b] = cols.words as [number, number];
       const ratio = Math.min(a, b) / Math.max(a, b, 1);

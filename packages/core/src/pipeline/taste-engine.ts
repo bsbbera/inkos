@@ -114,7 +114,7 @@ export const scopeKey = (scope: Readonly<Record<string, string>>): string =>
 /** Whether a rule speaks to this work and this kind of output. Every key it names must match. */
 export function applies(
   rule: Pick<TasteRule, "scope" | "retired">,
-  at: { readonly type: string; readonly id: string; readonly surface?: string; readonly style?: string },
+  at: { readonly type: string; readonly id: string; readonly surface?: string; readonly style?: string; readonly world?: string },
 ): boolean {
   if (rule.retired) return false;
   for (const [key, value] of Object.entries(rule.scope)) {
@@ -122,6 +122,8 @@ export function applies(
     if (key === "type" && value !== at.type) return false;
     if (key === "surface" && at.surface && value !== at.surface) return false;
     if (key === "style" && value !== at.style) return false;
+    // A world's rule is about that world's look; it says nothing of another (13 §9).
+    if (key === "world" && value !== at.world) return false;
   }
   return true;
 }
@@ -129,7 +131,7 @@ export function applies(
 /** The sentence rules for a unit, newest first — what goes into its prompt. */
 export async function rulesFor(
   root: string,
-  at: { readonly type: string; readonly id: string; readonly surface?: string; readonly style?: string },
+  at: { readonly type: string; readonly id: string; readonly surface?: string; readonly style?: string; readonly world?: string },
   limit = 8,
 ): Promise<string[]> {
   return (await readRules(root))
@@ -166,6 +168,14 @@ export const CAUSE_RULES: Readonly<Record<string, Readonly<Record<string, string
     "type too small": "Body type never below the reader's floor.",
     "image doesn't fit": "Crop pictures to their frame; never squash them.",
     generic: "Use the world's own props and technique; nothing that looks like stock.",
+    // The page score's seven dimensions, as the beauty gate's chips (13 §9).
+    grid: "Every frame starts and ends on a column edge; nothing floats off the grid.",
+    hierarchy: "One dominant per page, holding 40-60 % of its weight; nothing competes with it.",
+    whitespace: "Leave a quarter to a half of the page empty, and balance it on the optical centre.",
+    colour: "Paper, then ink, then one accent, in that order of area; the accent stays small.",
+    typography: "Type sizes at least 1.2x apart; body lines of 35-75 characters; nothing overset.",
+    "image fit": "The picture fills its frame with its subject and leaves no halo.",
+    rules: "Break a rule only on purpose, once a section, and say which.",
   },
   build: {
     "text overflow": "Cut copy to fit its frame before layout.",
@@ -195,10 +205,21 @@ export function causeProposals(
   const seen = new Set(known.filter((k) => !k.retired).map((k) => `${scopeKey(k.scope)}::${k.text}`));
   const perWork = new Map<string, { surface: string; cause: string; work: string; weight: number; ids: string[] }>();
   const perCause = new Map<string, { surface: string; cause: string; works: Set<string>; weight: number; ids: string[] }>();
+  // Per design world: a cause pressed often enough on one world's pages is a
+  // rule for that world wherever it is used next (13 build order 7).
+  const perWorld = new Map<string, { surface: string; cause: string; world: string; weight: number; ids: string[] }>();
   for (const e of events) {
     if (!NEGATIVE.has(e.verdict)) continue;
     for (const cause of e.cause ?? []) {
       if (!CAUSE_RULES[e.surface]?.[cause]) continue;
+      const world = e.scope?.world;
+      if (world) {
+        const w = perWorld.get(`${e.surface}|${cause}|${world}`) ?? { surface: e.surface, cause, world, weight: 0, ids: [] };
+        w.weight += weightOf(e);
+        w.ids.push(e.id);
+        perWorld.set(`${e.surface}|${cause}|${world}`, w);
+        continue;
+      }
       const work = `${e.ref.type}/${e.ref.id}`;
       const a = perWork.get(`${e.surface}|${cause}|${work}`) ?? { surface: e.surface, cause, work, weight: 0, ids: [] };
       a.weight += weightOf(e);
@@ -221,6 +242,9 @@ export function causeProposals(
   };
   for (const g of perCause.values()) {
     if (g.works.size >= 2 && g.weight >= MIN_WEIGHT) push({ surface: g.surface }, g.surface, g.cause, g.ids);
+  }
+  for (const g of perWorld.values()) {
+    if (g.weight >= MIN_WEIGHT) push({ surface: g.surface, world: g.world }, g.surface, g.cause, g.ids);
   }
   for (const g of perWork.values()) {
     const global = perCause.get(`${g.surface}|${g.cause}`);
