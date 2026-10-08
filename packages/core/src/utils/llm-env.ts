@@ -52,7 +52,7 @@ export function legacyEnv(layers: LLMEnvLayers): LLMEnvMap {
   return mergeEnvMaps(layers.global, layers.project, layers.process);
 }
 
-async function parseEnvFile(path: string): Promise<LLMEnvMap> {
+export async function parseEnvFile(path: string): Promise<LLMEnvMap> {
   try {
     return parse(await readFile(path, "utf-8"));
   } catch {

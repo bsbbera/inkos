@@ -5,6 +5,13 @@ import { join } from "node:path";
 
 import { findingsFor, researchPublication, searchProviders } from "../pipeline/publication-research.js";
 
+// The real ~/.quire/.env holds this machine's keys; every test here reads a fake one.
+const shared = vi.hoisted(() => ({ env: {} as Record<string, string> }));
+vi.mock("../utils/llm-env.js", async (orig) => ({
+  ...(await orig<typeof import("../utils/llm-env.js")>()),
+  parseEnvFile: async () => shared.env,
+}));
+
 const root = () => mkdtempSync(join(tmpdir(), "pub-research-"));
 
 describe("searchProviders", () => {
@@ -25,6 +32,14 @@ describe("searchProviders", () => {
     try {
       expect(await searchProviders(dir)).toEqual([]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("finds keys in the shared ~/.quire/.env, so dev and prod search alike", async () => {
+    const dir = root();
+    shared.env = { BRAVE_API_KEY: "shared-key" };
+    try {
+      expect(await searchProviders(dir)).toEqual([{ provider: "brave", apiKey: "shared-key" }]);
+    } finally { shared.env = {}; rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("takes the configured provider before the environment", async () => {
