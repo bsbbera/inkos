@@ -21,6 +21,10 @@
  * this change would make a context-growth bug look like a tools bug.
  */
 
+import { readFile } from "node:fs/promises";
+import { extname } from "node:path";
+import { Agent, fetch as undiciFetch } from "undici";
+import type { LLMClient } from "../llm/provider.js";
 import { runAgentSession } from "../agent/agent-session.js";
 import { agentForStage } from "./publication-agents.js";
 import { designSkillBrief } from "../skills/design-skills.js";
@@ -28,7 +32,10 @@ import { runWorkerAgent, workerModel } from "../agent/worker-agent.js";
 import { parseJson } from "../publications/parse-json.js";
 import type { PipelineRunner } from "./runner.js";
 import type { AskFn } from "./publication-runner.js";
-import { asAgent } from "../llm/telemetry.js";
+import { asAgent, recordLlmCall, roughTokens } from "../llm/telemetry.js";
+
+// A designer looking at renders can think past fetch's 5-minute wait for headers; that killed a whole spread run.
+const patient = new Agent({ headersTimeout: 20 * 60_000, bodyTimeout: 20 * 60_000 });
 
 export interface PublicationSessionOptions {
   /** Supplies the configured client/model and backs sub-agent delegation. */
@@ -93,7 +100,7 @@ const stageSystemPrompt = (tag: string, skill = "") => [
 export function createPublicationAsk(options: PublicationSessionOptions): AskFn {
   const { pipeline, projectRoot, issueId, language, signal } = options;
 
-  return async (prompt: string, tag: string): Promise<Record<string, unknown>> => {
+  return async (prompt: string, tag: string, opts: { readonly images?: ReadonlyArray<string> } = {}): Promise<Record<string, unknown>> => {
     signal?.throwIfAborted();
 
     // The pipeline's own client and model, not a fresh registry lookup — a run
@@ -124,11 +131,21 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
     // same page timed out at agy's nine minutes twice; as a plain call it
     // answered in four (2026-10-06, indigo p8). A revise that timed out threw
     // away a 2.4 hour audit.
-    const judging = tag.startsWith("factcheck") || /^(page|audit|revise)-\d+$/.test(tag);
+    // A page's composition and its art are self-contained too (plan 27): through a
+    // stage session every page carried every earlier page, the call grew to 28k
+    // tokens and took up to nine minutes, and a re-run carried the last run's look.
+    // An authored spread (spread-author.ts) carries its own copy, kit and examples the same way.
+    const judging = tag.startsWith("factcheck") || /^(page|audit|revise)-\d+$/.test(tag) || /^design-(page|art)$/.test(tag)
+      || /^design-(spread|pictures|pick)-\d+$/.test(tag);
     // The magazine's design and art stages read the same two skills every
     // other type's do — they are stage-bound, not magazine-bound.
     const skill = await designSkillBrief(tag);
     const talk = async (text: string, suffix: string): Promise<{ responseText: string; errorMessage?: string }> => {
+      // A model asked to look at a page is sent the page: the text path has no picture channel.
+      if (opts.images?.length) {
+        const system = `${skill ? `${skill}\n\n` : ""}This is the "${tag}" stage. Your reply is the JSON asked for and nothing else.`;
+        return { responseText: await look(agentCtx.client, model.id, system, text, opts.images, signal) };
+      }
       if (judging) {
         const response = await runWorkerAgent(agentCtx.client, agentCtx.model, [
           {
@@ -197,4 +214,40 @@ export function createPublicationAsk(options: PublicationSessionOptions): AskFn 
       );
     }
   };
+}
+
+/**
+ * One chat call with pictures, straight to the endpoint the stage's model is on.
+ *
+ * The worker path carries text only (`LLMMessage.content` is a string), so a
+ * page could be described to a model but never shown. The shim reads the
+ * `image_url` parts and hands them to the CLI (cli-shim/server.mjs `imagesOf`).
+ */
+async function look(
+  client: LLMClient, model: string, system: string, text: string,
+  images: ReadonlyArray<string>, signal?: AbortSignal,
+): Promise<string> {
+  const base = client._piModel?.baseUrl;
+  if (!base) throw new Error("looking at a page needs a chat endpoint, and this model has none");
+  const parts = [
+    { type: "text", text },
+    ...await Promise.all(images.map(async (file) => ({
+      type: "image_url",
+      image_url: { url: `data:image/${extname(file).slice(1).toLowerCase().replace("jpg", "jpeg") || "png"};base64,${(await readFile(file)).toString("base64")}` },
+    }))),
+  ];
+  const res = await undiciFetch(`${base.replace(/\/$/, "")}/chat/completions`, {
+    dispatcher: patient,
+    method: "POST",
+    headers: { "content-type": "application/json", ...(client._apiKey ? { authorization: `Bearer ${client._apiKey}` } : {}) },
+    body: JSON.stringify({ model, stream: false, messages: [{ role: "system", content: system }, { role: "user", content: parts }] }),
+    ...(signal ? { signal } : {}),
+  });
+  const out = await res.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }>; error?: { message?: string } };
+  if (!res.ok) throw new Error(out.error?.message ?? `the model answered ${res.status}`);
+  const answer = String(out.choices?.[0]?.message?.content ?? "");
+  // Recorded like every other call: which model looked was never written down, so a
+  // pin that silently fell back to the default could not be told from one that held.
+  recordLlmCall({ model, input: roughTokens(text.length + system.length), output: roughTokens(answer.length), costUsd: 0, estimated: true });
+  return answer;
 }

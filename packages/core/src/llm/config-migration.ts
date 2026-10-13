@@ -1,3 +1,4 @@
+import { configFile } from "../utils/config-dir.js";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { saveSecrets, loadSecrets } from "./secrets.js";
@@ -8,7 +9,7 @@ export interface MigrationResult {
 }
 
 export async function migrateConfig(projectRoot: string): Promise<MigrationResult> {
-  const configPath = join(projectRoot, "quire.json");
+  const configPath = configFile(projectRoot);
   let raw: string;
   try {
     raw = await readFile(configPath, "utf-8");

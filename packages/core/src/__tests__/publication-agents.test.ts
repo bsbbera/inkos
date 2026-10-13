@@ -10,6 +10,7 @@ describe("a magazine stage's agent", () => {
     expect(agentForStage("plan")).toBe("publication-planner");
     expect(agentForStage("page-12")).toBe("publication-writer");
     expect(agentForStage("design")).toBe("publication-designer");
+    expect(agentForStage("design-look")).toBe("publication-critic");
     expect(agentForStage("factcheck:extract:p3")).toBe("publication-fact-checker");
     expect(agentForStage("factcheck:verify:p3")).toBe("publication-fact-checker");
     expect(agentForStage("audit-7")).toBe("publication-auditor");

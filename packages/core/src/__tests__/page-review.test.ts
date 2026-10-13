@@ -60,22 +60,25 @@ describe("the section board", () => {
 });
 
 describe("a one-page redesign", () => {
-  it("asks for this page's blocks with the reason, keeps the placeable ones, and leaves the sign-off standing", async () => {
+  it("composes the page again with the reason, sends back what is wrong, and leaves the sign-off standing", async () => {
     const prompts: string[] = [];
-    const out = await redesignPage(ctx({
-      layout: "opener", imageSlot: "top",
+    await redesignPage(ctx({
+      idea: "a bigger field of art",
       blocks: [
-        { kind: "drawn", slot: { col: 1, span: 12, row: 0, rows: 29, bleed: true }, drawn: "contours" },
-        { kind: "title", slot: { col: 1, span: 8, row: 33, rows: 4 } },
-        { kind: "masthead", slot: { col: 1, span: 2, row: 0, rows: 2 } },
+        { kind: "drawn", col: 1, span: 12, row: 0, rows: 29, bleed: true },
+        { kind: "title", col: 1, span: 8, row: 33, rows: 4 },
+        { kind: "body", col: 1, span: 8, row: 38, rows: 6 },
+        { kind: "masthead", col: 1, span: 2, row: 0, rows: 2 },
       ],
     }, prompts), "issue-a", 1, { note: "a bigger picture", cause: ["hierarchy"] });
-    expect(prompts[0]).toMatch(/THE EDITOR ASKS FOR: a bigger picture/);
-    expect(prompts[0]).toMatch(/What went wrong: hierarchy/);
-    expect(prompts[0]).toMatch(/PAGE BLOCKS/);
-    expect(out.dropped).toEqual([expect.stringMatching(/masthead/)]);
+    expect(prompts[0]).toMatch(/THE EDITOR ASKS FOR: What went wrong: hierarchy\. a bigger picture/);
+    expect(prompts[0]).toMatch(/FRAMES\. Kinds/);
+    // The unknown kind is sent back twice, then the page keeps what could be placed.
+    expect(prompts.filter((p) => /WHAT WAS WRONG WITH IT/.test(p))).toHaveLength(2);
     const saved = await read();
-    expect(saved.design?.spec?.pages["1"]?.blocks?.map((b) => b.kind)).toEqual(["drawn", "title"]);
+    const page = saved.design?.spec?.pages["1"];
+    expect(page?.blocks?.map((b) => b.kind)).toEqual(["drawn", "title", "body"]);
+    expect(page?.composed?.problems).toEqual([expect.stringMatching(/"masthead" is not a frame kind/)]);
     expect(saved.designApproved).toMatchObject({ by: "editor" });
   });
 });

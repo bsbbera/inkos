@@ -1,3 +1,4 @@
+import { configFile } from "../utils/config-dir.js";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { appendInteractionEvent } from "./session.js";
@@ -84,7 +85,7 @@ function attachRequestLanguage(
 
 async function detectProjectInteractionLanguage(projectRoot: string): Promise<"zh" | "en" | undefined> {
   try {
-    const raw = await readFile(join(projectRoot, "quire.json"), "utf-8");
+    const raw = await readFile(configFile(projectRoot), "utf-8");
     const parsed = JSON.parse(raw) as { language?: string };
     return parsed.language === "en" ? "en" : parsed.language === "zh" ? "zh" : undefined;
   } catch {

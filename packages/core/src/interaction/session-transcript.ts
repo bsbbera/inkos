@@ -1,3 +1,4 @@
+import { stateDir } from "../utils/config-dir.js";
 import { randomUUID } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -5,11 +6,10 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { TranscriptEventSchema, type TranscriptEvent } from "./session-transcript-schema.js";
 import type { SessionKind, TranscriptRole } from "./session-transcript-schema.js";
 
-const SESSIONS_DIR = ".quire/sessions";
 const appendQueues = new Map<string, Promise<void>>();
 
 export function sessionsDir(projectRoot: string): string {
-  return join(projectRoot, SESSIONS_DIR);
+  return join(stateDir(projectRoot), "sessions");
 }
 
 export function transcriptPath(projectRoot: string, sessionId: string): string {

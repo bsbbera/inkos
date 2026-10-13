@@ -391,7 +391,7 @@ export function Dashboard({
           if (pubId) nav.toPublication(pubId);
           else if (book && g.id.startsWith("book:") && chapter !== undefined) {
             nav.toChapter(book.id, chapter);
-          } else if (book) nav.toBook(book.id);
+          } else if (book) nav.toAudit("book", book.id);
           // Reading, findings and the signature all live on one screen; the
           // gate names the work, so the screen opens on it.
           else {
@@ -430,7 +430,7 @@ export function Dashboard({
             ? { label: "signed off", tone: "pill pill-ok" }
             : { label: "drafting", tone: "pill" },
       detail: `${b.chaptersWritten} of ${b.targetChapters} chapters · ${b.genre}`,
-      open: () => nav.toBook(b.id),
+      open: () => nav.toAudit("book", b.id),
     }));
     /* An issue had no timestamp at all and sorted to the bottom of the row
        for ever, however recently it was worked on. The folder walk knows when

@@ -1,3 +1,4 @@
+import { configDir, configFile, stateDir } from "./config-dir.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
@@ -233,8 +234,10 @@ import { isApproved, readAuditState, updateFileAudit } from "./audit-state.js";
 import { blockersFor, readFindings, readPassage } from "./findings-store.js";
 import { bookWorkflow } from "./workflow.js";
 import { registerPublicationRoutes } from "./publications.js";
+import { registerWorkRoutes } from "./work.js";
 import { registerPageScoreRoutes } from "./page-score.js";
 import { registerPageReviewRoutes } from "./page-review.js";
+import { registerHouseRoutes } from "./house.js";
 import { isConfirmedProductionAction } from "../shared/confirmed-production.js";
 import { summarizeToolResult } from "../shared/tool-result.js";
 import { access, appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
@@ -1519,7 +1522,7 @@ async function executeConfirmedProductionAction(args: {
       ...(payload?.notes ? { notes: payload.notes } : {}),
       // The tool's own default. Named rather than left off, so a confirmation
       // that says "through audit" runs through audit.
-      stopAt: payload?.stopAt ?? "audit",
+      stopAt: payload?.stopAt ?? "write",
     };
   } else if (args.requestedIntent === "storyboard_create") {
     const payload = actionPayload?.storyboardCreate;
@@ -2126,13 +2129,13 @@ function syncTopLevelLlmMirror(llm: Record<string, unknown>): void {
 }
 
 async function loadRawConfig(root: string): Promise<Record<string, unknown>> {
-  const configPath = join(root, "quire.json");
+  const configPath = configFile(root);
   const raw = await readFile(configPath, "utf-8");
   return JSON.parse(raw) as Record<string, unknown>;
 }
 
 async function saveRawConfig(root: string, config: Record<string, unknown>): Promise<void> {
-  await writeFile(join(root, "quire.json"), JSON.stringify(config, null, 2), "utf-8");
+  await writeFile(configFile(root), JSON.stringify(config, null, 2), "utf-8");
 }
 
 type ChapterReviewMode = "auto" | "manual";
@@ -2265,7 +2268,7 @@ async function readEnvConfigValues(path: string): Promise<EnvConfigValues> {
 }
 
 async function readEnvConfigStatus(root: string): Promise<EnvConfigStatus> {
-  const project = await readEnvConfigValues(join(root, ".env"));
+  const project = await readEnvConfigValues(join(configDir(root), ".env"));
   const global = await readEnvConfigValues(GLOBAL_ENV_PATH);
   return {
     project: toEnvConfigSummary(project),
@@ -2276,7 +2279,7 @@ async function readEnvConfigStatus(root: string): Promise<EnvConfigStatus> {
 }
 
 async function readEffectiveEnvConfigValues(root: string): Promise<{ source: "project" | "global"; values: EnvConfigValues } | null> {
-  const project = await readEnvConfigValues(join(root, ".env"));
+  const project = await readEnvConfigValues(join(configDir(root), ".env"));
   if (project.detected) return { source: "project", values: project };
   const global = await readEnvConfigValues(GLOBAL_ENV_PATH);
   if (global.detected) return { source: "global", values: global };
@@ -2947,7 +2950,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
    * failed out loud. Every entry the terminal prints is now also kept there, as
    * one JSON line, and a file past 4 MB is set aside once at start.
    */
-  const logFile = join(root, ".quire", "quire.log");
+  const logFile = join(stateDir(root), "quire.log");
   // ponytail: one rotation at start, a size check per write if a single session can outgrow it
   void stat(logFile)
     .then((s) => (s.size > 4 * 1024 * 1024 ? rename(logFile, `${logFile}.1`) : undefined))
@@ -2956,7 +2959,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // Logger sink that prints to server terminal, and keeps the line for the Logs screen
   const consoleSink: LogSink = {
     write(entry: LogEntry): void {
-      void mkdir(join(root, ".quire"), { recursive: true })
+      void mkdir(stateDir(root), { recursive: true })
         .then(() => appendFile(logFile, JSON.stringify(entry) + "\n", "utf-8"))
         .catch(() => undefined);
       const prefix = `[${entry.tag}]`;
@@ -4863,7 +4866,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     try {
       currentConfig = await loadCurrentProjectConfig({ requireApiKey: false });
       // Check if language was explicitly set in quire.json (not just the schema default)
-      raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8")) as Record<string, unknown>;
+      raw = JSON.parse(await readFile(configFile(root), "utf-8")) as Record<string, unknown>;
     } catch (error) {
       throw new ApiError(
         500,
@@ -4940,7 +4943,10 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       };
       all.push(...await listIssues(ctx));
     }
-    return c.json({ publications: all });
+    // Every type reads the same issues folder, so each issue came back once
+    // per type and the shelf counted twelve issues where there were six.
+    const seen = new Set<string>();
+    return c.json({ publications: all.filter((p) => !seen.has(p.id) && seen.add(p.id)) });
   });
 
   // Opening, approving, resuming, auditing, rendering and revising one issue.
@@ -4951,10 +4957,36 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
     broadcast,
   });
+  /* Where any work stands, one answer for every kind (work.ts). */
+  registerWorkRoutes(app, {
+    root,
+    bookWork: async (id) => {
+      const book = await state.loadBookConfig(id);
+      const chapters = await state.loadChapterIndex(id).catch(() => []);
+      const paths = await chapterPaths(id);
+      const words = chapters.reduce((n, ch) => n + (ch.wordCount ?? 0), 0);
+      return {
+        title: book.title || id,
+        subtitle: `${chapters.length} chapter${chapters.length === 1 ? "" : "s"} · ${words.toLocaleString()} words`,
+        workflow: bookWorkflow({
+          chapters,
+          targetChapters: typeof book.targetChapters === "number" ? book.targetChapters : undefined,
+          findings: await readFindings(root),
+          pathOf: (n) => paths.get(n) ?? null,
+          running: false,
+        }),
+      };
+    },
+  });
   registerPageScoreRoutes(app, { root, broadcast, shimUrl: () => shimUrl() });
   registerPageReviewRoutes(app, {
     root, broadcast, shimUrl: () => shimUrl(),
     pipeline: async () => new PipelineRunner(await buildPipelineConfig()),
+  });
+  // The house book: what never changes between issues (Phase 7).
+  registerHouseRoutes(app, {
+    root, broadcast, shimUrl: () => shimUrl(),
+    ask: async (signal) => createStoryAsk(new PipelineRunner(await buildPipelineConfig()), signal),
   });
 
   // The same checks, for anything already written. A publication had a page of
@@ -5167,7 +5199,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   app.put("/api/v1/project", async (c) => {
     const updates = await c.req.json<Record<string, unknown>>();
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
@@ -5190,13 +5222,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   app.get("/api/v1/project/detection", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(configFile(root), "utf-8"));
     return c.json({ detection: raw.detection ?? null });
   });
 
   app.put("/api/v1/project/detection", async (c) => {
     const { detection } = await c.req.json<{ detection?: unknown }>();
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     if (detection === null) {
       delete raw.detection;
@@ -6386,7 +6418,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
 
   app.post("/api/v1/project/language", async (c) => {
     const { language } = await c.req.json<{ language: "zh" | "en" }>();
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     try {
       const raw = await readFile(configPath, "utf-8");
       const existing = JSON.parse(raw);
@@ -6849,7 +6881,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
       return { ok: false, artifacts: [], error: `no automatic de-slop for ${ctx.type} yet` };
     }
     try {
-      const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8")) as {
+      const raw = JSON.parse(await readFile(configFile(root), "utf-8")) as {
         detection?: unknown;
       };
       const detection = DetectionConfigSchema.safeParse(raw.detection);
@@ -7497,7 +7529,7 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     // Normalised on the way in, so the file converges on one spelling per agent
     // instead of accumulating `stateValidator` beside `state-validator`.
     const overrides = normalizeOverrides(body.overrides);
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     const raw = JSON.parse(await readFile(configPath, "utf-8")) as Record<string, unknown>;
     raw.modelOverrides = overrides;
     // Absent leaves the preset alone; null clears it.
@@ -7519,13 +7551,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   });
 
   app.get("/api/v1/project/model-overrides", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(configFile(root), "utf-8"));
     return c.json({ overrides: raw.modelOverrides ?? {} });
   });
 
   app.put("/api/v1/project/model-overrides", async (c) => {
     const { overrides } = await c.req.json<{ overrides: Record<string, unknown> }>();
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     raw.modelOverrides = overrides;
     const { writeFile: writeFileFs } = await import("node:fs/promises");
@@ -7672,13 +7704,13 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
   // --- Notify channels ---
 
   app.get("/api/v1/project/notify", async (c) => {
-    const raw = JSON.parse(await readFile(join(root, "quire.json"), "utf-8"));
+    const raw = JSON.parse(await readFile(configFile(root), "utf-8"));
     return c.json({ channels: raw.notify ?? [] });
   });
 
   app.put("/api/v1/project/notify", async (c) => {
     const { channels } = await c.req.json<{ channels: unknown[] }>();
-    const configPath = join(root, "quire.json");
+    const configPath = configFile(root);
     const raw = JSON.parse(await readFile(configPath, "utf-8"));
     raw.notify = channels;
     const { writeFile: writeFileFs } = await import("node:fs/promises");
@@ -8917,6 +8949,16 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     return shim(`/mcp/tools?server=${encodeURIComponent(server ?? "")}`);
   });
 
+  // Detect servers other agents have, add a pasted config, remove one (cli-shim/mcp.mjs).
+  for (const route of ["rescan", "add", "remove"] as const) {
+    app.post(`/api/v1/mcp/${route}`, async (c) =>
+      shim(`/mcp/${route}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(await c.req.json().catch(() => ({}))),
+      }));
+  }
+
   app.post("/api/v1/mcp/toggle", async (c) =>
     shim("/mcp/toggle", {
       method: "POST",
@@ -8938,8 +8980,8 @@ export function createStudioServer(initialConfig: ProjectConfig, root: string, o
     const { GLOBAL_ENV_PATH } = await import("@actalk/quire-core");
 
     const checks = {
-      quireJson: existsSync(join(root, "quire.json")),
-      projectEnv: existsSync(join(root, ".env")),
+      quireJson: existsSync(configFile(root)),
+      projectEnv: existsSync(join(configDir(root), ".env")),
       globalEnv: existsSync(GLOBAL_ENV_PATH),
       booksDir: existsSync(join(root, "books")),
       llmConnected: false,

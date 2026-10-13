@@ -105,7 +105,7 @@ const STAGE_LABELS: Readonly<Record<string, string>> = {
   build: "Building",
 };
 
-export function jobLabel(job: Job): string {
+export function jobLabel(job: Pick<Job, "stage">): string {
   return STAGE_LABELS[job.stage] ?? job.stage;
 }
 

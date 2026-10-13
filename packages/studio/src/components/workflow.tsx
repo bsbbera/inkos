@@ -31,6 +31,8 @@ export interface WorkflowStage {
   readonly stage: string;
   readonly state: StageState | string;
   readonly detail: string;
+  /** Done of total, for a stage that walks units. */
+  readonly count?: { readonly done: number; readonly total: number };
 }
 
 export interface Approval {

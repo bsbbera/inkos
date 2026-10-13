@@ -96,6 +96,14 @@ describe("summarize", () => {
       { page: 1, severity: "info", category: "repetition/x", description: "", suggestion: "" },
       { page: 4, severity: "warning", category: "length", description: "", suggestion: "" },
     ]);
-    expect(line).toBe("3 findings (2 warnings) across 2 pages");
+    expect(line).toBe("3 findings (2 warnings) on 2 pages");
+  });
+
+  it("does not count an issue-wide finding as a page", () => {
+    const line = summarize([
+      { page: 1, severity: "warning", category: "length", description: "", suggestion: "" },
+      { page: null as unknown as number, severity: "info", category: "voice", description: "", suggestion: "" },
+    ]);
+    expect(line).toBe("2 findings (1 warning) on 1 page, 1 about the whole issue");
   });
 });

@@ -10,6 +10,7 @@
  */
 import type { DesignSpec, PageLayout } from "./publication-design.js";
 import { contrast } from "./publication-design.js";
+import { geometryOf } from "./layout-engine.js";
 
 export const BLOCK_KINDS = [
   "image", "drawn", "figure", "title", "deck", "kicker", "body", "dropcap",
@@ -42,10 +43,12 @@ export interface PageBlock {
   /** Drop cap: how many body lines it stands in. */
   readonly lines?: number;
   /** Drawn art: what is drawn, and the seed that makes a re-layout draw it again. */
-  readonly drawn?: "contours" | "rain" | "contours+rain";
+  readonly drawn?: string;
   readonly seed?: number;
   /** Words the block carries when the page content does not (a kicker, a panel's head, a pin). */
   readonly text?: string;
+  /** Where the layout engine put it, in mm on the page (layout-engine.ts); the shim draws this. */
+  readonly box?: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 }
 
 export interface PlacedBlock extends PageBlock { readonly kind: BlockKind; readonly slot: BlockSlot }
@@ -61,15 +64,11 @@ export interface BlockGrid {
 }
 
 export function gridOf(spec: DesignSpec | null | undefined): BlockGrid {
-  const g = spec?.grid;
+  // Cells and rows come from the composition system (layout-engine.ts): a
+  // golden page has three cells, a canon page a deeper margin and fewer rows.
+  const geo = geometryOf(spec);
   const pos = (v: unknown, d: number) => (typeof v === "number" && v > 0 ? v : d);
-  const columns = Math.round(pos(g?.columns, 12));
-  const gutter = pos(g?.gutterMm, 4);
-  const margin = pos(g?.marginMm, 14);
-  const baseline = pos(g?.baselineMm, 4.7625);
-  // The folio sits below the foot: 297 - margin - 10.
-  const rows = Math.floor((297 - 2 * margin - 10) / baseline);
-  return { columns, gutter, margin, baseline, rows };
+  return { columns: geo.cells.recto.length, gutter: geo.gutter, margin: pos(spec?.grid?.marginMm, 14), baseline: geo.baseline, rows: geo.rows };
 }
 
 const TEXT: ReadonlySet<string> = new Set(["figure", "title", "deck", "kicker", "body", "dropcap", "pull", "panel", "runhead", "wordmark", "folio"]);
@@ -102,8 +101,28 @@ export function cleanBlocks(spec: DesignSpec): { spec: DesignSpec; dropped: stri
   const pages: Record<string, PageLayout> = {};
   for (const [key, layout] of Object.entries(spec.pages ?? {})) {
     const kept: PageBlock[] = [];
-    for (const b of layout.blocks ?? []) {
-      if (!isSlot(b.slot)) { kept.push(b); continue; }          // legacy: kept, not placed
+    for (const raw of layout.blocks ?? []) {
+      if (!isSlot(raw.slot)) { kept.push(raw); continue; }      // legacy: kept, not placed
+      // Art's text is a caption printed on it. A sentence is an instruction to
+      // someone, and the folio test printed one across a cover: the art stays,
+      // the instruction goes.
+      let b = raw as PageBlock & { slot: BlockSlot };
+      if (b.kind === "drawn" && (b.text ?? "").trim().split(/\s+/).length > 6) {
+        const { text: _t, ...art } = b;
+        b = art as typeof b;
+        dropped.push(`page ${key}: dropped the art's text - a caption is six words or fewer`);
+      }
+      // The story and its head are the page: a pull or a panel in their way goes, not they
+      // (Rain l2 p2 lost its whole body to a block placed before it).
+      if ((b.kind === "body" || b.kind === "title") && isSlot(b.slot)) {
+        for (let i = kept.length - 1; i >= 0; i--) {
+          const k = kept[i]!;
+          if (k.kind !== "body" && k.kind !== "title" && k.kind !== "dropcap" && TEXT.has(k.kind) && isSlot(k.slot) && overlaps(k.slot, b.slot as BlockSlot)) {
+            kept.splice(i, 1);
+            dropped.push(`page ${key}: dropped ${k.kind} - it sat on the ${b.kind}`);
+          }
+        }
+      }
       const why = !(BLOCK_KINDS as readonly string[]).includes(b.kind) ? `"${b.kind}" is not a block the builder knows`
         : b.slot.col < 1 || b.slot.span < 1 || b.slot.col + b.slot.span - 1 > grid.columns ? `its columns run off the ${grid.columns}-column grid`
         : b.slot.row < 0 || b.slot.rows < 1 || b.slot.row + b.slot.rows > grid.rows ? `its rows run off the ${grid.rows}-line grid`
@@ -168,11 +187,20 @@ export function blockRules(
   const pictures = blocks.filter((b) => PICTURE.has(b.kind));
   const field = colours.field || colours.ink;
   const hex: Record<BlockColour, string> = { ink: colours.ink, paper: colours.paper, accent: colours.accent, field };
+  // A picture slot not yet filled is judged at the tone its brief promised (the wireframe's fill).
+  const TONE: Record<string, string> = { dark: "#3a3a3a", mid: "#8c8c8c", light: "#d4d4d4" };
+  const groundOf = (p: PlacedBlock) => {
+    const tone = (p as { brief?: { tone?: string } }).brief?.tone;
+    return p.kind === "image" && tone ? TONE[tone] ?? field : field;
+  };
   for (const b of blocks) {
     if (!TEXT.has(b.kind) || b.kind === "panel") continue;
-    const over = pictures.some((p) => overlaps(p.slot, b.slot));
-    const ground = over ? field : colours.paper;
-    const colour = hex[b.color ?? (b.kind === "figure" || b.kind === "dropcap" ? "accent" : over ? "paper" : "ink")];
+    const under = pictures.filter((p) => overlaps(p.slot, b.slot)).slice(-1)[0];
+    const ground = under ? groundOf(under) : colours.paper;
+    // With no colour named, the builder sets whichever of ink and paper reads better on
+    // the ground (cli-shim blockPage best()); the score judges that, not a guess.
+    const best = (contrast(colours.ink, ground) ?? 0) >= (contrast(colours.paper, ground) ?? 0) ? "ink" : "paper";
+    const colour = hex[b.color ?? (b.kind === "figure" || b.kind === "dropcap" ? "accent" : under ? best : "ink")];
     const floor = ["body", "deck"].includes(b.kind) ? 7 : ["kicker", "runhead", "folio"].includes(b.kind) ? 4.5 : 3;
     const ratio = colour && ground ? contrast(colour, ground) : 0;
     if (ratio && ratio < floor) notes.push({ dim: "C", penalty: 15, says: `the ${b.kind} is ${ratio.toFixed(1)}:1 on its ground, under ${floor}:1` });

@@ -4,8 +4,12 @@ import { withViewTransition } from "../lib/view-transition";
 export type HashRoute =
   | { page: "dashboard" }
   | { page: "chat" }
-  | { page: "books" }
-  | { page: "magazines" }
+  /* Everything made, of every kind; `kind` narrows it. Books and Magazine
+     were two shelves of the same thing. */
+  | { page: "library"; kind?: string }
+  | { page: "publication"; issueId: string }
+  | { page: "house" }
+  | { page: "brand" }
   | { page: "new" }
   | { page: "run"; runId?: string }
   | { page: "styleguide" }
@@ -30,7 +34,6 @@ export type HashRoute =
   | { page: "audit"; kind?: string; id?: string }
   | { page: "gallery"; type?: string; id?: string }
   | { page: "taste" }
-  | { page: "publication"; issueId: string }
   | { page: "play"; projectId: string }
   | { page: "film"; projectId: string }
   | { page: "flow"; projectId: string }
@@ -59,8 +62,17 @@ function parseHash(hash: string): HashRoute {
   if (galleryMatch) {
     return { page: "gallery", type: decodeURIComponent(galleryMatch[1]), id: decodeURIComponent(galleryMatch[2]) };
   }
-  if (path === "books") return { page: "books" };
-  if (path === "magazines") return { page: "magazines" };
+  // The two old shelves are the library, narrowed.
+  if (path === "books") return { page: "library", kind: "book" };
+  if (path === "magazines") return { page: "library", kind: "publication" };
+  if (path === "library") return { page: "library" };
+  const libraryMatch = path.match(/^library\/([^/]+)$/);
+  if (libraryMatch) return { page: "library", kind: decodeURIComponent(libraryMatch[1]!) };
+  /* A work is opened in Audit; links from the short-lived work page land there. */
+  const workMatch = path.match(/^work\/([^/]+)\/([^/]+)(?:\/[^/]+)?$/);
+  if (workMatch) return { page: "audit", kind: decodeURIComponent(workMatch[1]!), id: decodeURIComponent(workMatch[2]!) };
+  if (path === "house") return { page: "house" };
+  if (path === "brand") return { page: "brand" };
   if (path === "new") return { page: "new" };
   if (path === "styleguide") return { page: "styleguide" };
   if (path === "audit-packs") return { page: "audit-packs" };
@@ -126,8 +138,10 @@ function routeToHash(route: HashRoute): string {
   switch (route.page) {
     case "dashboard": return "#/";
     case "chat": return "#/chat";
-    case "books": return "#/books";
-    case "magazines": return "#/magazines";
+    case "library": return route.kind ? `#/library/${encodeURIComponent(route.kind)}` : "#/library";
+    case "publication": return `#/publication/${encodeURIComponent(route.issueId)}`;
+    case "house": return "#/house";
+    case "brand": return "#/brand";
     case "new": return "#/new";
     case "styleguide": return "#/styleguide";
     case "audit-packs": return "#/audit-packs";
@@ -155,7 +169,6 @@ function routeToHash(route: HashRoute): string {
     case "project-settings": return "#/settings";
     case "mcp": return "#/mcp";
     case "setup": return route.tab ? `#/setup/${route.tab}` : "#/setup";
-    case "publication": return `#/publication/${encodeURIComponent(route.issueId)}`;
     case "translation": return "#/translation";
     case "import": return route.tab ? `#/import/${route.tab}` : "#/import";
     case "play": return `#/play/${encodeURIComponent(route.projectId)}`;

@@ -72,6 +72,7 @@ export const AGENT_ROSTER: ReadonlyArray<AgentRole> = [
   { id: "publication-planner", label: "magazine planner", does: "turns a subject into a page-by-page issue plan", group: "magazine" },
   { id: "publication-writer", label: "magazine writer", does: "writes each page and its visual briefs", group: "magazine" },
   { id: "publication-designer", label: "designer", does: "decides layout, grid and type, then hands the build to Affinity", group: "magazine" },
+  { id: "publication-critic", label: "design critic", does: "looks at each rendered page and sends back what is wrong", group: "magazine" },
   { id: "publication-fact-checker", label: "fact checker", does: "verifies each claim against a source", group: "magazine" },
   { id: "publication-auditor", label: "magazine auditor", does: "reads the finished pages back", group: "magazine" },
   { id: "publication-reviser", label: "magazine reviser", does: "rewrites a page or one element of it", group: "magazine" },
@@ -203,6 +204,12 @@ export const AGENT_JOBS: ReadonlyArray<AgentJob> = [
     label: "Designer",
     does: "Decides how a page looks — grid, type, colour — and drives the Affinity build.",
     members: ["publication-designer"],
+  },
+  {
+    id: "critic",
+    label: "Design critic",
+    does: "Looks at every rendered page like an art director and sends it back until it is right. Wants a model that sees.",
+    members: ["publication-critic"],
   },
   {
     id: "researcher",

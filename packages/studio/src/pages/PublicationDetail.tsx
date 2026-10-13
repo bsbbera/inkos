@@ -106,6 +106,13 @@ interface Issue {
   /* The section board's marks: kept, or locked against any change of world. */
   readonly sectionBoard?: Readonly<Record<string, { readonly state: "approved" | "locked"; readonly at: string }>>;
   readonly designApproved?: { at: string } | null;
+  /* Several designs for this one creation, chosen among at the design gate. */
+  readonly designOptions?: ReadonlyArray<{
+    readonly direction?: string;
+    readonly spec?: { readonly type?: { readonly display?: string; readonly text?: string }; readonly palette?: Readonly<Record<string, string>> } | null;
+  }>;
+  readonly designChoice?: number;
+  readonly designCount?: number;
 }
 
 interface Detail {
@@ -168,7 +175,8 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [from, setFrom] = useState<Stage>("write");
-  const [stopAt, setStopAt] = useState<Stage>("audit");
+  const [stopAt, setStopAt] = useState<Stage>("write");
+  const [looks, setLooks] = useState(1);
   const [openPage, setOpenPage] = useState<number | null>(null);
   const [tab, setTab] = useState<"brief" | "sections" | "pages" | "audit" | "proofs" | "build">("pages");
   const [note, setNote] = useState("");
@@ -342,6 +350,47 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
           ) : null}
         </div>
       </WorkflowBar>
+
+      {/* The design gate's choice: one creation, several looks. Choosing one
+          makes it the issue's design and drops any sign-off. */}
+      {(issue.designOptions?.length ?? 0) > 1 ? (
+        <div className="panel">
+          <div className="panel-head">
+            <h3>Design options</h3>
+            <span className="dim text-cap">Choose the look, then approve the design.</span>
+          </div>
+          <div className="panel-body cols cols-3">
+            {issue.designOptions!.map((o, k) => {
+              const chosen = (issue.designChoice ?? 0) === k;
+              const pal = o.spec?.palette ?? {};
+              const idea = /composition: ([^\n]*)/.exec(o.direction ?? "")?.[1] ?? (o.direction ?? "").slice(0, 200);
+              return (
+                <div key={k} className="stack gap-1.5">
+                  <div className="rowflex gap-1.5">
+                    <span className="mono">Option {k + 1}</span>
+                    {chosen ? <span className="chip">chosen</span> : null}
+                  </div>
+                  <div className="swatches" aria-label="palette">
+                    {["paper", "ink", "accent"].map((c) => pal[c] ? (
+                      <span key={c} className="swatch" title={`${c} ${pal[c]}`} style={{ background: pal[c] }} />
+                    ) : null)}
+                  </div>
+                  <div className="text-small">{o.spec?.type?.display} / {o.spec?.type?.text}</div>
+                  <p className="hint">{idea.slice(0, 220)}</p>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={chosen || busy !== null || data.running}
+                    onClick={() => void act(`choose-${k}`, () => post(`${api}/design/choose`, { option: k }))}
+                  >
+                    {busy === `choose-${k}` ? "Choosing…" : chosen ? "In use" : "Use this design"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <Tabs items={tabs} value={tab} onChange={setTab} />
 
@@ -926,11 +975,19 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               >
                 {STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
+              <span className="label">designs to choose from</span>
+              <select
+                className="input w-auto py-1.5 px-2.5 text-small"
+                value={looks}
+                onChange={(e) => setLooks(Number(e.target.value))}
+              >
+                {[1, 2, 3, 4].map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
               <button
                 type="button"
                 className="btn btn-sm"
                 disabled={busy !== null || data.running}
-                onClick={() => void act("resume", () => post(`${api}/resume`, { from, stopAt }))}
+                onClick={() => void act("resume", () => post(`${api}/resume`, { from, stopAt, designOptions: looks }))}
               >
                 <Icon name="play" size={14} />
                 {data.running ? "Running…" : "Resume"}

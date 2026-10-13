@@ -16,7 +16,8 @@
 import type { Hono } from "hono";
 import { gate, type StageState, type Workflow } from "./workflow.js";
 import { appendFeedback } from "./taste.js";
-import { join } from "node:path";
+import { basename, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import {
   PRODUCTIONS, auditPackIn, goldenRules, holdsGate, locate, normalizeSeverity, readMath,
   declaredBreaks, type DesignMath, type Finding, type ResolvedAuditPack,
@@ -36,8 +37,22 @@ import {
   unapprovePublication,
   unapprovePublicationDesign,
   checkPublicationDesign,
+  pageBlockers,
   designPublicationSection,
   enqueueJob,
+  forkPublication,
+  choosePublicationDesign,
+  installPublicationDesign,
+  setPublicationLook,
+  setPublicationBrand,
+  buildPublicationSpreads,
+  publicationSpreads,
+  listBrands,
+  loadBrand,
+  selectedBrand,
+  selectBrand,
+  setPublicationDesignCount,
+  perfectIssue,
   type PipelineRunner,
   type PublicationFinding,
   type PublicationIssue,
@@ -49,6 +64,7 @@ import {
   setIssueSchedule,
   startNextIssue,
   liveJobFor,
+  listJobs,
   listMaterialAssets,
 } from "@actalk/quire-core";
 
@@ -111,7 +127,7 @@ const STAGES: ReadonlyArray<PublicationStage> = ["research", "plan", "write", "f
 export function stageStates(
   issue: PublicationIssue,
   inFlight?: { readonly stage: string; readonly message?: string } | null,
-): Array<{ stage: PublicationStage; state: string; detail: string }> {
+): StageRow[] {
   const stages = withFailure(issue, baseStageStates(issue));
   if (!inFlight) return stages;
   // The strip is the one place that says what is happening now. The header
@@ -121,7 +137,7 @@ export function stageStates(
     st.stage === inFlight.stage
       // Progress it already has ("12/50 pages written") is kept; a stage with
       // nothing to show yet says it is being worked on.
-      ? { ...st, state: "running", detail: st.state === "pending" ? "working on it" : st.detail }
+      ? { ...st, state: "running", detail: st.count ? st.detail : said(inFlight.message) }
       : st
   ));
 }
@@ -135,7 +151,7 @@ export function stageStates(
  */
 function withFailure(
   issue: PublicationIssue,
-  stages: Array<{ stage: PublicationStage; state: string; detail: string }>,
+  stages: StageRow[],
 ) {
   const failed = issue.lastError?.stage;
   if (!failed) return stages;
@@ -153,13 +169,37 @@ function withFailure(
 }
 
 /** The reason, short enough for a strip that has one line per stage. */
+/* What a running stage says it is doing. The runner prefixes its messages
+   with the issue's name ("rain-… · searching: …") and, as a stage starts,
+   says the name alone - which is not something it is doing. */
+function said(message: string | undefined): string {
+  const at = message?.indexOf("·") ?? -1;
+  const rest = message && at >= 0 ? firstLine(message.slice(at + 1).trim()) : "";
+  return rest || "working…";
+}
+
 function firstLine(message: string): string {
   const line = (message.split("\n")[0] ?? "").trim();
   return line.length > 90 ? `${line.slice(0, 89)}…` : line;
 }
 
-function baseStageStates(issue: PublicationIssue): Array<{ stage: PublicationStage; state: string; detail: string }> {
+/** "1 page", "3 pages": a count that reads as a sentence. */
+export const counted = (n: number, word: string, plural = `${word}s`): string => `${n} ${n === 1 ? word : plural}`;
+
+/** Done of total, for a stage that walks units: the screen draws it as a bar. */
+type Count = { readonly done: number; readonly total: number };
+type StageRow = { stage: PublicationStage; state: string; detail: string; count?: Count };
+
+/*
+ * Every line answers "what happened" or "what is it waiting for". A stage
+ * whose input does not exist yet said "0/0 pages written" or "never audited",
+ * which reads as something that ran and found nothing.
+ */
+function baseStageStates(issue: PublicationIssue): StageRow[] {
+  const total = issue.pages.length;
   const written = issue.pages.filter(isPublicationPageWritten).length;
+  const planned = total > 0;
+  const allWritten = planned && written === total;
   // A page wanting no picture is not a page missing one. Counting by `image`
   // made every plate-free page read as outstanding art forever.
   const wantsArt = issue.pages.filter((p) => publicationPageBriefs(p).length > 0);
@@ -168,71 +208,83 @@ function baseStageStates(issue: PublicationIssue): Array<{ stage: PublicationSta
       >= publicationPageBriefs(p).length,
   ).length;
   const done = (yes: boolean) => (yes ? "done" : "pending");
+  // One source cited by three sections is one source.
+  const sources = new Set(Object.values(((issue.research as { pillars?: Record<string, { sources?: ReadonlyArray<{ url?: string }> }> } | null)
+    ?.pillars) ?? {}).flatMap((p) => (p.sources ?? []).map((x, i) => x.url ?? `#${i}`))).size;
+  const fc = issue.factCheck;
+  const toFix = fc ? fc.findings.filter((f) => f.verdict === "unsupported" || f.verdict === "contradicted").length : 0;
+  const au = issue.audit;
   return [
-    { stage: "research", state: done(!!issue.research), detail: issue.research ? "sources gathered" : "not run" },
+    {
+      stage: "research",
+      state: done(!!issue.research),
+      detail: issue.research ? (sources ? `${counted(sources, "source")} found` : "sources gathered") : "not started",
+    },
     {
       stage: "plan",
-      state: done(issue.pages.length > 0),
-      detail: issue.pages.length ? `${issue.sections.length} sections, ${issue.pages.length} pages` : "no flatplan",
+      state: done(planned),
+      detail: planned
+        ? `${counted(total, "page")} in ${counted(issue.sections.length, "section")}`
+        : issue.research ? "not started" : "waits for research",
     },
     {
       stage: "write",
-      state: written === 0 ? "pending" : written < issue.pages.length ? "partial" : "done",
-      detail: `${written}/${issue.pages.length} pages written`,
+      state: !planned || written === 0 ? "pending" : written < total ? "partial" : "done",
+      detail: planned ? `${written} of ${counted(total, "page")} written` : "waits for the plan",
+      ...(planned ? { count: { done: written, total } } : {}),
     },
     {
       stage: "fact-check",
       // A run that stopped part-way keeps what it checked, and says so.
-      state: !issue.factCheck ? "pending" : issue.factCheck.complete === false ? "partial" : "done",
-      detail: issue.factCheck
-        ? `${issue.factCheck.checked} claims checked, ${
-          issue.factCheck.findings.filter((f) => f.verdict === "unsupported" || f.verdict === "contradicted").length
-        } worth acting on${issue.factCheck.complete === false
-          ? `, ${Object.keys(issue.factCheck.pages ?? {}).length}/${issue.pages.length} pages`
-          : ""}`
-        : "never checked",
+      state: !fc ? "pending" : fc.complete === false ? "partial" : "done",
+      detail: fc
+        ? fc.complete === false
+          ? `${Object.keys(fc.pages ?? {}).length} of ${counted(total, "page")} checked, ${counted(fc.checked, "claim")}, ${toFix} to fix`
+          : `${counted(fc.checked, "claim")} checked, ${toFix ? `${toFix} to fix` : "none to fix"}`
+        : written ? "not started" : "waits for writing",
+      ...(fc && fc.complete === false ? { count: { done: Object.keys(fc.pages ?? {}).length, total } } : {}),
     },
     {
       stage: "audit",
       // A run that stopped part-way keeps what it read, and says so.
-      state: !issue.audit ? "pending" : issue.audit.complete === false ? "partial" : "done",
-      detail: issue.audit
-        ? `${issue.audit.findings.length} findings${issue.audit.complete === false
-          ? `, ${Object.keys(issue.audit.reviewed ?? {}).length}/${issue.pages.filter(isPublicationPageWritten).length} pages read`
-          : issue.audit.rounds ? `, ${issue.audit.rounds} revise rounds` : ", not revised"}`
-        : "never audited",
+      state: !au ? "pending" : au.complete === false ? "partial" : "done",
+      detail: au
+        ? au.complete === false
+          ? `${Object.keys(au.reviewed ?? {}).length} of ${counted(written, "page")} read, ${counted(au.findings.length, "finding")}`
+          : `${au.findings.length ? counted(au.findings.length, "finding") : "no problems found"}${au.rounds ? `, revised ${counted(au.rounds, "time")}` : au.findings.length ? ", not revised yet" : ""}`
+        : written ? "not started" : "waits for writing",
+      ...(au && au.complete === false ? { count: { done: Object.keys(au.reviewed ?? {}).length, total: written } } : {}),
     },
     {
       // The design decides the palette, the type and one world per section.
-      // Nothing ran it until 2026-09-17, which is why an issue with every page
-      // written still could not be built: the build reads this and refuses
-      // without it.
       stage: "design",
       state: issue.design ? "done" : "pending",
       detail: issue.design
-        ? `${issue.design.sections?.length ?? 0} sections styled`
-        : "no design yet",
+        ? `${counted(issue.design.sections?.length ?? 0, "section")} styled`
+        : allWritten ? "not started" : "waits for writing",
     },
     {
       stage: "art",
-      state: issue.pages.length === 0
+      state: !planned
         ? "pending"
         : wantsArt.length === 0
         // Briefs are written with the pages, so until every page is written
         // "none asked for a picture" is not yet known, and is not done.
-        ? (written < issue.pages.length ? "pending" : "done")
+        ? (allWritten ? "done" : "pending")
         : withArt === 0 ? "pending" : withArt < wantsArt.length ? "partial" : "done",
-      // With no flatplan, no page has asked for anything yet; that is not done.
-      detail: issue.pages.length === 0
-        ? "no flatplan yet"
+      detail: !planned
+        ? "waits for the plan"
         : wantsArt.length === 0
-        ? "no page asked for a picture"
-        : `${withArt}/${wantsArt.length} pages have art`,
+        ? (allWritten ? "no pictures needed" : "waits for writing")
+        : `${withArt} of ${counted(wantsArt.length, "page")} have art`,
+      ...(planned && wantsArt.length ? { count: { done: withArt, total: wantsArt.length } } : {}),
     },
     {
       stage: "build",
       state: done(!!issue.build?.pdf),
-      detail: issue.build?.pdf ?? "no PDF",
+      detail: issue.build?.pdf
+        ? (issue.build.pdf.split(/[\\/]/).pop() ?? issue.build.pdf)
+        : !issue.approved || !issue.designApproved ? "waits for approval" : "not started",
     },
   ];
 }
@@ -264,10 +316,15 @@ export function gateState(
   const designProblems = issue.design
     ? [...checkPublicationDesign(issue.design), ...goldenRules(issue.design.spec, issue.sections, math)]
     : ["no design has been run"];
+  /* What is still wrong on the pages: what the composer could not repair, and
+     what Affinity measured at the last build. Both stop the sign-off; the build
+     measures again, so the last measurement does not stop the build itself. */
+  const pagesComposed = pageBlockers(issue.design?.spec, { measured: false });
+  const pagesAll = pageBlockers(issue.design?.spec);
 
   const copyBlockers: string[] = [];
   if (issue.pages.length === 0) copyBlockers.push("there is no flatplan yet");
-  else if (written < issue.pages.length) copyBlockers.push(`${issue.pages.length - written} pages are still unwritten`);
+  else if (written < issue.pages.length) copyBlockers.push(`${counted(issue.pages.length - written, "page is", "pages are")} still unwritten`);
   if (!issue.audit) copyBlockers.push("the issue has not been audited");
   else if (issue.audit.complete === false) copyBlockers.push("the audit has not finished");
 
@@ -282,6 +339,7 @@ export function gateState(
   if (!issue.approved) buildBlockers.push("the copy is not approved");
   if (!issue.designApproved) buildBlockers.push("the design is not approved");
   if (designProblems.length) buildBlockers.push(...designProblems);
+  buildBlockers.push(...pagesComposed);
 
   return {
     copy: {
@@ -295,8 +353,8 @@ export function gateState(
     design: {
       approved: issue.designApproved ?? null,
       /** Unlike copy, an unsound design cannot be signed off — build reads it. */
-      blockers: designProblems,
-      canApprove: designProblems.length === 0,
+      blockers: [...designProblems, ...pagesAll],
+      canApprove: designProblems.length + pagesAll.length === 0,
     },
     build: { canBuild: buildBlockers.length === 0, blockers: buildBlockers },
   };
@@ -362,6 +420,7 @@ export function publicationWorkflow(
       // never had a type saying so.
       state: (["done", "partial", "failed", "running"].includes(s.state) ? s.state : "pending") as StageState,
       detail: s.detail,
+      ...(s.count ? { count: s.count } : {}),
     })),
     gates: [
       /* Copy has warnings, and blockers only from the pack's blocking
@@ -391,6 +450,11 @@ const running = new Set<string>();
 const isRunning = (id: string): boolean =>
   running.has(id) || liveJobFor({ type: "publication", id }) !== null;
 
+/** For the universal status: whether an issue is being worked, from any door. */
+export const publicationRunning = isRunning;
+/** Issues this file is running that may not have a job listed yet. */
+export const runningPublicationIds = (): readonly string[] => [...running];
+
 export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps): void {
   const { root, broadcast } = deps;
 
@@ -416,6 +480,10 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     /* Rule-breaking the design declared on purpose: shown as a badge, never a warning. */
     breaks: declaredBreaks(issue.design?.spec),
     running: isRunning(issue.id),
+    job: (() => {
+      const j = liveJobFor({ type: "publication", id: issue.id });
+      return j ? { id: j.id, ...(j.startedAt ? { startedAt: j.startedAt } : {}) } : null;
+    })(),
     /* The shared shape, alongside the two the existing screen reads. Both are
        derived from the same issue, so they cannot disagree. */
     workflow: publicationWorkflow(issue, isRunning(issue.id), liveJobFor({ type: "publication", id: issue.id }), pack, math),
@@ -424,6 +492,32 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     located: locatedFindings(issue),
     };
   };
+
+  /*
+   * Every issue being worked on now, with its stages: one call for the chat
+   * strip and the rail, so neither has to rebuild stages from loose events.
+   * Registered before "/:id", which would otherwise take "live" for an id.
+   */
+  app.get("/api/v1/publications/live", async (c) => {
+    const jobs = listJobs().filter((j) => j.ref.type === "publication" && (j.status === "running" || j.status === "queued"));
+    const ids = [...new Set([...running, ...jobs.map((j) => j.ref.id)])];
+    const live = [];
+    for (const id of ids) {
+      const issue = await open(id, false).then((o) => o.issue).catch(() => null);
+      if (!issue) continue;
+      const job = jobs.find((j) => j.ref.id === id) ?? null;
+      live.push({
+        id,
+        title: issue.title || issue.subject,
+        jobId: job?.id ?? null,
+        startedAt: job?.startedAt ?? null,
+        stage: job?.stage ?? null,
+        message: job?.message ?? null,
+        workflow: publicationWorkflow(issue, true, job),
+      });
+    }
+    return c.json({ live });
+  });
 
   // Everything about one issue, in the shape the detail page needs: what has
   // run, what is gated on what, and every finding the audit left standing.
@@ -504,9 +598,12 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     if (isRunning(id)) return c.json({ error: "this issue is already running" }, 409);
     const body = await c.req.json().catch(() => ({})) as { from?: PublicationStage; stopAt?: PublicationStage };
     const from = STAGES.includes(body.from as PublicationStage) ? body.from as PublicationStage : "write";
-    const stopAt = STAGES.includes(body.stopAt as PublicationStage) ? body.stopAt as PublicationStage : "audit";
+    // How many designs the design stage makes for the gate to choose among (1-4).
+    const designOptions = Number((body as { designOptions?: unknown }).designOptions);
+    const stopAt = STAGES.includes(body.stopAt as PublicationStage) ? body.stopAt as PublicationStage : "write";
 
     const { ctx } = await open(id, true);
+    if (Number.isFinite(designOptions) && designOptions >= 1) await setPublicationDesignCount(ctx, id, designOptions);
     running.add(id);
     broadcast("publication:run", { id, state: "start", from, stopAt });
 
@@ -522,12 +619,33 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
       .then(() => broadcast("publication:run", { id, state: "done" }))
       .catch(async (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
-        await setPublicationLastError(ctx, id, { stage: from, message });
+        // The runner records the stage it actually died in. Writing `from`
+        // over it filed a fact-check failure under research.
+        const recorded = await open(id, false).then((o) => o.issue.lastError).catch(() => null);
+        if (!recorded) await setPublicationLastError(ctx, id, { stage: from, message });
         broadcast("publication:run", { id, state: "error", message });
       })
       .finally(() => running.delete(id));
 
     return c.json({ started: true, from, stopAt });
+  });
+
+  /*
+   * The editor's pick at the design gate, when the design stage made several
+   * options for one creation. It becomes the issue's design; a sign-off goes.
+   */
+  app.post("/api/v1/publications/:id/design/choose", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is running — stop it first" }, 409);
+    const body = await c.req.json().catch(() => ({})) as { option?: number };
+    const k = Number(body.option);
+    if (!Number.isInteger(k) || k < 0) return c.json({ error: "an option index is required" }, 400);
+    const { ctx } = await open(id, true);
+    const issue = await choosePublicationDesign(ctx, id, k).catch((e: unknown) => e as Error);
+    if (issue instanceof Error) return c.json({ error: issue.message }, 404);
+    broadcast("publication:issue", { id, designApproved: false });
+    broadcast("design:changed", { type: "publication", id });
+    return c.json(await detail(issue));
   });
 
   // Who it is for (picks the writing bar, 13 §4b) and how often a new one is made.
@@ -569,7 +687,7 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
         broadcast("publication:created", { id: next.id, from: id, recurring: next.recurring ?? null });
         const { ctx: runCtx } = await open(next.id, true);
         running.add(next.id);
-        void runPublication(runCtx, next.id, { from: "research", stopAt: "audit" })
+        void runPublication(runCtx, next.id, { from: "research", stopAt: "write" })
           .then(() => broadcast("publication:run", { id: next.id, state: "done" }))
           .catch(async (error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
@@ -600,6 +718,142 @@ export function registerPublicationRoutes(app: Hono, deps: PublicationRouteDeps)
     } finally {
       running.delete(id);
     }
+  });
+
+  // The same approved copy, to be designed again in another design language.
+  /*
+   * A design made outside Quire, taken as one more option at the design gate
+   * (core installDesign): its frames are checked and boxed from the grid, so
+   * the builder lays exactly what was planned.
+   */
+  app.post("/api/v1/publications/:id/design/install", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is running — stop it first" }, 409);
+    const body = await c.req.json().catch(() => ({})) as Record<string, unknown>;
+    const { ctx } = await open(id, true);
+    const issue = await installPublicationDesign(ctx, id, body).catch((e: unknown) => e as Error);
+    if (issue instanceof Error) return c.json({ error: issue.message }, 400);
+    broadcast("publication:issue", { id, designApproved: false });
+    broadcast("design:changed", { type: "publication", id });
+    return c.json(await detail(issue));
+  });
+
+  /* The look the issue is designed to (core looks.ts): the editor's choice, applied from the next design. */
+  app.put("/api/v1/publications/:id/look", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is running — stop it first" }, 409);
+    const body = await c.req.json().catch(() => ({})) as { look?: unknown };
+    const { ctx } = await open(id, true);
+    const issue = await setPublicationLook(ctx, id, typeof body.look === "string" && body.look ? body.look : null).catch((e: unknown) => e as Error);
+    if (issue instanceof Error) return c.json({ error: issue.message }, 400);
+    broadcast("publication:issue", { id });
+    return c.json(await detail(issue));
+  });
+
+  /* The brand the issue is held to (core brand.ts): fixed colours, faces, shapes and pictures from the next design. */
+  app.put("/api/v1/publications/:id/brand", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is running — stop it first" }, 409);
+    const body = await c.req.json().catch(() => ({})) as { brand?: unknown };
+    const { ctx } = await open(id, true);
+    const issue = await setPublicationBrand(ctx, id, typeof body.brand === "string" && body.brand ? body.brand : null).catch((e: unknown) => e as Error);
+    if (issue instanceof Error) return c.json({ error: issue.message }, 400);
+    broadcast("publication:issue", { id });
+    return c.json(await detail(issue));
+  });
+
+  /*
+   * A branded issue's spreads, designed as scripts and judged (core spread-author.ts). POST runs the
+   * build for every spread, or `only` the spreads holding those pages, `rounds` revisions at most;
+   * a spread already made is replayed. GET is where each spread stands.
+   */
+  app.post("/api/v1/publications/:id/spreads", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is already running" }, 409);
+    const body = await c.req.json().catch(() => ({})) as { only?: unknown; rounds?: unknown };
+    const only = Array.isArray(body.only) ? body.only.map(Number).filter(Number.isFinite) : null;
+    const rounds = Math.max(1, Math.min(5, Number(body.rounds) || 3));
+    const { ctx } = await open(id, true);
+    running.add(id);
+    broadcast("publication:run", { id, state: "start", from: "build", stopAt: "build" });
+    void setPublicationLastError(ctx, id, null)
+      .then(() => buildPublicationSpreads(ctx, id, { rounds, only }))
+      .then(() => broadcast("publication:run", { id, state: "done" }))
+      .catch(async (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        await setPublicationLastError(ctx, id, { stage: "build", message });
+        broadcast("publication:run", { id, state: "error", message });
+      })
+      .finally(() => running.delete(id));
+    return c.json({ started: true, only, rounds });
+  });
+  app.get("/api/v1/publications/:id/spreads", async (c) => {
+    const id = c.req.param("id");
+    const { ctx } = await open(id, false);
+    return c.json({ spreads: await publicationSpreads(ctx, id) });
+  });
+
+  /* The brands installed with Quire (core/brands). */
+  app.get("/api/v1/brands", (c) => c.json({ brands: listBrands(), selected: selectedBrand(root) }));
+  /* The brand new issues are held to; null for none. */
+  app.put("/api/v1/brands/selected", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { brand?: unknown };
+    try {
+      const selected = selectBrand(root, typeof body.brand === "string" && body.brand ? body.brand : null);
+      broadcast("brand:selected", { brand: selected });
+      return c.json({ selected });
+    } catch (e) { return c.json({ error: (e as Error).message }, 400); }
+  });
+  /* A brand's design system page and its reference spreads, for the Brand page. */
+  app.get("/api/v1/brands/:id", (c) => {
+    const brand = loadBrand(c.req.param("id"));
+    if (!brand) return c.json({ error: "no such brand" }, 404);
+    return c.json({ id: brand.id, name: brand.name, mark: brand.mark, references: brand.references.map((f) => basename(f)) });
+  });
+  app.get("/api/v1/brands/:id/design-system", (c) => {
+    const brand = loadBrand(c.req.param("id"));
+    const file = brand && join(brand.dir, "design-system.html");
+    if (!file || !existsSync(file)) return c.json({ error: "no design system for this brand" }, 404);
+    return c.html(readFileSync(file, "utf-8"));
+  });
+  app.get("/api/v1/brands/:id/references/:file", (c) => {
+    const brand = loadBrand(c.req.param("id"));
+    const name = c.req.param("file");
+    const file = brand?.references.find((f) => basename(f) === name);
+    if (!file) return c.json({ error: "no such reference" }, 404);
+    return c.body(readFileSync(file), 200, { "content-type": /\.png$/i.test(file) ? "image/png" : "image/jpeg" });
+  });
+
+  app.post("/api/v1/publications/:id/fork", async (c) => {
+    const id = c.req.param("id");
+    const { ctx } = await open(id, false);
+    const fork = await forkPublication(ctx, id);
+    broadcast("publication:issue", { id: fork.id, status: fork.status });
+    return c.json({ ok: true, id: fork.id });
+  });
+
+  /*
+   * Every page made right by Quire: laid out, rendered, its proof looked at,
+   * redesigned while it fails (core page-score-run.ts `perfectIssue`). The
+   * build stage runs the same before the PDF; this runs it on its own.
+   */
+  app.post("/api/v1/publications/:id/perfect", async (c) => {
+    const id = c.req.param("id");
+    if (isRunning(id)) return c.json({ error: "this issue is running - stop it first" }, 409);
+    const body = await c.req.json().catch(() => ({})) as { pages?: unknown; rounds?: unknown };
+    const pages = Array.isArray(body.pages) ? body.pages.map(Number).filter((n) => Number.isInteger(n)) : undefined;
+    const rounds = Number.isInteger(body.rounds) ? Number(body.rounds) : undefined;
+    const { ctx } = await open(id, true);
+    const job = enqueueJob({
+      ref: { type: "publication", id },
+      stage: "design.page",
+      work: async ({ signal, onProgress }) => {
+        const out = await perfectIssue({ ...ctx, signal }, id, { onProgress, ...(pages ? { pages } : {}), ...(rounds !== undefined ? { rounds } : {}) });
+        broadcast("design:changed", { type: "publication", id });
+        return out;
+      },
+    });
+    return c.json({ ok: true, job });
   });
 
   // A page as an image, so a spread can be looked at instead of inferred from

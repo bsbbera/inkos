@@ -94,11 +94,11 @@ export function useShellData(sse?: { readonly messages: ReadonlyArray<SSEMessage
   const tails = useMemo(
     () => ({
       home: waiting,
-      books: books.length,
-      magazine: publications.length,
+      /* Everything on the shelf, of every kind. */
+      library: books.length + publications.length + (workspace?.projects ?? []).filter((c) => c.files > 0 && c.kind !== "book" && c.kind !== "publication").length,
       daemon: daemon?.running ? "on" : undefined,
     }),
-    [waiting, books.length, publications.length, daemon?.running],
+    [waiting, books.length, publications.length, workspace?.projects, daemon?.running],
   );
 
   /* "Gemini 3.8 Flash High · Antigravity": the model and who serves it, because
@@ -119,16 +119,16 @@ export function useShellData(sse?: { readonly messages: ReadonlyArray<SSEMessage
         icon: "book" as const,
         label: b.title,
         hint: `chapter ${b.lastChapterNumber} of ${b.targetChapters}`,
-        group: "Books",
-        route: { page: "book" as const, bookId: b.id },
+        group: "Library",
+        route: { page: "audit" as const, kind: "book", id: b.id },
       })),
       ...publications.map((p) => ({
         id: `pub:${p.id}`,
         icon: "magazine" as const,
         label: p.title,
         hint: p.subject,
-        group: "Magazine",
-        route: { page: "publication" as const, issueId: p.id },
+        group: "Library",
+        route: { page: "audit" as const, kind: "publication", id: p.id },
       })),
     ],
     [books, publications],

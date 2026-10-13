@@ -1,3 +1,4 @@
+import { configFile } from "../utils/config-dir.js";
 import { Type, type Static } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/pi-agent-core";
 import type { PipelineRunner } from "../pipeline/runner.js";
@@ -2033,7 +2034,7 @@ function slugResearchTopic(topic: string): string {
 
 async function readResearchSearchConfig(projectRoot: string) {
   try {
-    const raw = JSON.parse(await readFile(join(projectRoot, "quire.json"), "utf-8")) as Record<string, unknown>;
+    const raw = JSON.parse(await readFile(configFile(projectRoot), "utf-8")) as Record<string, unknown>;
     return ResearchSearchConfigSchema.parse(raw.researchSearch ?? {});
   } catch {
     return ResearchSearchConfigSchema.parse({});
@@ -2366,6 +2367,15 @@ const IssuePageParams = Type.Object({
   id: Type.String({ description: "The publication issue id, as listed by publication tools." }),
   page: Type.Number({ description: "Page number, 1-based, exactly as the issue numbers its pages." }),
 });
+const IssueArtParams = Type.Object({
+  id: Type.String({ description: "The publication issue id, as listed by publication tools." }),
+  page: Type.Number({ description: "Page number, 1-based, exactly as the issue numbers its pages." }),
+  from: Type.Optional(Type.String({ description: "Path of a picture already made, to use for this page instead of drawing a new one; only its treatment (a cutout) is run on it." })),
+});
+const IssueLookParams = Type.Object({
+  id: Type.String({ description: "The publication issue id." }),
+  look: Type.Optional(Type.String({ description: "The look to design the issue to, by name as listed; leave out to list the looks." })),
+});
 const IssueOnlyParams = Type.Object({
   id: Type.String({ description: "The publication issue id." }),
 });
@@ -2462,13 +2472,36 @@ export function createPublicationProductionTools(
         + "page already carries, and attach it to the page. Use this to redo a single page's image "
         + "without touching any other page. Needs the issue's copy approved.",
       label: "Render Page Art",
-      parameters: IssuePageParams,
-      async execute(_id: string, params: IssuePageParamsType, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
+      parameters: IssueArtParams,
+      async execute(_id: string, params: Static<typeof IssueArtParams>, _signal?: AbortSignal, onUpdate?: AgentToolUpdateCallback) {
         const { ctx } = await open(params.id);
         const { artPage } = await import("../pipeline/publication-runner.js");
-        onUpdate?.(textResult(`Rendering art for page ${params.page}…`));
-        const page = await artPage(ctx, params.id, params.page);
+        onUpdate?.(textResult(params.from ? `Using ${params.from} for page ${params.page}…` : `Rendering art for page ${params.page}…`));
+        // The tool is how one page's picture is redone, so it never keeps the old one.
+        const page = await artPage(ctx, params.id, params.page, { redo: true, ...(params.from ? { from: params.from } : {}) });
         return textResult(`Page ${page.n} art: ${page.image ?? "not written"}`);
+      },
+    },
+    {
+      name: "publication_look",
+      description:
+        "List the looks an issue can be designed to (the editor's reference sets), or set the one this issue "
+        + "is designed to. A look is the editor's choice: suggest the ones that suit the content and ask, never "
+        + "set one they did not choose. The design stage, the page planner and the eye all follow the chosen look.",
+      label: "Choose Look",
+      parameters: IssueLookParams,
+      async execute(_id: string, params: Static<typeof IssueLookParams>) {
+        const { ctx } = await open(params.id);
+        const { listLooks } = await import("../pipeline/looks.js");
+        if (!params.look) {
+          const all = await listLooks(ctx.projectRoot);
+          return textResult(all.length
+            ? all.map((l) => `- ${l.name}: ${l.images.length} reference pages${l.layers ? ", layered colour" : ""}${l.extras != null ? `, ${l.extras} extras a page` : ""}${l.standard ? ` — ${l.standard.split("\n").find((x) => x.trim() && !x.startsWith("#"))?.slice(0, 160) ?? ""}` : ""}`).join("\n")
+            : "No looks yet: the editor adds one as a folder of reference pages under _taste/references.");
+        }
+        const { setIssueLook } = await import("../pipeline/publication-runner.js");
+        await setIssueLook(ctx, params.id, params.look);
+        return textResult(`Issue ${params.id} is designed to the look "${params.look}" from its next design.`);
       },
     },
     {

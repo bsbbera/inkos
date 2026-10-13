@@ -35,19 +35,20 @@ describe("what has happened to an issue", () => {
         fixed: { folio: "f", trim: "t", grid: "g", divider: "d" },
       },
     } as Partial<PublicationIssue>));
-    expect(designed.find((s) => s.stage === "design")).toMatchObject({ state: "done", detail: "1 sections styled" });
+    expect(designed.find((s) => s.stage === "design")).toMatchObject({ state: "done", detail: "1 section styled" });
   });
 
   it("calls a half-written issue partial, not done", () => {
     const states = stageStates(issue({ pages: [page(1), page(2, { body: null })] as never }));
-    expect(states.find((s) => s.stage === "write")).toMatchObject({ state: "partial", detail: "1/2 pages written" });
+    expect(states.find((s) => s.stage === "write")).toMatchObject({ state: "partial", detail: "1 of 2 pages written" });
   });
 
   it("says whether the audit revised anything or only reported", () => {
-    const reported = stageStates(issue({ audit: { at: "now", findings: [], rounds: 0 } }));
-    expect(reported.find((s) => s.stage === "audit")?.detail).toContain("not revised");
+    const finding = { page: 1, category: "voice", severity: "warning", description: "flat" } as never;
+    const reported = stageStates(issue({ audit: { at: "now", findings: [finding], rounds: 0 } }));
+    expect(reported.find((s) => s.stage === "audit")?.detail).toBe("1 finding, not revised yet");
     const revised = stageStates(issue({ audit: { at: "now", findings: [], rounds: 2 } }));
-    expect(revised.find((s) => s.stage === "audit")?.detail).toContain("2 revise rounds");
+    expect(revised.find((s) => s.stage === "audit")?.detail).toBe("no problems found, revised 2 times");
   });
 });
 
@@ -67,13 +68,13 @@ describe("a stage that failed", () => {
 
   it("shows the stage being worked on as running, keeping its progress", () => {
     const planning = stageStates(issue({ pages: [], sections: [] } as Partial<PublicationIssue>), { stage: "plan" });
-    expect(planning.find((s) => s.stage === "plan")).toMatchObject({ state: "running", detail: "working on it" });
+    expect(planning.find((s) => s.stage === "plan")).toMatchObject({ state: "running", detail: "working…" });
 
     const writing = stageStates(
       issue({ pages: [page(1), page(2, { body: null })] as never }),
       { stage: "write" },
     );
-    expect(writing.find((s) => s.stage === "write")).toMatchObject({ state: "running", detail: "1/2 pages written" });
+    expect(writing.find((s) => s.stage === "write")).toMatchObject({ state: "running", detail: "1 of 2 pages written", count: { done: 1, total: 2 } });
   });
 
   // A run that stopped at page 15 keeps what it checked, and the strip says so.
@@ -85,7 +86,7 @@ describe("a stage that failed", () => {
       },
     }));
     expect(states.find((s) => s.stage === "fact-check")).toMatchObject({
-      state: "partial", detail: "4 claims checked, 0 worth acting on, 1/2 pages",
+      state: "partial", detail: "1 of 2 pages checked, 4 claims, 0 to fix",
     });
   });
 
@@ -98,7 +99,7 @@ describe("a stage that failed", () => {
 
   it("does not call art done before there is a flatplan", () => {
     const states = stageStates(issue({ pages: [], sections: [] } as Partial<PublicationIssue>));
-    expect(states.find((s) => s.stage === "art")).toMatchObject({ state: "pending", detail: "no flatplan yet" });
+    expect(states.find((s) => s.stage === "art")).toMatchObject({ state: "pending", detail: "waits for the plan" });
   });
 
   it("shows a stopped stage as stopped, not as failed", () => {
@@ -110,7 +111,7 @@ describe("a stage that failed", () => {
       lastError: { at: "now", stage: "fact-check", message: "Stopped by user", stopped: true },
     } as Partial<PublicationIssue>));
     expect(states.find((s) => s.stage === "fact-check")).toMatchObject({
-      state: "partial", detail: "stopped · 7 claims checked, 0 worth acting on, 1/2 pages",
+      state: "partial", detail: "stopped · 1 of 2 pages checked, 7 claims, 0 to fix",
     });
   });
 
@@ -141,7 +142,7 @@ describe("the gates, and what is holding them", () => {
 
   it("warns before a copy approval without refusing it — the editor decides", () => {
     const gates = gateState(issue({ pages: [page(1), page(2, { body: null })] as never }));
-    expect(gates.copy.warnings).toContain("1 pages are still unwritten");
+    expect(gates.copy.warnings).toContain("1 page is still unwritten");
     expect(gates.copy.warnings).toContain("the issue has not been audited");
   });
 

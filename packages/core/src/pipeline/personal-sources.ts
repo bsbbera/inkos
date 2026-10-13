@@ -11,6 +11,7 @@
  *
  * Nothing leaves the machine except as prompt text to the person's own model.
  */
+import { stateDir } from "../utils/config-dir.js";
 import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -33,7 +34,7 @@ export interface PersonalSourcesConfig {
   readonly zotero?: { readonly path?: string; readonly tag?: string; readonly since?: string } | null;
 }
 
-export const personalConfigPath = (root: string) => join(root, ".quire", "personal-sources.json");
+export const personalConfigPath = (root: string) => join(stateDir(root), "personal-sources.json");
 
 export async function readPersonalConfig(root: string): Promise<PersonalSourcesConfig> {
   return await readFile(personalConfigPath(root), "utf-8")
@@ -42,7 +43,7 @@ export async function readPersonalConfig(root: string): Promise<PersonalSourcesC
 }
 
 export async function writePersonalConfig(root: string, config: PersonalSourcesConfig): Promise<void> {
-  await mkdir(join(root, ".quire"), { recursive: true });
+  await mkdir(stateDir(root), { recursive: true });
   await writeFile(personalConfigPath(root), `${JSON.stringify(config, null, 2)}\n`, "utf-8");
 }
 

@@ -12,6 +12,15 @@ const spec = (blocks: PageBlock[], extra: Record<string, unknown> = {}): DesignS
 });
 
 describe("page blocks", () => {
+  it("keeps the body when a pull placed before it sits on it (Rain l2 p2)", () => {
+    const { spec: out, dropped } = cleanBlocks(spec([
+      { kind: "pull", slot: { col: 1, span: 6, row: 30, rows: 6 } },
+      { kind: "body", slot: { col: 1, span: 12, row: 28, rows: 20 } },
+    ]));
+    expect(out.pages["3"]!.blocks!.map((b) => b.kind)).toEqual(["body"]);
+    expect(dropped.join()).toMatch(/dropped pull - it sat on the body/);
+  });
+
   it("knows the grid's depth from the spec", () => {
     expect(gridOf(spec([])).rows).toBe(Math.floor((297 - 28 - 10) / 4.7625));
     expect(gridOf(null).columns).toBe(12);

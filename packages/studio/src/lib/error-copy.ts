@@ -54,7 +54,7 @@ export interface PlainError {
   /** True when `text` is a rewrite, so the raw message is worth offering. */
   readonly rewritten: boolean;
   /** Where the fix lives: the model settings, or running it again. */
-  readonly fix?: "models" | "resume";
+  readonly fix?: "models" | "resume" | "search" | "machine";
   /** A usage limit that says when it lifts: how long after the error, in ms. */
   readonly resetMs?: number;
 }
@@ -87,6 +87,60 @@ export function briefly(detail: string): string {
   return plainError(detail).text.split(/(?<=\.)\s/)[0]!.trim();
 }
 
+/*
+ * Quire's own failures, said as what happened and what to do. Each was seen
+ * raw on screen ("publication already exists: indigo-…", "spawn devin ENOENT")
+ * by someone who then had to ask what it meant.
+ */
+const QUIRE_ERRORS: ReadonlyArray<{ readonly test: RegExp; readonly text: string; readonly fix?: PlainError["fix"] }> = [
+  {
+    test: /written from memory alone|no search source/,
+    text: "Research needs a way to search the web, and none is set up. Add a search server (Brave, Tavily) in MCP settings, or put a Tavily or Brave key in Settings.",
+    fix: "search",
+  },
+  {
+    test: /eperm|ebusy|operation not permitted|resource busy or locked/,
+    text: "Windows would not let Quire save a file because something else had it open for a moment (a virus scan or a sync tool). Nothing was lost. Pick it up again.",
+    fix: "resume",
+  },
+  {
+    test: /publication already exists/,
+    text: "An issue with this subject already exists. Open it from Magazine and pick it up, or give this one a different angle.",
+  },
+  {
+    test: /already running|is running — stop it first|is running - stop it first/,
+    text: "This is already being worked on. Wait for it, or stop it first.",
+  },
+  {
+    test: /no design yet|no design has been run|run the design stage/,
+    text: "There is no design yet. Run the design stage first.",
+  },
+  {
+    test: /6767|affinity.{0,40}(not running|refused|unreachable|closed)/,
+    text: "Affinity is not open, or its script bridge is off. Open Affinity, then try again.",
+    fix: "machine",
+  },
+  {
+    test: /8188|comfy.{0,40}(not running|refused|unreachable)/,
+    text: "ComfyUI is not running, so no pictures can be drawn. Start it from Settings → Machine, then try again.",
+    fix: "machine",
+  },
+  {
+    test: /spawn \S+ enoent|command not found|is not recognized as an internal/,
+    text: "The model's command-line app is not installed or not on this machine's path. Install it, or pick another model in Settings.",
+    fix: "models",
+  },
+  {
+    test: /invalid json|unexpected token|could not parse|not valid json/,
+    text: "The model answered in a shape Quire could not read. Usually a second try works; if it keeps happening, pick another model in Settings.",
+    fix: "models",
+  },
+  {
+    test: /cannot be composed|could not be composed/,
+    text: "A page could not be laid out after several tries. Run design again for that page, or give it a note.",
+  },
+];
+
 export function plainError(message: string): PlainError {
   const head = /^([\w.-]+):\s*([\w.-]+):\s*[\w-]+\s*[—-]\s*/.exec(message);
   const where = head ? head[1].replace(/-(\d+)$/, " $1") : "";
@@ -97,6 +151,10 @@ export function plainError(message: string): PlainError {
   let text: string | null = null;
   let fix: PlainError["fix"];
   let resetMs: number | undefined;
+  /* Quire's own refusals first: they name the remedy in Quire's terms, and
+     the provider patterns below would misread some of them ("not running"). */
+  const own = QUIRE_ERRORS.find((e) => e.test.test(m));
+  if (own) return { where, text: own.text, rewritten: true, ...(own.fix ? { fix: own.fix } : {}) };
   if (/429|rate.?limit|quota|resource_exhausted|too many requests/.test(m)) {
     text = `${who} has hit its usage limit.` + (reset ? ` It resets in ${reset}.` : "")
       + " Resume then, or pick another model in Settings.";

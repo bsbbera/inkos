@@ -1,5 +1,10 @@
 /*
- * Audit. Mock 08.
+ * Audit. Mock 08. The workspace: where most of the time in Quire is spent.
+ *
+ * Across the top, the work you are in: what it is, every stage of its run as
+ * it moves, and every count that says how far along it is. Below, three
+ * columns - every work and its pages, the page itself, and what is open on
+ * that page with everything you can do about it.
  *
  * Scope, queue, passage. You say what gets read, you empty the queue with two
  * keys, and the paragraph that produced each finding is on screen beside it —
@@ -16,7 +21,6 @@
  * your intent, round dots are the file's own state; they never mean the same
  * thing inside one row.
  */
-import { briefly } from "../lib/error-copy";
 import { Num } from "../components/ui/num";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TypeMark } from "../components/TypeMark";
@@ -24,7 +28,9 @@ import type { SSEMessage } from "../hooks/use-sse";
 import { fetchJson, useApi } from "../hooks/use-api";
 import { useNewSSEMessages } from "../hooks/use-sse";
 import { Icon } from "../components/ui/icon";
-import { Orb } from "../components/ui/working";
+import { Orb, orbForStage } from "../components/ui/working";
+import { Elapsed, stageLabel, type LiveRun } from "../components/stage-rail";
+import { useLiveRuns } from "../hooks/use-live-runs";
 import { RunError } from "../components/ui/run-error";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Seg, toast, useQueueKeys } from "../components/ui/vermilion";
@@ -37,7 +43,7 @@ import { PicturesStrip } from "../components/PicturesStrip";
 import { SettingCard } from "../components/SettingCard";
 import { Verdict } from "../components/Verdict";
 import {
-  Grip, ReadAloud, ReadingSize, STAGE_CLASS, useColumns, useReadingSize, type Workflow,
+  Grip, ReadAloud, ReadingSize, useColumns, useReadingSize, type Workflow,
 } from "../components/workflow";
 
 /* ------------------------------------------------------------------- types */
@@ -298,6 +304,19 @@ export function AuditPage({ sse, open }: {
     }
   }, [picked, projects]);
 
+  /* Every work's counts in one call, for the list on the left: the same walk
+     Home and the Library count from, so the three never disagree. */
+  const { data: summary, refetch: refetchSummary } =
+    useApi<{ projects: ReadonlyArray<Tally> }>("/workspace/summary");
+  const tallies = useMemo(
+    () => new Map((summary?.projects ?? []).map((t) => [`${t.kind}/${t.id}`, t])),
+    [summary],
+  );
+
+  /* Whatever is running, of any work, with its stages - polled while it runs,
+     because "page 3 of 8" moves without an event. */
+  const { runs: liveRuns, stop: stopRun } = useLiveRuns(sse.messages);
+
   const { data: detail, refetch: refetchDetail } = useApi<Detail>(
     picked ? `/audit/project/${picked.kind}/${picked.id}` : "",
   );
@@ -334,6 +353,21 @@ export function AuditPage({ sse, open }: {
     : 1;
 
   /* Any gate, any time. A sign-off is a record; nothing waits on it. */
+  /* A sign-off the work itself carries: a magazine's writing and design live
+     on the issue, any other kind's on its files. Build reads these, not the
+     run's own gates below them. */
+  const decideWorkGate = async (gate: string, yes: boolean) => {
+    if (!picked) return;
+    const issue = picked.kind === "publication";
+    await act("gate", () => fetchJson(
+      issue ? `/publications/${encodeURIComponent(picked.id)}/approve`
+        : `/audit/project/${picked.kind}/${encodeURIComponent(picked.id)}/approve`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(issue ? { what: gate === "design" ? "design" : "copy", approve: yes } : { gate, approve: yes }) },
+    ), yes ? "Signed off." : "Sign-off withdrawn.");
+    await refetchPipeline();
+  };
+
   const decideGate = async (verb: "approve" | "withdraw", gate: string) => {
     if (!picked) return;
     await act("gate", () => fetchJson(
@@ -368,9 +402,18 @@ export function AuditPage({ sse, open }: {
        was not, so a restyle that rewrote fourteen chapters left every one of
        them still reading as it did before until the screen was reloaded. */
     if (m.event === "findings:changed" || m.event === "audit:state") {
-      void Promise.all([refetchFindings(), refetchDetail(), refetchProjects()]);
+      void Promise.all([refetchFindings(), refetchDetail(), refetchProjects(), refetchSummary()]);
+      return;
     }
-  }, [refetchFindings, refetchDetail, refetchProjects]));
+    /* A run moving a stage on, or ending. The strip reads the live run while
+       one is going and this detail once it stops, so without asking again
+       here a finished design read "not started" until the screen reloaded. */
+    const d = (m.data ?? {}) as { state?: string };
+    if ((m.event === "publication:stage" && (d.state === "done" || d.state === "error"))
+      || m.event === "publication:run" || m.event === "publication:issue" || /^job:(done|failed|cancelled)$/.test(m.event)) {
+      void Promise.all([refetchDetail(), refetchPipeline(), refetchSummary(), refetchFindings()]);
+    }
+  }, [refetchFindings, refetchDetail, refetchProjects, refetchSummary, refetchPipeline]));
 
   /* ---- the page being worked ---- */
 
@@ -454,6 +497,7 @@ export function AuditPage({ sse, open }: {
       await refetchDetail();
       await refetchProjects();
       await refetchFindings();
+      await refetchSummary();
     } catch (e) {
       toast(e instanceof Error ? e.message : "That did not take.");
     } finally {
@@ -464,7 +508,7 @@ export function AuditPage({ sse, open }: {
          when nothing was. */
       setProgress(null);
     }
-  }, [refetchDetail, refetchProjects, refetchFindings]);
+  }, [refetchDetail, refetchProjects, refetchFindings, refetchSummary]);
 
   /*
    * Sign off the page on screen, and only that page.
@@ -535,7 +579,7 @@ export function AuditPage({ sse, open }: {
   /* Equal by default; drag a seam to change it, double-click one to go back.
      `reset` matters because the widths are kept in `localStorage`: without it
      a drag made on a wide monitor is the layout forever. */
-  const { template, onGrip, reset: resetCols } = useColumns("audit", 3);
+  const { template, onGrip, reset: resetCols } = useColumns("audit-workspace", 3);
 
   /* The editor's note about the file the current finding is in. */
   const [note, setNote] = useState("");
@@ -802,19 +846,33 @@ export function AuditPage({ sse, open }: {
     );
   }
 
+  const here = items.find((i) => i.path === page) ?? null;
+  const live = picked ? liveRuns.find((r) => r.kind === picked.kind && r.id === picked.id) ?? null : null;
+
   return (
     <div className="workbench">
-      {/* No title strip. It said the name of the work and how many files it
-          has, which is the row you clicked in the queue to get here and the
-          count printed at the top of the queue - three copies of one fact
-          across the top of the screen, costing every column the height. The
-          work you are in is the one lit up on the left. */}
+      {/* The work you are in, its run as it moves, and every count about it.
+          One strip for the whole work; the right column below is about one
+          page. They used to share a column, and the page's counts sat under
+          the work's where nobody could tell which was which. */}
+      {detail ? (
+        <WorkStrip
+          detail={detail}
+          items={items}
+          findings={findings}
+          live={live}
+          onStop={live?.jobId ? () => void stopRun(live.jobId!) : undefined}
+        />
+      ) : null}
+
       <div
         className="cols cols-audit"
         style={template ? ({ "--cols": template } as React.CSSProperties) : undefined}
       >
         <ScopeColumn
           projects={projects}
+          tallies={tallies}
+          live={liveRuns}
           picked={picked}
           onPick={setPicked}
           items={items}
@@ -830,34 +888,6 @@ export function AuditPage({ sse, open }: {
         />
 
         <Grip onPointerDown={onGrip(0)} onReset={resetCols} />
-
-        <StateColumn
-          pipeRun={pipeRun}
-          onGate={(verb, gate) => void decideGate(verb, gate)}
-          detail={detail ?? null}
-          busy={busy}
-          running={running}
-          onApprove={(yes) => void approvePage(yes)}
-          declared={declared}
-          onStart={() => void startNext()}
-          onResume={(a, b) => void resume(a, b)}
-          onRevise={(deslop) => void revisePage(deslop)}
-          onRestyle={(whole) => void restylePage(whole)}
-          voice={stylePlan?.voice ?? null}
-          restyling={restyling}
-          items={items}
-          allFindings={findings}
-          here={items.find((i) => i.path === page) ?? null}
-          pageName={pageName}
-          queue={queue}
-          counts={counts}
-          filter={filter}
-          onFilter={setFilter}
-          at={current}
-          onPick={(id) => setAtIndex(queue.findIndex((f) => f.id === id))}
-        />
-
-        <Grip onPointerDown={onGrip(1)} onReset={resetCols} />
 
         <PageColumn
           path={page}
@@ -877,7 +907,7 @@ export function AuditPage({ sse, open }: {
           onNote={setNote}
           reviseBusy={reviseBusy}
           onRevise={() => { if (page) void reviseFile(page, note); }}
-          history={historyOf(items.find((i) => i.path === page)?.audit ?? {})}
+          history={historyOf(here?.audit ?? {})}
           busy={settling}
           onAccept={() => void settle("accepted")}
           onIgnore={() => void settle("ignored")}
@@ -887,8 +917,210 @@ export function AuditPage({ sse, open }: {
           onReader={() => void runReader()}
         />
 
+        <Grip onPointerDown={onGrip(1)} onReset={resetCols} />
+
+        <StateColumn
+          pipeRun={pipeRun}
+          onGate={(verb, gate) => void decideGate(verb, gate)}
+          onWorkGate={(gate, yes) => void decideWorkGate(gate, yes)}
+          detail={detail ?? null}
+          busy={busy}
+          running={running}
+          onApprove={(yes) => void approvePage(yes)}
+          declared={declared}
+          onStart={() => void startNext()}
+          onResume={(a, b) => void resume(a, b)}
+          onRevise={(deslop) => void revisePage(deslop)}
+          onRestyle={(whole) => void restylePage(whole)}
+          voice={stylePlan?.voice ?? null}
+          restyling={restyling}
+          here={here}
+          pageName={pageName}
+          queue={queue}
+          counts={counts}
+          filter={filter}
+          onFilter={setFilter}
+          at={current}
+          onPick={(id) => setAtIndex(queue.findIndex((f) => f.id === id))}
+        />
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------ 0. the work */
+
+/** One work's counts from the folder walk - `GET /workspace/summary`. */
+interface Tally {
+  readonly kind: string;
+  readonly id: string;
+  readonly files: number;
+  readonly words: number;
+  readonly read: number;
+  readonly signedOff: number;
+  readonly open: number;
+  readonly blocking: number;
+}
+
+/** The screens a kind keeps for what this one does not do. */
+function ownScreens(kind: string, id: string): ReadonlyArray<{ readonly href: string; readonly label: string }> {
+  const e = encodeURIComponent(id);
+  switch (kind) {
+    case "publication": return [{ href: `#/publication/${e}`, label: "Brief, proofs & build" }];
+    case "book": return [
+      { href: `#/book/${e}/settings`, label: "Chapters & export" },
+      { href: `#/book/${e}`, label: "Talk about it" },
+    ];
+    case "interactive-film": return [
+      { href: `#/film/${e}`, label: "Story graph" },
+      { href: `#/flow/${e}`, label: "Flow" },
+      { href: `#/studio/film/${e}`, label: "Film studio" },
+    ];
+    case "play": return [{ href: `#/play/${e}`, label: "Play it" }];
+    default: return [];
+  }
+}
+
+/**
+ * The work, across the top: what it is, its run stage by stage, and its counts.
+ *
+ * The stages come from the live run while one is going - it is polled, so
+ * "write · 3 of 8" moves - and from the files on disk when nothing is.
+ */
+function WorkStrip({ detail, items, findings, live, onStop }: {
+  readonly detail: Detail;
+  readonly items: ReadonlyArray<Item>;
+  /** Every finding on record; narrowed to this work's files before counting. */
+  readonly findings: ReadonlyArray<Finding>;
+  readonly live: LiveRun | null;
+  readonly onStop: (() => void) | undefined;
+}) {
+  const workflow = live?.workflow ?? detail.workflow ?? null;
+  const t = useMemo(() => {
+    const paths = new Set(items.map((i) => i.path));
+    const open = findings.filter((f) => paths.has(f.path) && f.state === "open");
+    return {
+      pages: items.length,
+      read: items.filter((i) => i.audit.checked).length,
+      signed: items.filter((i) => i.audit.approved).length,
+      open: open.length,
+      blocking: open.filter((f) => f.severity === "blocking").length,
+      words: items.reduce((n, i) => n + i.words, 0),
+      reads: items.reduce((n, i) => n + (i.audit.reads ?? 0), 0),
+      /* Files carrying a voice, not restyle passes. "Nine restyles" over
+         fourteen chapters and nine chapters restyled are the same number and
+         a different answer to "is this book in that voice yet". */
+      styled: items.filter((i) => i.audit.restyles).length,
+      voice: items.find((i) => i.audit.voice)?.audit.voice ?? null,
+      revisions: items.reduce((n, i) => n + (i.audit.revisions ?? 0), 0),
+      deslops: items.reduce((n, i) => n + (i.audit.deslops ?? 0), 0),
+      notes: items.reduce((n, i) => n + (i.audit.notes ?? 0), 0),
+    };
+  }, [items, findings]);
+  const stages = workflow?.stages ?? [];
+  const done = stages.filter((s) => s.state === "done").length;
+  const held = workflow ? !workflow.done.can : false;
+  const unit = detail.kind === "publication" ? "page" : "file";
+  const plural = (n: number, w: string) => `${w}${n === 1 ? "" : "s"}`;
+
+  return (
+    <section className={`wstrip${live ? " is-live" : ""}`} aria-label="Where this work stands">
+      <div className="wstrip-id">
+        <span className="wstrip-mark"><TypeMark kind={detail.kind} /></span>
+        <span className="wstrip-name">
+          <span className="wstrip-kind">
+            {detail.kindLabel} · {t.pages} {plural(t.pages, unit)} · <Num value={t.words} /> words
+          </span>
+          <h2 className="wstrip-title" title={detail.id}>{detail.title}</h2>
+        </span>
+        <span className="wstrip-links">
+          {ownScreens(detail.kind, detail.id).map((l) => (
+            <a key={l.href} className="btn btn-quiet btn-sm" href={l.href}>{l.label}</a>
+          ))}
+          <a className="btn btn-quiet btn-sm" href={`#/gallery/${encodeURIComponent(detail.kind)}/${encodeURIComponent(detail.id)}`}>Pictures</a>
+        </span>
+      </div>
+
+      {/* Every count about the whole work, always on screen. */}
+      <dl className="wstrip-stats">
+        <div className={t.pages > 0 && t.read === t.pages ? "is-ok" : ""}>
+          <dt>read</dt><dd><Meter n={t.read} of={t.pages} /></dd>
+        </div>
+        <div className={t.pages > 0 && t.signed === t.pages ? "is-ok" : ""}>
+          <dt>signed off</dt><dd><Meter n={t.signed} of={t.pages} /></dd>
+        </div>
+        <div className={t.open ? "is-bad" : "is-ok"}><dt>open</dt><dd><Num value={t.open} /></dd></div>
+        <div className={t.blocking ? "is-bad" : ""}><dt>blocking</dt><dd><Num value={t.blocking} /></dd></div>
+        <div><dt>reads</dt><dd><Num value={t.reads} /></dd></div>
+        <div><dt>rewrites</dt><dd><Num value={t.revisions} /></dd></div>
+        <div><dt>de-AI</dt><dd><Num value={t.deslops} /></dd></div>
+        <div><dt>notes</dt><dd><Num value={t.notes} /></dd></div>
+        {t.styled > 0 ? (
+          <div className={t.styled === t.pages ? "is-ok" : ""}>
+            <dt>{t.voice ? `in ${t.voice}'s voice` : "styled"}</dt>
+            <dd><Meter n={t.styled} of={t.pages} /></dd>
+          </div>
+        ) : null}
+      </dl>
+
+      {workflow ? (
+        <div className="wstrip-run">
+          <ol className="wstrip-stages">
+            {stages.map((st, i) => (
+              <li key={st.stage} className={`wstage is-${st.state}`} title={`${stageLabel(st.stage)}: ${st.detail}`}>
+                <span className="wstage-dot">
+                  {st.state === "running" ? <Orb state={orbForStage(st.stage)} />
+                    : st.state === "done" ? <Icon name="check" size={11} />
+                      : st.state === "failed" ? <Icon name="alert" size={11} />
+                        : <span className="tnum">{i + 1}</span>}
+                </span>
+                <span className="wstage-text">
+                  <span className="wstage-name">{stageLabel(st.stage)}</span>
+                  <span className="wstage-detail">{st.detail}</span>
+                </span>
+                {st.count && st.count.total > 0 ? (
+                  <span className="wstage-bar" aria-hidden="true">
+                    <i style={{ transform: `scaleX(${Math.min(1, st.count.done / st.count.total)})` }} />
+                  </span>
+                ) : null}
+              </li>
+            ))}
+          </ol>
+          <div className="wstrip-say">
+            <span className="tnum dim">{done} of {stages.length} stages</span>
+            {live ? (
+              <span className="wstrip-live">
+                <Orb state={orbForStage(live.stage ?? undefined)} />
+                {live.status === "queued" ? "waiting its turn" : "working now"}
+                {live.startedAt ? <> · <Elapsed since={live.startedAt} /></> : null}
+              </span>
+            ) : (
+              <span className={held ? "wstrip-held" : "wstrip-clear"}>
+                <Icon name={held ? "alert" : "check"} size={12} />
+                <span className="trunc">{held ? workflow.done.blockers[0] : "Everything is clear — this can be called finished."}</span>
+              </span>
+            )}
+            {onStop ? (
+              <button type="button" className="btn btn-line btn-sm" onClick={onStop}>
+                <Icon name="stop" size={13} />Stop
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** "3/4" with a bar beside it that fills as the count does. */
+function Meter({ n, of }: { readonly n: number; readonly of: number }) {
+  return (
+    <span className="meter">
+      <span className="tnum">{n}/{of}</span>
+      <span className="meter-bar" aria-hidden="true">
+        <i style={{ transform: `scaleX(${of > 0 ? Math.min(1, n / of) : 0})` }} />
+      </span>
+    </span>
   );
 }
 
@@ -921,10 +1153,14 @@ function when(iso?: string): string {
 }
 
 function ScopeColumn({
-  projects, picked, onPick, items, findings, page, onPage,
+  projects, tallies, live, picked, onPick, items, findings, page, onPage,
   running, working, progress, onRead, onReadAll, onStop,
 }: {
   readonly projects: ReadonlyArray<Project>;
+  /** Each work's counts, keyed `kind/id`. */
+  readonly tallies: ReadonlyMap<string, Tally>;
+  /** What is running now, of any work. */
+  readonly live: ReadonlyArray<LiveRun>;
   readonly picked: { kind: string; id: string } | null;
   readonly onPick: (p: { kind: string; id: string }) => void;
   readonly items: ReadonlyArray<Item>;
@@ -954,18 +1190,37 @@ function ScopeColumn({
     try { localStorage.setItem("quire.audit.files", v); } catch { /* private mode */ }
   };
 
-  /* The pages of the open work. A value rather than inline markup because
-     it is rendered inside the work list, directly under the row it belongs
-     to, and standalone when there is only one production. */
-  const files = (
-    <>
+  /* Grouped by kind, in the order the newest of each kind was touched. A
+     group can be folded away; which ones are folded is kept. */
+  const groups = useMemo(() => {
+    const out = new Map<string, { label: string; works: Project[] }>();
+    for (const p of projects) {
+      const g = out.get(p.kind) ?? { label: p.kindLabel, works: [] };
+      g.works.push(p);
+      out.set(p.kind, g);
+    }
+    return [...out.entries()].map(([kind, g]) => ({ kind, ...g }));
+  }, [projects]);
+  const [folded, setFolded] = useState<ReadonlySet<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("quire.audit.folded") ?? "[]") as string[]); }
+    catch { return new Set(); }
+  });
+  const fold = (kind: string) => {
+    const next = new Set(folded);
+    if (next.has(kind)) next.delete(kind); else next.add(kind);
+    setFolded(next);
+    try { localStorage.setItem("quire.audit.folded", JSON.stringify([...next])); } catch { /* private mode */ }
+  };
+
+  /* The pages of the open work, drawn directly under its row. */
+  const pagesList = (
+    <div className="scope-files">
         {items.length === 0 ? (
           <p className="hint">Nothing finished in this one yet.</p>
         ) : view === "tiles" ? (
           /* Sheets, not cards. `.pg`/`.sheet` is the app's own page: paper at
              3:4 with the number set as a ghost folio in the corner, which is
-             where a page number lives. It was already in the stylesheet and
-             the audit column was drawing generic tiles beside it. */
+             where a page number lives. */
           <div className="pgs">
             {items.map((item) => {
               const f = fileFacts(item, findings);
@@ -981,12 +1236,11 @@ function ScopeColumn({
                   <span className="sheet">
                     <span className="rule" />
                     {f.num ? <span className="folio">{f.num}</span> : null}
-                    {/* Only where there is something to answer for. Twenty-one
-                        sheets reading "never read" said one word twenty-one
-                        times and buried the page that had findings. */}
+                    {/* Only where there is something to answer for. */}
                     {f.open > 0 ? (
                       <span className={f.blocking > 0 ? "pill pill-bad" : "pill pill-warn"}>{f.open}</span>
                     ) : null}
+                    {item.audit.approved ? <span className="sheet-signed"><Icon name="check" size={10} /></span> : null}
                   </span>
                   <span className="cap">
                     <span className={f.dot} title={f.note} />
@@ -1013,12 +1267,12 @@ function ScopeColumn({
                     <span className="name text-body" title={item.name}>{f.name}</span>
                     <span className="meta">
                       {item.words.toLocaleString()} words · {f.note}
+                      {item.audit.approved ? " · signed off" : ""}
                       {f.history ? ` · ${f.history}` : ""}
                     </span>
                   </span>
                   {/* The count, not just that there is one: "3 open" and "1
-                      open" are different amounts of work and the dot said the
-                      same thing for both. */}
+                      open" are different amounts of work. */}
                   {f.open > 0 ? (
                     <span className={f.blocking > 0 ? "pill pill-bad" : "pill pill-warn"}>{f.open}</span>
                   ) : null}
@@ -1028,26 +1282,15 @@ function ScopeColumn({
             })}
           </div>
         )}
-    </>
+    </div>
   );
 
   return (
     <div className="panel panel-flush colpanel">
-      {/* "The pages", and a count of them, above a list of pages with a count
-          on every work in it. The only thing in this row that says anything
-          is the toggle, so the row is the toggle. */}
       <div className="panel-head panel-head-thin">
         <span className="grow trunc min-w-0">
-          {picked ? (
-            <span className="rowflex gap-2 min-w-0">
-              <span className="trunc text-body font-semibold" title={picked.id}>
-                {nameOf(picked.id)}
-              </span>
-              <span className="dim text-cap flex-none">
-                {items.length} file{items.length === 1 ? "" : "s"}
-              </span>
-            </span>
-          ) : null}
+          <span className="text-body font-semibold">All work</span>
+          <span className="dim text-cap ml-2 tnum">{projects.length}</span>
         </span>
         <Seg
           compact
@@ -1060,46 +1303,71 @@ function ScopeColumn({
         />
       </div>
 
-      <div className="panel-body grows pt-1.5 pb-2.5">
-        {projects.length > 1 ? (
-          <>
-            {/* No "The work" heading, and no row for the work you are already
-                in - its name is in the head above, and its pages are the grid
-                below. What is left here is the other works, which is what the
-                list is for: getting to one of them. */}
-            <div className="rows">
-              {projects.map((p) => {
-                const open = picked?.kind === p.kind && picked.id === p.id;
-                if (open) return <Fragment key={`${p.kind}/${p.id}`}>{files}</Fragment>;
-                return (
-                  <Fragment key={`${p.kind}/${p.id}`}>
-                    <button
-                      type="button"
-                      className="row row-work py-2"
-                      aria-current={open}
-                      onClick={() => onPick({ kind: p.kind, id: p.id })}
-                    >
-                      {/* The same slot the chapter numbers stand in, so every
-                          name in this list starts on one edge whatever mark
-                          sits in front of it. */}
-                      <span className="mark-slot"><TypeMark kind={p.kind} /></span>
-                      <span className="grow">
-                        <span className="name text-body" title={p.id}>
-                          {nameOf(p.id)}
-                        </span>
-                        {/* The silhouette said the type already. Repeating the
-                            word beside it is the labelling the styleguide
-                            rules out. */}
-                        <span className="meta">{p.files} files</span>
-                      </span>
-                    </button>
-
-                  </Fragment>
-                );
-              })}
-            </div>
-          </>
-        ) : files}
+      <div className="panel-body grows pt-1 pb-2.5">
+        {groups.map((g) => {
+          const shut = folded.has(g.kind) && picked?.kind !== g.kind;
+          const runningHere = live.filter((r) => r.kind === g.kind).length;
+          return (
+            <section key={g.kind} className="scope-group">
+              <button type="button" className="scope-group-head" aria-expanded={!shut} onClick={() => fold(g.kind)}>
+                <Icon name={shut ? "chevR" : "chevD"} size={12} />
+                <span className="grow">{g.label}{g.works.length === 1 ? "" : "s"}</span>
+                {runningHere > 0 ? <span className="scope-live-n"><Orb state="solving" />{runningHere}</span> : null}
+                <span className="tnum dim">{g.works.length}</span>
+              </button>
+              {shut ? null : (
+                <div className="rows">
+                  {g.works.map((p) => {
+                    const open = picked?.kind === p.kind && picked.id === p.id;
+                    const t = tallies.get(`${p.kind}/${p.id}`);
+                    const run = live.find((r) => r.kind === p.kind && r.id === p.id) ?? null;
+                    const runStage = run?.workflow?.stages.find((s) => s.state === "running") ?? null;
+                    const files = t?.files ?? p.files;
+                    return (
+                      <Fragment key={`${p.kind}/${p.id}`}>
+                        <button
+                          type="button"
+                          className={`row row-work py-2${run ? " is-live" : ""}`}
+                          aria-current={open}
+                          onClick={() => onPick({ kind: p.kind, id: p.id })}
+                        >
+                          <span className="mark-slot"><TypeMark kind={p.kind} /></span>
+                          <span className="grow min-w-0">
+                            <span className="name text-body" title={p.id}>{nameOf(p.id)}</span>
+                            <span className="meta">
+                              {run ? (
+                                <span className="scope-doing">
+                                  <Orb state={orbForStage(runStage?.stage ?? run.stage ?? undefined)} />
+                                  {runStage ? `${stageLabel(runStage.stage)} · ${runStage.detail}` : "working…"}
+                                </span>
+                              ) : t ? (
+                                `${files} ${p.kind === "publication" ? "pages" : "files"} · ${t.read}/${files} read · ${t.signedOff}/${files} signed`
+                              ) : `${files} files`}
+                            </span>
+                            {/* Read, then signed: two bars, one track, so how far
+                                along a work is reads at a glance down the list. */}
+                            {t && files > 0 ? (
+                              <span className="scope-meter" aria-hidden="true">
+                                <i className="is-read" style={{ transform: `scaleX(${Math.min(1, t.read / files)})` }} />
+                                <i className="is-signed" style={{ transform: `scaleX(${Math.min(1, t.signedOff / files)})` }} />
+                              </span>
+                            ) : null}
+                          </span>
+                          {t && t.open > 0 ? (
+                            <span className={t.blocking > 0 ? "pill pill-bad" : "pill pill-warn"} title={`${t.open} open${t.blocking ? `, ${t.blocking} blocking` : ""}`}>
+                              {t.open}
+                            </span>
+                          ) : null}
+                        </button>
+                        {open ? pagesList : null}
+                      </Fragment>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
       </div>
       <div className="panel-body border-t border-t-(--line) py-3.5">
         <div className="rowflex justify-between mb-2.5">
@@ -1110,19 +1378,14 @@ function ScopeColumn({
             {estimate(here ? here.words : items.reduce((n, i) => n + i.words, 0))}
           </span>
         </div>
-        {/* `running` covered a read started from this button and nothing else,
-            so a whole-production rewrite — the longest, least reversible pass
-            in the app — ran with no way to stop it and the button still
-            offering to start another. Both use the same controller, so one
-            Stop serves both. */}
+        {/* Both a read started here and a whole-production rewrite use the
+            same controller, so one Stop serves both. */}
         {running || working ? (
           <button type="button" className="btn btn-line w-full justify-center" onClick={onStop}>
             <Orb state="solving" />
             Stop
           </button>
         ) : (
-          /* Two sizes of the same act, side by side and the same width: the
-             fill says which is the usual one, the width does not need to. */
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -1149,6 +1412,7 @@ function ScopeColumn({
       </div>
     </div>
   );
+
 }
 
 /* -------------------------------------------------- 2. where the work stands */
@@ -1176,8 +1440,8 @@ function unitOf(item: Item | null): number | null {
 function StateColumn({
   detail, busy, running, onApprove, onResume, onRevise,
   onRestyle, voice, restyling,
-  pipeRun, onGate, declared, onStart,
-  items, allFindings, here,
+  pipeRun, onGate, onWorkGate, declared, onStart,
+  here,
   pageName, queue, counts, filter, onFilter, at, onPick,
 }: {
   readonly detail: Detail | null;
@@ -1189,6 +1453,8 @@ function StateColumn({
   /** Where the run itself stands, which the files on disk cannot say. */
   readonly pipeRun: PipelineRun | null;
   readonly onGate: (verb: "approve" | "withdraw", gate: string) => void;
+  /** Sign off, or withdraw, one of the work's own gates: writing, design. */
+  readonly onWorkGate: (gate: string, yes: boolean) => void;
   readonly running: boolean;
   readonly onApprove: (approve: boolean, force?: boolean) => void;
   readonly onResume: (from: string, stopAt: string) => void;
@@ -1199,11 +1465,6 @@ function StateColumn({
   readonly voice: string | null;
   /** Whether a restyle is in flight, so the buttons can say so. */
   readonly restyling: boolean;
-  /** Which whole-production rewrite is one press from running, if any. */
-  /** Every file in this production, for the global tally. */
-  readonly items: ReadonlyArray<Item>;
-  /** Every finding on record. Filtered to this production before counting. */
-  readonly allFindings: ReadonlyArray<Finding>;
   /** The one file being worked, for the per-page tally. */
   readonly here: Item | null;
   /** The page these findings belong to, said above them. */
@@ -1216,42 +1477,15 @@ function StateColumn({
   readonly onPick: (id: string) => void;
 }) {
   const [from, setFrom] = useState<string>("write");
-  const [stopAt, setStopAt] = useState<string>("audit");
-  const [showState, setShowState] = useState(true);
-
-  /* Said on the buttons, because both act on the whole production while
-     sitting beside a column showing one page. */
-
-  /*
-   * The whole production, counted.
-   *
-   * Everything else on this screen is about one page, which is right — but a
-   * screen that only ever says "8 findings on 0002.md" cannot answer whether
-   * the book is nearly done. `allFindings` is every finding on record, across
-   * every production, so it is narrowed to this one's files before anything
-   * is added up.
-   */
-  const global = useMemo(() => {
-    const paths = new Set(items.map((i) => i.path));
-    const open = allFindings.filter((f) => paths.has(f.path) && f.state === "open");
-    return {
-      pages: items.length,
-      read: items.filter((i) => i.audit.checked).length,
-      signed: items.filter((i) => i.audit.approved).length,
-      open: open.length,
-      blocking: open.filter((f) => f.severity === "blocking").length,
-      words: items.reduce((n, i) => n + i.words, 0),
-      reads: items.reduce((n, i) => n + (i.audit.reads ?? 0), 0),
-      /* Files carrying a voice, not restyle passes. "Nine restyles" over
-         fourteen chapters and nine chapters restyled are the same number and
-         a different answer to "is this book in that voice yet". */
-      styled: items.filter((i) => i.audit.restyles).length,
-      voice: items.find((i) => i.audit.voice)?.audit.voice ?? null,
-      revisions: items.reduce((n, i) => n + (i.audit.revisions ?? 0), 0),
-      deslops: items.reduce((n, i) => n + (i.audit.deslops ?? 0), 0),
-      notes: items.reduce((n, i) => n + (i.audit.notes ?? 0), 0),
-    };
-  }, [items, allFindings]);
+  const [stopAt, setStopAt] = useState<string>("write");
+  /* The sign-offs and the run fold away; whether they are folded is kept. */
+  const [showState, setShowState] = useState(() => {
+    try { return localStorage.getItem("quire.audit.run") !== "shut"; } catch { return true; }
+  });
+  const toggleState = () => {
+    setShowState(!showState);
+    try { localStorage.setItem("quire.audit.run", showState ? "shut" : "open"); } catch { /* private mode */ }
+  };
 
   /* Whether anything has ever read this page. The difference between "clean"
      and "unexamined", which the findings list was not drawing. */
@@ -1264,10 +1498,12 @@ function StateColumn({
      approval and this page's contradictions that decide it - not the other
      twenty-one's. A publication signs its copy on the issue, all at once. */
   const perIssue = detail?.kind === "publication";
-  const pageSigned = perIssue ? signed : !!here?.audit.approved;
+  /* A magazine's writing is signed on the issue, not file by file. */
+  const copyGate = workflow?.gates.find((g) => g.name === "copy") ?? null;
+  const pageSigned = perIssue ? !!copyGate?.approved : !!here?.audit.approved;
   const objections = perIssue ? auditGate?.blockers.length ?? 0 : counts.blocking;
   const blocked = perIssue ? (auditGate ? !auditGate.canApprove : false) : counts.blocking > 0;
-  const held = workflow ? !workflow.done.can : false;
+  const gatesOpen = workflow ? workflow.gates.filter((g) => !g.approved).length : 0;
 
   const pills: ReadonlyArray<{ value: Severity; label: string; className: string; n: number }> = [
     { value: "blocking", label: "blocking", className: "pill pill-bad", n: counts.blocking },
@@ -1277,170 +1513,131 @@ function StateColumn({
 
   return (
     <div className="panel panel-flush colpanel">
-      {/* ---------------------------------------------------------- status */}
-      <div className="panel-head py-3.5">
+      {/* ------------------------------------------------------- this page */}
+      <div className="panel-head py-3">
         <span className="grow min-w-0">
-          <h3 className="h-panel">Where it stands</h3>
-          {workflow ? (
-            <span
-              className="rowflex gap-1.5 text-cap mt-0.5 items-start"
-              style={{ color: held ? "var(--bad)" : "var(--ok)" }}
-            >
-              <Icon name={held ? "alert" : "check"} size={12} />
-              <span>
-                {held
-                  ? workflow.done.blockers[0]
-                  : "Everything is clear — this can be called finished."}
-              </span>
-            </span>
-          ) : (
-            <span className="dim text-cap">Pick something on the left.</span>
-          )}
+          <span className="label">This page</span>
+          <span className="block text-body font-semibold trunc mt-0.5" title={pageName}>
+            {here ? pageName : "Pick a page on the left"}
+          </span>
         </span>
-        {workflow ? (
-          <button
-            type="button"
-            className="btn btn-quiet btn-sm"
-            aria-expanded={showState}
-            aria-label={showState ? "Hide the detail" : "Show the detail"}
-            onClick={() => setShowState(!showState)}
-          >
-            <Icon name={showState ? "up" : "down"} size={13} />
-          </button>
+        {here ? (
+          <span className={here.audit.approved ? "pill pill-ok" : "pill"}>
+            {here.audit.approved ? "signed off" : "not signed off"}
+          </span>
         ) : null}
       </div>
 
-      {/* Everything under the head scrolls as one body. It used to be a stack
-          of fixed blocks with only the queue allowed to grow, so on a short
-          window the fixed part was taller than the column and the queue — the
-          part you actually work — was given nothing. */}
+      {/* Everything under the head scrolls as one body, so on a short window
+          the part you actually work is never squeezed to nothing. */}
       <div className="grows">
 
-        {/* ------------------------------------------- the whole production */}
-        <div className="panel-body py-3">
-          <div className="label mb-2">
-            <span>All {global.pages} page{global.pages === 1 ? "" : "s"}</span>
-          </div>
-          {/* The figures and the four stages are one block, not two stacked
-              ones. They answer the same question - where is this - and stacking
-              them pushed the gate, the buttons and the findings a whole panel
-              further down for no reason but the order they were written in. */}
-          <div className="statusrow">
-          <div className="statusrow-figures">
-          <div className="stats">
-            <span><b>{global.read}/{global.pages}</b><em>read</em></span>
-            <span>
-              <b className={global.pages > 0 && global.signed === global.pages ? "is-ok" : ""}>
-                {global.signed}/{global.pages}
-              </b>
-              <em>signed off</em>
-            </span>
-            <span><b className={global.open ? "is-bad" : "is-ok"}>{global.open}</b><em>open</em></span>
-            <span><b className={global.blocking ? "is-bad" : ""}>{global.blocking}</b><em>blocking</em></span>
-            <span><b><Num value={global.words} /></b><em>words</em></span>
-          </div>
-          <div className="stats mt-3">
-            <span><b><Num value={global.reads} /></b><em>reads</em></span>
-            <span><b><Num value={global.revisions} /></b><em>rewrites</em></span>
-            <span><b><Num value={global.deslops} /></b><em>de-AI</em></span>
-            <span><b><Num value={global.notes} /></b><em>notes</em></span>
-            {global.styled > 0 ? (
-              <span>
-                <b className={global.styled === global.pages ? "is-ok" : ""}>
-                  {global.styled}/{global.pages}
-                </b>
-                <em>{global.voice ? `in ${global.voice}'s voice` : "styled"}</em>
-              </span>
-            ) : null}
-          </div>
-          </div>
-          {workflow ? (
-            <div className="statusrow-stages stack-xs">
-              {workflow.stages.map((st) => (
-                <div
-                  key={st.stage}
-                  className="rowflex gap-2 items-baseline text-small"
-                >
-                  <span className={`st ${STAGE_CLASS[st.state] ?? ""}`}>
-                    <i />
-                  </span>
-                  <span className="w-20 flex-none whitespace-nowrap font-medium">{st.stage}</span>
-                  <span className="grow dim trunc text-cap" title={st.detail}>
-                    {briefly(st.detail)}
-                  </span>
-                </div>
-              ))}
+        {/* The page's own counts. "Rewritten three times and still wrong" is a
+            per-page fact a production total cannot say. */}
+        {here ? (
+          <div className="panel-body py-3">
+            <div className="stats stats-6">
+              <span><b className={counts.open ? "is-bad" : "is-ok"}>{counts.open}</b><em>open</em></span>
+              <span><b><Num value={here.audit.reads ?? 0} /></b><em>reads</em></span>
+              <span><b><Num value={here.audit.revisions ?? 0} /></b><em>rewrites</em></span>
+              <span><b><Num value={here.audit.deslops ?? 0} /></b><em>de-AI</em></span>
+              <span><b><Num value={here.audit.notes ?? 0} /></b><em>notes</em></span>
+              <span><b><Num value={here.audit.restyles ?? 0} /></b><em>styled</em></span>
             </div>
-          ) : null}
+            <div className="rowflex gap-2 mt-2.5 text-cap flex-wrap">
+              <span className="dim">{here.words.toLocaleString()} words</span>
+              <span className="dim">·</span>
+              <span className="dim">last read {when(here.audit.checked)}</span>
+              <span className="dim">·</span>
+              <span className="dim">last rewrite {when(here.audit.rewritten)}</span>
+              {voiceOf(here.audit) ? <span className="pill">{voiceOf(here.audit)}</span> : null}
+            </div>
+          </div>
+        ) : null}
+
+        {/* ---------------------------------------------------------- checks */}
+        <div className="panel-head py-3 border-t border-t-(--line)">
+          <span className="grow">
+            <span className="rowflex gap-2.5 items-baseline">
+              <span className="numeral text-h3">
+                <Num value={counts.open} />
+              </span>
+              <span className="text-body font-semibold">
+                finding{counts.open === 1 ? "" : "s"} open
+              </span>
+            </span>
+          </span>
+          <span className="dim text-cap">j / k</span>
+        </div>
+
+        <div className="panel-body pt-1 pb-0.5">
+          <div className="rowflex gap-1.5 flex-wrap">
+            {pills.map((p) => (
+              <button
+                key={p.value}
+                type="button"
+                className={p.className}
+                aria-pressed={filter === p.value}
+                onClick={() => onFilter(filter === p.value ? "all" : p.value)}
+              >
+                {p.n} {p.label}
+              </button>
+            ))}
+            {counts.settled > 0 ? (
+              <span className="pill pill-ok">{counts.settled} settled</span>
+            ) : null}
           </div>
         </div>
 
-        {/* The world this is set in, beside the manuscript: reading it and
-            correcting it are the two things anyone does with it (22 §5). */}
-        {detail ? (
-          <div className="panel-body py-3">
-            <SettingCard type={detail.kind} id={detail.id} />
-          </div>
-        ) : null}
-        {/* The print card used to sit here. It is a build-stage concern — trim,
-            binding, spine, an upload folder — and this screen is for reading a
-            work against its own rules. Putting it beside the manuscript meant
-            the one gate on this page was the one nobody needs while reading,
-            and the two that matter (design, build) were not on any page at all.
-            The component and its routes are kept; nothing renders them until
-            the build surface that owns them exists. See analysis/debt.md. */}
+        <div className="panel-body py-2 px-0.5">
+          {/* Three states, not two: never read, read and clean, and read with
+              something to answer for. Anything already found is listed,
+              whoever found it. */}
+          {!here ? null : !read && queue.length === 0 ? (
+            <Empty icon="clock" title="Not read yet.">
+              Nothing has looked at this page. Press <b>Read this page</b> on the left
+              and whatever it finds will be listed here.
+            </Empty>
+          ) : queue.length === 0 ? (
+            <Empty icon="check" title="Read, and nothing to answer for.">
+              The last read went through this page and raised nothing.
+            </Empty>
+          ) : (
+            queue.map((f) => {
+              const settled = f.state !== "open";
+              return (
+                <button
+                  key={f.id}
+                  type="button"
+                  className={settled ? "finding settled" : "finding"}
+                  aria-current={at?.id === f.id}
+                  onClick={() => onPick(f.id)}
+                >
+                  <span className="rowflex gap-2 flex-nowrap">
+                    <span className={settled ? "sev sev-ok" : SEV_CLASS[f.severity]} />
+                    <span className="grow">
+                      <b>{f.title}</b>
+                      <span className="cat">
+                        {placeOf(f.path)} · {f.category}{f.section ? ` · ${f.section}` : ""}
+                      </span>
+                    </span>
+                    {settled ? (
+                      <span className="pill pill-ok">
+                        {f.state === "accepted" ? "taken" : f.state === "fixed" ? "rewritten" : "left"}
+                      </span>
+                    ) : f.severity === "blocking" ? (
+                      <span className="pill pill-bad">blocks</span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
 
-        {/* What has been drawn for this work — this page's first — beside the
-            reading of it, and one verdict on the page itself (04 §7). */}
+        {/* ---------------------------------------------- what you can do */}
         {detail ? (
-          <PicturesStrip kind={detail.kind} id={detail.id} {...(unitOf(here) !== null ? { unit: unitOf(here)! } : {})} />
-        ) : null}
-      {workflow && showState ? (
-        <>
-          {/* ------------------------------------------------------- gates */}
-          <div className="panel-body py-2.5 border-t border-t-(--line)">
-            <div className="stack-xs">
-              {workflow.gates.map((g) => {
-                /* The sign-off lives per file in the audit state for every kind
-                   but a publication, so it is worked out here rather than the
-                   server inventing an approval object for one. */
-                const done = g.name === "copy" && detail && detail.kind !== "publication"
-                  ? signed
-                  : !!g.approved;
-                return (
-                  <div key={g.name} className="stack-xs">
-                    <div className="rowflex gap-2 text-small">
-                      <span className="grow font-medium">{g.label}</span>
-                      <span className={done ? "pill pill-ok" : "pill"}>
-                        {done ? "approved" : "not approved"}
-                      </span>
-                    </div>
-                    {g.blockers.map((b) => (
-                      <span
-                        key={b}
-                        className="rowflex gap-1.5 text-cap items-start text-(--bad)"
-                      >
-                        <span className="sev sev-bad mt-1.5" />
-                        <span>{b}</span>
-                      </span>
-                    ))}
-                    {g.warnings.map((w) => (
-                      <span
-                        key={w}
-                        className="rowflex gap-1.5 text-cap items-start text-(--ink-3)"
-                      >
-                        <span className="sev sev-warn mt-1.5" />
-                        <span>{w}</span>
-                      </span>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* ---------------------------------------------- what you can do */}
-          <div className="panel-body py-2.5 border-t border-t-(--line)">
+          <div className="panel-body py-3 border-t border-t-(--line)">
             <div className="rowflex gap-2 flex-wrap">
               {pageSigned ? (
                 <button
@@ -1464,8 +1661,7 @@ function StateColumn({
                   {busy === "approve" ? "Saving…" : perIssue ? "Sign off the writing" : "Sign off this page"}
                 </button>
               )}
-              {/* One main act, the rest a press away. Five rewrites side by side
-                  wrapped into a block taller than the gates above them; they are
+              {/* One main act, the rest a press away: the rewrites are
                   alternatives to each other, so they read better as a list. */}
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -1478,22 +1674,21 @@ function StateColumn({
                 <DropdownMenuContent align="start" className="w-72">
                   <DropdownMenuItem
                     disabled={!here}
-                    title={`Reads ${pageName ?? "this page"} and rewrites what it finds, up to two rounds. The text as it stands is kept beside it as .pre-audit.`}
+                    title={`Reads ${pageName || "this page"} and rewrites what it finds, up to two rounds. The text as it stands is kept beside it as .pre-audit.`}
                     onSelect={() => onRevise(false)}
                   >
                     Audit &amp; revise this page
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={!here}
-                    title={`Rewrites ${pageName ?? "this page"} to sound less machine-made. The text as it stands is kept beside it as .pre-audit.`}
+                    title={`Rewrites ${pageName || "this page"} to sound less machine-made. The text as it stands is kept beside it as .pre-audit.`}
                     onSelect={() => onRevise(true)}
                   >
                     De-AI this page
                   </DropdownMenuItem>
                   {/* Restyle sits beside the two rewrites it is not: revise and
-                      de-AI never read the style guide, so either can walk a
-                      restyled chapter back out of its voice. Shown without a
-                      voice, disabled, so the person learns what is missing. */}
+                      de-AI never read the style guide. Shown without a voice,
+                      disabled, so the person learns what is missing. */}
                   <DropdownMenuItem
                     disabled={!here || !voice}
                     title={!voice
@@ -1523,8 +1718,7 @@ function StateColumn({
             </div>
 
             {/* The override, and only where there is something to override. It
-                is deliberately not the same button as the sign-off: signing off
-                over a contradiction is a different decision from signing off. */}
+                is deliberately not the same button as the sign-off. */}
             {blocked && !pageSigned ? (
               <button
                 type="button"
@@ -1537,278 +1731,224 @@ function StateColumn({
                 {objections === 1 ? "" : "s"}
               </button>
             ) : null}
-
-            {detail?.resumable ? (
-              /* Two labelled fields and the button on one line. Inline labels
-                 between selects wrapped into "RESUME [write] THROUGH" over
-                 "[audit] Go" in a column this narrow. */
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-end mt-2.5">
-                <label className="field">
-                  <span className="label">Pick up at</span>
-                  <select
-                    className="input py-1.5 px-2 text-small"
-                    value={from}
-                    onChange={(e) => setFrom(e.target.value)}
-                  >
-                    {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
-                <label className="field">
-                  <span className="label">Go through</span>
-                  <select
-                    className="input py-1.5 px-2 text-small"
-                    value={stopAt}
-                    onChange={(e) => setStopAt(e.target.value)}
-                  >
-                    {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                </label>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  disabled={busy !== null || running}
-                  onClick={() => onResume(from, stopAt)}
-                >
-                  <Icon name="play" size={13} />
-                  {busy === "resume" ? "Starting…" : "Go"}
-                </button>
-              </div>
-            ) : (
-              <p className="hint mt-2.5">
-                A {(detail?.kindLabel ?? "file").toLowerCase()} is written in one pass, so
-                there is no stage to pick it up at. Rewriting is how it changes.
-              </p>
-            )}
-
-            {workflow.lastError ? (
-              <div className="mt-2.5">
-                <RunError
-                  stage={workflow.lastError.stage}
-                  message={workflow.lastError.message}
-                  {...(workflow.lastError.stopped ? { stopped: true } : {})}
-                  {...(workflow.lastError.at ? { at: workflow.lastError.at } : {})}
-                  {...(detail?.resumable ? { later: {
-                    id: `${detail.kind}:${detail.id}`,
-                    label: detail.title,
-                    url: `/api/v1/publications/${encodeURIComponent(detail.id)}/resume`,
-                    body: { from: workflow.lastError.stage ?? from, stopAt },
-                  } } : {})}
-                />
-              </div>
-            ) : null}
           </div>
-        </>
-      ) : null}
+        ) : null}
 
-      {/* ------------------------------------------------------- this page */}
-      {/* The same facts as above, for the one file open. "Rewritten three
-          times and still wrong" is a per-page fact, and a production total
-          cannot say it — nine rewrites spread over seventeen pages and nine
-          rewrites of this one are the same number and a different problem. */}
-      <div className="panel-body py-3 border-t border-t-(--line)">
-        <div className="label mb-2">
-          <span>{here ? `This page · ${pageName}` : "This page"}</span>
-        </div>
-        {here ? (
-          <>
-            <div className="stats">
-              <span><b><Num value={here.audit.reads ?? 0} /></b><em>reads</em></span>
-              <span><b><Num value={here.audit.revisions ?? 0} /></b><em>rewrites</em></span>
-              <span><b><Num value={here.audit.deslops ?? 0} /></b><em>de-AI</em></span>
-              <span><b><Num value={here.audit.notes ?? 0} /></b><em>notes</em></span>
-              <span><b><Num value={here.audit.restyles ?? 0} /></b><em>styled</em></span>
-              <span><b className={counts.open ? "is-bad" : "is-ok"}>{counts.open}</b><em>open</em></span>
-            </div>
-            <div className="rowflex gap-2.5 mt-2.5 text-cap">
-              <span className="dim">last read {when(here.audit.checked)}</span>
-              <span className="dim">·</span>
-              <span className="dim">last rewrite {when(here.audit.rewritten)}</span>
-              {voiceOf(here.audit) ? (
-                <>
-                  <span className="dim">·</span>
-                  <span className="pill">{voiceOf(here.audit)}</span>
-                </>
-              ) : null}
-              <span className={here.audit.approved ? "pill pill-ok" : "pill"}>
-                {here.audit.approved ? "signed off" : "not signed off"}
+        {/* Your verdict on the page you have just read. */}
+        {detail && here ? (
+          <div className="panel-body py-3 border-t border-t-(--line)">
+            <div className="label mb-2"><span>Your verdict on this page</span></div>
+            <Verdict
+              key={here.path}
+              surface="content"
+              refTo={{ type: detail.kind, id: detail.id, ...(unitOf(here) !== null ? { unit: unitOf(here)! } : {}) }}
+              target={here.path}
+              source="page"
+            />
+          </div>
+        ) : null}
+
+        {/* What has been drawn for this work, this page's first. */}
+        {detail ? (
+          <div className="border-t border-t-(--line)">
+            <PicturesStrip kind={detail.kind} id={detail.id} {...(unitOf(here) !== null ? { unit: unitOf(here)! } : {})} />
+          </div>
+        ) : null}
+
+        {/* ------------------------------------------- sign-offs and the run */}
+        {workflow ? (
+          <button
+            type="button"
+            className="panel-head py-3 border-t border-t-(--line) w-full text-left fold-head"
+            aria-expanded={showState}
+            onClick={toggleState}
+          >
+            <span className="grow min-w-0">
+              <span className="text-body font-semibold">Sign-offs and the run</span>
+              <span className="dim text-cap block mt-0.5">
+                {gatesOpen > 0 ? `${gatesOpen} of ${workflow.gates.length} sign-offs to give` : "every sign-off given"}
+                {pipeRun ? ` · run ${pipeRun.status}` : ""}
               </span>
-            </div>
-          </>
-        ) : (
-          <p className="hint">Pick a page on the left.</p>
-        )}
-      </div>
-
-      {/* ---------------------------------------------------------- checks */}
-      <div className="panel-head py-3 border-t border-t-(--line)">
-        <span className="grow">
-          <span className="rowflex gap-2.5 items-baseline">
-            <span className="numeral text-h3">
-              <Num value={counts.open} />
             </span>
-            <span className="text-body font-semibold">
-              finding{counts.open === 1 ? "" : "s"}
-            </span>
-          </span>
-          <span className="dim text-cap block mt-0.5 wrap-anywhere">
-            {pageName ? `on ${pageName}` : "pick a page on the left"}
-          </span>
-        </span>
-        <span className="dim text-cap">j / k</span>
-      </div>
+            <Icon name={showState ? "up" : "down"} size={13} />
+          </button>
+        ) : null}
 
-      <div className="panel-body pt-2 pb-0.5">
-        <div className="rowflex gap-1.5 flex-wrap">
-          {pills.map((p) => (
-            <button
-              key={p.value}
-              type="button"
-              className={p.className}
-              aria-pressed={filter === p.value}
-              onClick={() => onFilter(filter === p.value ? "all" : p.value)}
-            >
-              {p.n} {p.label}
-            </button>
-          ))}
-          {counts.settled > 0 ? (
-            <span className="pill pill-ok">{counts.settled} settled</span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="panel-body py-2 px-0.5">
-        {/* Three states, not two. A page nobody has read and a page that was
-            read and came back clean both used to say "Nothing is open", which
-            is a claim about writing that had never been looked at.
-
-            `read` alone was the wrong question, though: it means *you* pressed
-            Read this page, and a production run raises findings of its own
-            without ever setting it. Twelve real findings were counted in the
-            header above and then hidden behind "nothing has looked at this
-            page". Anything already found is listed, whoever found it. */}
-        {!read && queue.length === 0 ? (
-          <Empty icon="clock" title="Not read yet.">
-            Nothing has looked at this page. Press <b>Read this page</b> on the left
-            and whatever it finds will be listed here.
-          </Empty>
-        ) : queue.length === 0 ? (
-          <Empty icon="check" title="Read, and nothing to answer for.">
-            The last read went through this page and raised nothing.
-          </Empty>
-        ) : (
-          queue.map((f) => {
-            const settled = f.state !== "open";
-            return (
-              <button
-                key={f.id}
-                type="button"
-                className={settled ? "finding settled" : "finding"}
-                aria-current={at?.id === f.id}
-                onClick={() => onPick(f.id)}
-              >
-                <span className="rowflex gap-2 flex-nowrap">
-                  <span className={settled ? "sev sev-ok" : SEV_CLASS[f.severity]} />
-                  <span className="grow">
-                    <b>{f.title}</b>
-                    <span className="cat">
-                      {placeOf(f.path)} · {f.category}{f.section ? ` · ${f.section}` : ""}
-                    </span>
-                  </span>
-                  {settled ? (
-                    <span className="pill pill-ok">
-                      {f.state === "accepted" ? "taken" : f.state === "fixed" ? "rewritten" : "left"}
-                    </span>
-                  ) : f.severity === "blocking" ? (
-                    <span className="pill pill-bad">blocks</span>
-                  ) : null}
-                </span>
-              </button>
-            );
-          })
-        )}
-      </div>
-
-      {/* Your verdict and the stages, last: they are what you do once the
-          page above has been read. */}
-      {detail && here ? (
-        <div className="panel-body py-3 border-t border-t-(--line)">
-          <div className="label mb-2"><span>Your verdict on this page</span></div>
-          <Verdict
-            key={here.path}
-            surface="content"
-            refTo={{ type: detail.kind, id: detail.id, ...(unitOf(here) !== null ? { unit: unitOf(here)! } : {}) }}
-            target={here.path}
-            source="page"
-          />
-        </div>
-      ) : null}
-
-      {workflow && showState ? (
-        <>
-          {/* --------------------------------------------------- the run --
-              Where the pipeline itself is. Everything above is read off the
-              files on disk; this is read off the run. */}
-          {pipeRun ? (
-            <div className="panel-body py-2.5 border-t border-t-(--line)">
-              <div className="rowflex gap-2 text-small items-baseline">
-                <span className="dim text-cap">Run</span>
-                <span className="mono grow text-cap">{pipeRun.stage}</span>
-                <span className="pill">{pipeRun.status}</span>
-              </div>
-            </div>
-          ) : null}
-
-          {/* ------------------------------------------------ the three gates --
-              Every gate this kind of work has, whether or not the run has got
-              there, each one signable at any time. */}
-          {declared?.gates?.length ? (
-            <div className="panel-body py-2.5 border-t border-t-(--line)">
+        {workflow && showState ? (
+          <>
+            {/* ------------------------------------------------------- gates */}
+            <div className="panel-body py-2.5">
               <div className="stack-xs">
-                {declared.gates.map((g) => {
-                  const state = pipeRun?.gates[g]?.state ?? null;
-                  const steps = g === "design"
-                    ? `${(declared.design ?? []).join(" → ")} · ComfyUI / Canva`
-                    : g === "build"
-                      ? `${(declared.build ?? []).join(" → ")}${declared.build?.includes("layout") ? " · Affinity" : ""}`
-                      : "the text, page by page";
+                {workflow.gates.map((g) => {
+                  /* The sign-off lives per file in the audit state for every
+                     kind but a publication. */
+                  const done = g.name === "copy" && detail && detail.kind !== "publication"
+                    ? signed
+                    : !!g.approved;
                   return (
-                    <div key={g} className="rowflex gap-2 text-small items-baseline">
-                      <span className="w-16 font-medium">{GATE_WORDS[g] ?? g}</span>
-                      <span className="grow dim trunc text-cap" title={steps}>{steps}</span>
-                      <span className={
-                        state === "approved" ? "pill pill-ok"
-                          : state === "rejected" ? "pill pill-bad" : "pill"
-                      }>
-                        {state === "approved" ? "signed off"
-                          : state === "waiting" ? "not signed"
-                            : state === "rejected" ? "sent back" : "not reached"}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-line btn-sm"
-                        disabled={busy !== null}
-                        onClick={() => onGate(state === "approved" ? "withdraw" : "approve", g)}
-                      >
-                        {state === "approved" ? "Withdraw" : "Sign off"}
-                      </button>
+                    <div key={g.name} className="stack-xs">
+                      <div className="rowflex gap-2 text-small items-center">
+                        <span className="grow font-medium">{g.label}</span>
+                        <span className={done ? "pill pill-ok" : "pill"}>
+                          {done ? "approved" : "not approved"}
+                        </span>
+                        <button
+                          type="button"
+                          className={done ? "btn btn-line btn-sm" : "btn btn-sm"}
+                          disabled={busy !== null || (!done && !g.canApprove)}
+                          title={!done && !g.canApprove ? g.blockers[0] ?? "Not ready to sign off yet." : undefined}
+                          onClick={() => onWorkGate(g.name, !done)}
+                        >
+                          {done ? "Withdraw" : "Sign off"}
+                        </button>
+                      </div>
+                      {g.blockers.map((b) => (
+                        <span key={b} className="rowflex gap-1.5 text-cap items-start text-(--bad)">
+                          <span className="sev sev-bad mt-1.5" />
+                          <span>{b}</span>
+                        </span>
+                      ))}
+                      {g.warnings.map((w) => (
+                        <span key={w} className="rowflex gap-1.5 text-cap items-start text-(--ink-3)">
+                          <span className="sev sev-warn mt-1.5" />
+                          <span>{w}</span>
+                        </span>
+                      ))}
                     </div>
                   );
                 })}
               </div>
-              {(!pipeRun || pipeRun.stage.startsWith("content.")) && declared.gates.length > 1 ? (
-                <div className="rowflex gap-2 mt-2.5 flex-wrap">
-                  <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={onStart}>
+            </div>
+
+            {/* ------------------------------------------------ pick it up */}
+            <div className="panel-body py-2.5 border-t border-t-(--line)">
+              {detail?.resumable ? (
+                <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 items-end">
+                  <label className="field">
+                    <span className="label">Pick up at</span>
+                    <select
+                      className="input py-1.5 px-2 text-small"
+                      value={from}
+                      onChange={(e) => setFrom(e.target.value)}
+                    >
+                      {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span className="label">Go through</span>
+                    <select
+                      className="input py-1.5 px-2 text-small"
+                      value={stopAt}
+                      onChange={(e) => setStopAt(e.target.value)}
+                    >
+                      {RESUME_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={busy !== null || running}
+                    onClick={() => onResume(from, stopAt)}
+                  >
                     <Icon name="play" size={13} />
-                    {busy === "start"
-                      ? "Starting…"
-                      : `Start ${(GATE_WORDS[declared.gates[1]!] ?? declared.gates[1]!).toLowerCase()}`}
+                    {busy === "resume" ? "Starting…" : "Go"}
                   </button>
+                </div>
+              ) : (
+                <p className="hint">
+                  A {(detail?.kindLabel ?? "file").toLowerCase()} is written in one pass, so
+                  there is no stage to pick it up at. Rewriting is how it changes.
+                </p>
+              )}
+
+              {workflow.lastError ? (
+                <div className="mt-2.5">
+                  <RunError
+                    stage={workflow.lastError.stage}
+                    message={workflow.lastError.message}
+                    {...(workflow.lastError.stopped ? { stopped: true } : {})}
+                    {...(workflow.lastError.at ? { at: workflow.lastError.at } : {})}
+                    {...(detail?.resumable ? { later: {
+                      id: `${detail.kind}:${detail.id}`,
+                      label: detail.title,
+                      url: `/api/v1/publications/${encodeURIComponent(detail.id)}/resume`,
+                      body: { from: workflow.lastError.stage ?? from, stopAt },
+                    } } : {})}
+                  />
                 </div>
               ) : null}
             </div>
-          ) : null}
-        </>
-      ) : null}
+
+            {/* --------------------------------------------------- the run --
+                Read off the run, where everything above is read off the files. */}
+            {pipeRun ? (
+              <div className="panel-body py-2.5 border-t border-t-(--line)">
+                <div className="rowflex gap-2 text-small items-baseline">
+                  <span className="dim text-cap">Run</span>
+                  <span className="mono grow text-cap">{pipeRun.stage}</span>
+                  <span className="pill">{pipeRun.status}</span>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ------------------------------------------------ the three gates --
+                Every gate this kind of work has, whether or not the run has got
+                there, each one signable at any time. */}
+            {declared?.gates?.length ? (
+              <div className="panel-body py-2.5 border-t border-t-(--line)">
+                <div className="stack-xs">
+                  {declared.gates.map((g) => {
+                    const state = pipeRun?.gates[g]?.state ?? null;
+                    const steps = g === "design"
+                      ? `${(declared.design ?? []).join(" → ")} · ComfyUI / Canva`
+                      : g === "build"
+                        ? `${(declared.build ?? []).join(" → ")}${declared.build?.includes("layout") ? " · Affinity" : ""}`
+                        : "the text, page by page";
+                    return (
+                      <div key={g} className="rowflex gap-2 text-small items-baseline">
+                        <span className="w-16 font-medium">{GATE_WORDS[g] ?? g}</span>
+                        <span className="grow dim trunc text-cap" title={steps}>{steps}</span>
+                        <span className={
+                          state === "approved" ? "pill pill-ok"
+                            : state === "rejected" ? "pill pill-bad" : "pill"
+                        }>
+                          {state === "approved" ? "signed off"
+                            : state === "waiting" ? "not signed"
+                              : state === "rejected" ? "sent back" : "not reached"}
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-line btn-sm"
+                          disabled={busy !== null}
+                          onClick={() => onGate(state === "approved" ? "withdraw" : "approve", g)}
+                        >
+                          {state === "approved" ? "Withdraw" : "Sign off"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                {(!pipeRun || pipeRun.stage.startsWith("content.")) && declared.gates.length > 1 ? (
+                  <div className="rowflex gap-2 mt-2.5 flex-wrap">
+                    <button type="button" className="btn btn-sm" disabled={busy !== null} onClick={onStart}>
+                      <Icon name="play" size={13} />
+                      {busy === "start"
+                        ? "Starting…"
+                        : `Start ${(GATE_WORDS[declared.gates[1]!] ?? declared.gates[1]!).toLowerCase()}`}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* The world this is set in, beside the manuscript (22 §5). */}
+        {detail ? (
+          <div className="panel-body py-3 border-t border-t-(--line)">
+            <SettingCard type={detail.kind} id={detail.id} />
+          </div>
+        ) : null}
 
       </div>
     </div>

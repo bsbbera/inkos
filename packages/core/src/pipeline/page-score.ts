@@ -63,7 +63,9 @@ export interface LaidFrame {
 /** What laying the page out reported (`cli-shim/affinity.mjs` INSPECT + buildPage). */
 export interface LayoutReport {
   readonly frames: ReadonlyArray<LaidFrame>;
-  readonly grid: { readonly x0: number; readonly x1: number; readonly top: number; readonly foot: number; readonly col: number; readonly gut: number; readonly ncol: number };
+  readonly grid: { readonly x0: number; readonly x1: number; readonly top: number; readonly foot: number; readonly col: number; readonly gut: number; readonly ncol: number;
+    /** The page's vertical lines when its system is not even columns (layout-engine.ts edgesOf). */
+    readonly edges?: ReadonlyArray<number> };
   readonly findings?: ReadonlyArray<{ readonly level: string; readonly what: string; readonly area?: number }>;
   /** Words per body column after balancing, and the words that did not fit. */
   readonly cols?: { readonly words: ReadonlyArray<number>; readonly overset: number } | null;
@@ -164,16 +166,31 @@ export function scorePage(input: PageScoreInput): PageScore {
   if (m) {
     // 60-30-10 is an order (dominant, secondary, accent) and an accent kept
     // small, not pixel shares: body text is ink, yet covers a tenth of a page.
+    // A section's own language (visual-language.ts) has three colours and a field:
+    // grouped, the order is ground, then colour, then ink, and colour is welcome
+    // until it is the whole page.
+    const many = "accent" in m.shares;
+    const grouped = many ? {
+      ground: (m.shares.paper ?? 0) + (m.shares.field ?? 0), ink: m.shares.ink ?? 0,
+      colour: (m.shares.accent ?? 0) + (m.shares.second ?? 0) + (m.shares.third ?? 0),
+    } : null;
+    if (grouped && !input.declared) {
+      const all = grouped.ground + grouped.ink + grouped.colour || 1;
+      if (grouped.colour / all > 0.7) penalty("C", 40 * Math.min(1, (grouped.colour / all - 0.7) / 0.3), `colour covers ${pct(grouped.colour / all)} - the page is a wash`);
+      if (grouped.ground / all < 0.15) penalty("C", 25, `ground is ${pct(grouped.ground / all)} - nothing for the page to rest on`);
+    }
     const declared = input.declared ?? { paper: 0.6, ink: 0.3, hue: 0.1 };
     const roles = Object.keys(declared).sort((a, b) => (declared[b] ?? 0) - (declared[a] ?? 0));
     const onPalette = roles.reduce((s, r) => s + (m.shares[r] ?? 0), 0) || 1;
     const share = (r: string) => (m.shares[r] ?? 0) / onPalette;
     const said = roles.map((r) => `${r} ${pct(share(r))}`).join(" / ");
-    for (let i = 1; i < roles.length; i++) {
-      if (share(roles[i]!) > share(roles[i - 1]!) + 0.02) penalty("C", 25, `${roles[i]} outweighs ${roles[i - 1]} (${said})`);
+    if (!grouped || input.declared) {
+      for (let i = 1; i < roles.length; i++) {
+        if (share(roles[i]!) > share(roles[i - 1]!) + 0.02) penalty("C", 25, `${roles[i]} outweighs ${roles[i - 1]} (${said})`);
+      }
+      const accent = roles[roles.length - 1]!, cap = (declared[accent] ?? 0.1) * 1.5;
+      if (share(accent) > cap) penalty("C", 40 * Math.min(1, (share(accent) - cap) / cap), `the accent covers ${pct(share(accent))}, over ${pct(cap)} (${said})`);
     }
-    const accent = roles[roles.length - 1]!, cap = (declared[accent] ?? 0.1) * 1.5;
-    if (share(accent) > cap) penalty("C", 40 * Math.min(1, (share(accent) - cap) / cap), `the accent covers ${pct(share(accent))}, over ${pct(cap)} (${said})`);
     penalty("C", 35 * m.offPalette, `${pct(m.offPalette)} of the page is outside the palette`);
     if (input.contrastFailures) penalty("C", 15 * input.contrastFailures, `${input.contrastFailures} contrast failure${input.contrastFailures === 1 ? "" : "s"}`);
     C = clamp(100 - sum(notes, "C"));
@@ -215,8 +232,9 @@ export function scorePage(input: PageScoreInput): PageScore {
       else if (f.what === "type outside the live area") penalty("G", 15, "type outside the live area");
     }
     // Placed frames start on a column edge (1.2 mm of slack).
-    const edges = Array.from({ length: grid.ncol + 1 }, (_, i) => grid.x0 + i * (grid.col + grid.gut));
-    const onGrid = (x: number) => edges.some((e) => Math.abs(x - e) <= 1.2) || edges.some((e) => Math.abs(x - (e - grid.gut)) <= 1.2);
+    const edges = grid.edges?.length ? [...grid.edges] : Array.from({ length: grid.ncol + 1 }, (_, i) => grid.x0 + i * (grid.col + grid.gut));
+    // A bleed runs to the trim, which is on the grid of every system.
+    const onGrid = (x: number) => x <= 0.5 || x >= 209.5 || edges.some((e) => Math.abs(x - e) <= 1.2) || edges.some((e) => Math.abs(x - (e - grid.gut)) <= 1.2);
     const placed = lay.frames.filter((f) => ["title", "deck", "body", "pull", "image", "drawn", "figure", "kicker", "panel"].includes(f.role) && f.w < 205);
     const off = placed.filter((f) => !onGrid(f.x) && !onGrid(f.x + f.w));
     if (off.length) penalty("G", 10 * off.length, `${off.length} frame${off.length === 1 ? "" : "s"} off the column grid (${off.map((f) => f.role).join(", ")})`);

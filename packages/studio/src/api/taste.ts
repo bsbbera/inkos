@@ -20,6 +20,7 @@ import {
   addRule, auditProposals, buildDistillPrompt, causeProposals, cloneTaste, distillGroups, enqueueJob,
   exportTastePack,
   importTastePack, mathScopeOf, noteTrial, parseDistill, parseNumberRule, readRules, retireRule, writeMath,
+  imageStyleOf, listLooks, saveImageStyle,
   type TasteEvent,
 } from "@actalk/quire-core";
 
@@ -179,6 +180,25 @@ export function registerTasteRoutes(app: Hono, deps: TasteRouteDeps): void {
   const { root, broadcast } = deps;
 
   app.get("/api/v1/feedback/causes", (c) => c.json({ surfaces: SURFACES, verdicts: VERDICTS, causes: CAUSES }));
+
+  // The looks an issue can be designed to: the editor's reference sets (core looks.ts).
+  app.get("/api/v1/looks", async (c) => c.json({
+    looks: (await listLooks(root)).map((l) => ({ name: l.name, pages: l.images.length, extras: l.extras, layers: l.layers, standard: l.standard })),
+  }));
+
+  // The picture style the editor chose, kept until they change it.
+  app.get("/api/v1/taste/image-style", async (c) => c.json({ imageStyle: await imageStyleOf(root) }));
+  app.put("/api/v1/taste/image-style", async (c) => {
+    const body = await c.req.json().catch(() => ({})) as { style?: unknown; negative?: unknown; from?: unknown };
+    const saved = await saveImageStyle(root, {
+      style: String(body.style ?? ""),
+      ...(typeof body.negative === "string" ? { negative: body.negative } : {}),
+      ...(typeof body.from === "string" ? { from: body.from } : {}),
+    }).catch((e: unknown) => e as Error);
+    if (saved instanceof Error) return c.json({ error: saved.message }, 400);
+    broadcast("taste:changed", { imageStyle: true });
+    return c.json({ imageStyle: saved });
+  });
 
   app.get("/api/v1/feedback", async (c) => {
     const type = c.req.query("type");

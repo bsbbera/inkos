@@ -61,15 +61,18 @@ export async function findIssue(
 /** Every issue id in the workspace, for naming them back when one is not found. */
 export async function listIssueIds(projectRoot: string): Promise<string[]> {
   const registry = await loadPublicationRegistry(projectRoot);
-  const out: string[] = [];
-  for (const { definition } of registry.definitions) {
+  /* Several types can share one folder - a folio and a magazine both write to
+     Magazine/ - so each folder is read once, or every issue is listed per type. */
+  const dirs = new Set(registry.definitions.map(({ definition }) => definition.outDir));
+  const out = new Set<string>();
+  for (const dir of dirs) {
     try {
-      out.push(...await readdir(join(projectRoot, definition.outDir, "issues")));
+      for (const id of await readdir(join(projectRoot, dir, "issues"))) out.add(id);
     } catch {
       // A type with nothing made from it yet.
     }
   }
-  return out;
+  return [...out];
 }
 
 /**

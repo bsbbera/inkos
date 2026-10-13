@@ -1,3 +1,4 @@
+import { configFile } from "./config-dir.js";
 import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ProjectConfigSchema, type LLMConfig, type ProjectConfig } from "../models/project.js";
@@ -153,7 +154,7 @@ function retargetShimUrls(llm: Record<string, unknown>): void {
 }
 
 async function readProjectConfig(root: string): Promise<Record<string, unknown>> {
-  const configPath = join(root, "quire.json");
+  const configPath = configFile(root);
   try {
     await access(configPath);
   } catch {

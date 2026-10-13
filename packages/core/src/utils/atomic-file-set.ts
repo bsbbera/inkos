@@ -1,3 +1,4 @@
+import { replaceFile } from "./replace-file.js";
 import {
   access,
   mkdir,
@@ -44,7 +45,7 @@ async function exists(path: string): Promise<boolean> {
 }
 
 export async function commitAtomicFileSet(input: AtomicFileSet): Promise<void> {
-  const renameFile = input.renameFile ?? rename;
+  const renameFile = input.renameFile ?? replaceFile;
   const writes = input.writes.map((entry) => ({
     ...entry,
     relativePath: safeRelativePath(entry.relativePath),

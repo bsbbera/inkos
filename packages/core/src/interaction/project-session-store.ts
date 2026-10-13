@@ -1,12 +1,12 @@
+import { stateDir } from "../utils/config-dir.js";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { InteractionSessionSchema, type InteractionSession, GlobalSessionSchema, type GlobalSession } from "./session.js";
 
-const SESSION_DIR = ".quire";
 const SESSION_FILE = "session.json";
 
 export function resolveProjectSessionPath(projectRoot: string): string {
-  return join(projectRoot, SESSION_DIR, SESSION_FILE);
+  return join(stateDir(projectRoot), SESSION_FILE);
 }
 
 export function createProjectSession(projectRoot: string): InteractionSession {
@@ -31,14 +31,14 @@ export async function persistProjectSession(
   projectRoot: string,
   session: InteractionSession,
 ): Promise<void> {
-  const dir = join(projectRoot, SESSION_DIR);
+  const dir = stateDir(projectRoot);
   await mkdir(dir, { recursive: true });
   await writeFile(resolveProjectSessionPath(projectRoot), JSON.stringify(session, null, 2), "utf-8");
 }
 
 export async function loadGlobalSession(projectRoot: string): Promise<GlobalSession> {
   try {
-    const raw = await readFile(join(projectRoot, SESSION_DIR, SESSION_FILE), "utf-8");
+    const raw = await readFile(join(stateDir(projectRoot), SESSION_FILE), "utf-8");
     const data = JSON.parse(raw);
     return GlobalSessionSchema.parse({
       activeBookId: data.activeBookId,
@@ -53,7 +53,7 @@ export async function persistGlobalSession(
   projectRoot: string,
   global: GlobalSession,
 ): Promise<void> {
-  const dir = join(projectRoot, SESSION_DIR);
+  const dir = stateDir(projectRoot);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, SESSION_FILE), JSON.stringify(global, null, 2));
 }

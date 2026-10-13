@@ -14,6 +14,7 @@
  * here knows what a chapter is.
  */
 
+import { configFile } from "../utils/config-dir.js";
 import { dirname, join } from "node:path";
 import { readdir, readFile } from "node:fs/promises";
 import { commitAtomicFileSet } from "../utils/atomic-file-set.js";
@@ -107,6 +108,22 @@ export async function loadPipeline(
  * file is read back as a run that is somewhere it never was, and the
  * orchestrator would then act on it.
  */
+function withOwner(state: PipelineState): PipelineState {
+  const { owner: _was, ...rest } = state;
+  return state.status === "running" ? { ...rest, owner: { pid: process.pid } } : rest;
+}
+
+/**
+ * Whether another process that is still alive is running this.
+ * ponytail: a pid can be reused after a reboot; a stale pid that happens to be
+ * alive leaves one run marked running until it is resumed by hand.
+ */
+function ownedElsewhere(state: PipelineState): boolean {
+  const pid = state.owner?.pid;
+  if (!pid || pid === process.pid) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
 export async function savePipeline(
   projectRoot: string,
   ref: ProductionRef,
@@ -116,7 +133,9 @@ export async function savePipeline(
     rootDir: projectRoot,
     writes: [{
       relativePath: relativePipelinePath(ref),
-      content: `${JSON.stringify(state, null, 2)}\n`,
+      // Who is running it, so another app opening the same workspace does not
+      // call a live run interrupted (see markInterrupted).
+      content: `${JSON.stringify(withOwner(state), null, 2)}\n`,
     }],
   });
 }
@@ -501,7 +520,7 @@ export function unitsRunning(ref: ProductionRef): ReadonlyArray<number> {
 /** quire.json `budget`: { perRunUsd?, perRunTokens? }. Absent means no ceiling. */
 async function readBudget(projectRoot: string): Promise<Budget | undefined> {
   try {
-    const b = (JSON.parse(await readFile(join(projectRoot, "quire.json"), "utf-8")) as { budget?: Budget }).budget;
+    const b = (JSON.parse(await readFile(configFile(projectRoot), "utf-8")) as { budget?: Budget }).budget;
     return b && typeof b === "object" ? b : undefined;
   } catch { return undefined; }
 }
@@ -737,6 +756,10 @@ export async function markInterrupted(projectRoot: string): Promise<ReadonlyArra
   const touched: ProductionRef[] = [];
   for (const { ref, state } of await allRuns(projectRoot)) {
     if (state.status !== "running") continue;
+    // Dev and prod open the same workspace. A run the other app is doing
+    // right now is not interrupted; marking it so is what stopped a prod
+    // magazine at fact-check the moment dev started.
+    if (ownedElsewhere(state)) continue;
     const next: PipelineState = {
       ...state,
       status: "failed",

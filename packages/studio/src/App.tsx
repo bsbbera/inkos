@@ -3,7 +3,6 @@ import { useHashRoute } from "./hooks/use-hash-route";
 import type { HashRoute } from "./hooks/use-hash-route";
 import { Dashboard } from "./pages/Dashboard";
 import { ChatPage } from "./pages/ChatPage";
-import { BookDetail } from "./pages/BookDetail";
 import { ChapterReader } from "./pages/ChapterReader";
 import { Analytics } from "./pages/Analytics";
 import { TruthFiles } from "./pages/TruthFiles";
@@ -19,7 +18,11 @@ import { SetupPage } from "./pages/SetupPage";
 import { AuditPage } from "./pages/AuditPage";
 import { GalleryPage } from "./pages/GalleryPage";
 import { TastePage } from "./pages/TastePage";
+import { HousePage } from "./pages/HousePage";
+import { BrandPage } from "./pages/BrandPage";
+import { BookDetail } from "./pages/BookDetail";
 import { PublicationDetail } from "./pages/PublicationDetail";
+import { titleOf } from "./lib/title-of";
 import { StoryPlayer } from "./pages/StoryPlayer";
 import { StoryGraphTree } from "./pages/StoryGraphTree";
 import { ProductionsPage } from "./pages/ProductionsPage";
@@ -40,7 +43,9 @@ import { postApi, useApi } from "./hooks/use-api";
 import { Shell, type ShellVariant } from "./components/shell/Shell";
 import { crumbsFor } from "./components/shell/crumbs";
 import { useShellData, deriveActiveRun } from "./hooks/use-shell-data";
-import { useJobs, jobLabel, jobDetail } from "./hooks/use-jobs";
+import { useJobs } from "./hooks/use-jobs";
+import { useLiveRuns } from "./hooks/use-live-runs";
+import { runDoing } from "./components/stage-rail";
 import { Failed, Loading } from "./components/ui/states";
 import { Orb } from "./components/ui/working";
 
@@ -139,7 +144,8 @@ export function App() {
   const nav = useMemo(() => ({
     toDashboard: () => setRoute({ page: "dashboard" }),
     toChat: () => setRoute({ page: "chat" }),
-    toBooks: () => setRoute({ page: "books" }),
+    toBooks: () => setRoute({ page: "library" }),
+    toLibrary: (kind?: string) => setRoute(kind ? { page: "library", kind } : { page: "library" }),
     toBook: (bookId: string) => setRoute({ page: "book", bookId }),
     toBookSettings: (bookId: string) => setRoute({ page: "book-settings", bookId }),
     toBookCreate: () => setRoute({ page: "book-create" }),
@@ -183,28 +189,35 @@ export function App() {
    * every load and knows nothing of the job queue at all, so a restyle - which
    * only ever announces itself as a job - drew no card whatsoever.
    */
+  const { runs: liveRuns, recent: recentRuns, stop: stopRun } = useLiveRuns(sse.messages);
+  const now = useMemo(() => ({ runs: liveRuns, recent: recentRuns, stop: stopRun }), [liveRuns, recentRuns, stopRun]);
   const railRun = useMemo(() => {
-    const job = jobs.live[0];
-    if (job) {
+    /* Every kind of work says its stage and its count in its own words, read
+       from the one status endpoint; the card opens the Now drawer. */
+    const first = liveRuns[0];
+    if (first) {
+      const stage = first.workflow?.stages.find((x) => x.state === "running")?.stage ?? first.stage;
       return {
-        what: jobLabel(job),
-        where: jobDetail(job),
-        stage: job.stage,
-        more: jobs.live.length - 1,
-        others: jobs.live.slice(1).map((j) => ({ what: jobLabel(j), where: jobDetail(j) })),
-        ...(job.status === "running" && job.startedAt ? { startedAt: Date.parse(job.startedAt) } : {}),
+        what: first.title,
+        where: runDoing(first),
+        ...(stage ? { stage } : {}),
+        ...(first.workflow ? { stages: first.workflow.stages } : {}),
+        more: liveRuns.length - 1,
+        others: liveRuns.slice(1).map((r) => ({ what: r.title, where: runDoing(r) })),
+        ...(first.startedAt ? { startedAt: Date.parse(first.startedAt) } : {}),
       };
     }
     return activeRun ? { what: activeRun.what, where: activeRun.where } : null;
-  }, [jobs.live, activeRun]);
+  }, [activeRun, liveRuns]);
 
   const crumbs = useMemo(
     () =>
       crumbsFor(route, {
         book: (id) => books.find((b) => b.id === id)?.title,
         publication: (id) => publications.find((p) => p.id === id)?.title,
+        work: (kind, id) => liveRuns.find((r) => r.kind === kind && r.id === id)?.title || titleOf(id),
       }),
-    [route, books, publications],
+    [route, books, publications, liveRuns],
   );
 
   if (startupGate === "error") {
@@ -254,6 +267,7 @@ export function App() {
       model={modelLabel}
       waiting={waiting}
       paletteExtra={paletteExtra}
+      now={now}
     >
       {/*
         * The server going away used to be invisible: a run in flight simply
@@ -270,22 +284,23 @@ export function App() {
       {route.page === "dashboard" && (
         <Dashboard nav={nav} sse={sse} books={books} publications={publications} run={activeRun} />
       )}
-      {route.page === "books" && <ProductionsPage kind="books" nav={nav} />}
-      {route.page === "magazines" && <ProductionsPage kind="magazines" nav={nav} />}
+      {route.page === "library" && <ProductionsPage {...(route.kind ? { kind: route.kind } : {})} nav={nav} sse={sse} />}
+      {route.page === "house" && <HousePage />}
+      {route.page === "brand" && <BrandPage />}
       {route.page === "new" && <StartPage nav={nav} />}
       {route.page === "run" && <RunPage sse={sse} run={activeRun} jobs={jobs} />}
       {route.page === "styleguide" && <StyleGuide />}
       {route.page === "audit-packs" && <AuditPacks />}
 
       {isBookCreateChatRoute(route) && (
-        <ChatPage mode="book-create" nav={nav} theme={theme} t={t} sse={sse} />
+        <ChatPage mode="book-create" nav={nav} theme={theme} t={t} sse={sse} waiting={waiting} />
       )}
       {route.page === "chat" && (
-        <ChatPage mode="project-chat" nav={nav} theme={theme} t={t} sse={sse} />
+        <ChatPage mode="project-chat" nav={nav} theme={theme} t={t} sse={sse} waiting={waiting} />
       )}
       {route.page === "book" && (
         <>
-          <ChatPage activeBookId={route.bookId} mode="book" nav={nav} theme={theme} t={t} sse={sse} />
+          <ChatPage activeBookId={route.bookId} mode="book" nav={nav} theme={theme} t={t} sse={sse} waiting={waiting} />
           <BookSidebar bookId={route.bookId} theme={theme} t={t} sse={sse} />
           <BookSidebarToggle bookId={route.bookId} theme={theme} t={t} sse={sse} />
         </>

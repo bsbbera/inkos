@@ -1,0 +1,779 @@
+<title>Ochin Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Galada&family=Atma:wght@500;600&family=Tiro+Bangla:ital@0;1&family=Anek+Bangla:wght@300;400;500;600;700&display=swap">
+<style>
+/* Layout: a printed paper book. A lal paar strip runs down the spine; each chapter hangs from a matra rule.
+   Single world on purpose: Ochin is paper and ink, so the page stays on shankha in every viewer theme. */
+:root {
+  color-scheme: light;
+  --shankha: #F6EEDC; --kajol: #1E1A1D; --sindur: #D23A1E; --paper: #EDE2CA;
+  --holud: #EBA417; --neel: #27357A; --kolapata: #2F7D46; --padma: #12807E; --shapla: #E07A9A; --mati: #A9502B;
+  --kajol-60: #5A5157; --rule: rgba(30,26,29,.22);
+  --f-mark: "Galada", "Tiro Bangla", serif;
+  --f-head: "Tiro Bangla", "Noto Serif Bengali", Georgia, serif;
+  --f-text: "Anek Bangla", "Hind Siliguri", system-ui, sans-serif;
+  --f-kids: "Atma", "Anek Bangla", system-ui, sans-serif;
+  --measure: 66ch;
+  --gut: clamp(16px, 4vw, 48px);
+}
+* { box-sizing: border-box; }
+html, body { background-color: var(--shankha); color: var(--kajol); }
+body { font-family: var(--f-text); font-size: 17px; line-height: 1.6; background-size: 420px 420px; }
+canvas { display: block; width: 100%; height: auto; max-width: 100%; }
+a { color: var(--neel); }
+:focus-visible { outline: 3px solid var(--holud); outline-offset: 2px; }
+.book { position: relative; }
+.edge { position: absolute; left: 0; top: 0; bottom: 0; width: 16px; }
+.edge canvas { height: 100%; width: 100%; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-inline: calc(var(--gut) + 12px) var(--gut); padding-block: 40px 96px; }
+
+nav.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 28px; font-size: 14px; font-weight: 500; }
+nav.toc a { color: var(--kajol); text-decoration: none; border-bottom: 2px dashed var(--sindur); }
+
+.leaf { padding-block: 64px 8px; }
+.matra { border-top: 3px solid var(--kajol); padding-top: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: start; }
+.matra h2 { font-family: var(--f-head); font-weight: 400; font-size: clamp(30px, 4vw, 44px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.matra .bn { font-family: var(--f-head); font-size: clamp(18px, 2vw, 22px); color: var(--sindur); white-space: nowrap; }
+.lede { max-width: var(--measure); margin: 18px 0 0; }
+.small { font-size: 14px; color: var(--kajol-60); }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; }
+h3 { font-family: var(--f-head); font-weight: 400; font-size: 21px; line-height: 1.2; margin: 0; }
+h3 .bn { font-size: 16px; color: var(--sindur); margin-left: 4px; }
+p { margin: 0; }
+
+/* hero */
+.hero { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: clamp(24px, 4vw, 64px); align-items: center; }
+.hero .kick { color: var(--sindur); margin: 0 0 10px; }
+.hero .tag-bn { font-family: var(--f-head); font-size: clamp(24px, 3vw, 34px); line-height: 1.25; }
+.hero .tag-en { font-family: var(--f-head); font-style: italic; font-size: clamp(18px, 2vw, 22px); margin: 4px 0 18px; color: var(--kajol-60); }
+.hero p.body { max-width: 46ch; margin-bottom: 12px; }
+.stitch { border: 0; border-top: 2px dashed var(--sindur); margin: 18px 0; width: 120px; }
+
+/* two-up prose */
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 24px; }
+.two p + p { margin-top: 12px; }
+.pull { font-family: var(--f-head); font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; border-left: 4px solid var(--sindur); padding-left: 18px; align-self: start; }
+.pull small { display: block; font-family: var(--f-text); font-size: 14px; color: var(--kajol-60); margin-top: 10px; }
+
+/* the order of decisions */
+.ladder { display: grid; gap: 0; margin-top: 28px; }
+.rung { display: grid; grid-template-columns: 170px minmax(0, 1fr) minmax(0, 1fr); gap: 20px; padding: 16px 0; border-top: 2px dashed var(--rule); }
+.rung:last-child { border-bottom: 2px dashed var(--rule); }
+.rung .who { font-family: var(--f-head); font-size: 22px; line-height: 1.1; }
+.rung .who span { display: block; font-family: var(--f-text); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--sindur); margin-top: 6px; }
+.rung p { font-size: 15px; }
+.rung b { font-weight: 600; }
+
+/* colour */
+.chips { display: grid; gap: 14px; margin-top: 24px; }
+.chips.core { grid-template-columns: 3fr 2fr 1.4fr 1.4fr; }
+.chips.sec { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-top: 18px; }
+.chip { display: grid; gap: 4px; min-width: 0; align-content: start; }
+.sw-name { font-family: var(--f-head); font-size: 21px; line-height: 1.15; }
+.sw-meta { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--kajol-60); }
+.sw-mean { font-size: 14px; }
+.ratio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 24px; }
+.ratio .bar { display: flex; height: 18px; margin-bottom: 8px; }
+.ratio p { font-size: 14px; }
+.pairs { margin-top: 28px; overflow-x: auto; }
+.pairs table { border-collapse: collapse; min-width: 640px; width: 100%; font-size: 14px; }
+.pairs th { text-align: left; font-weight: 600; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; padding: 8px 10px; border-bottom: 2px solid var(--kajol); }
+.pairs td { padding: 8px 10px; border-bottom: 1px dashed var(--rule); vertical-align: middle; }
+.g { display: inline-block; padding: 3px 10px; font-weight: 600; margin: 2px 4px 2px 0; font-size: 13px; }
+.topics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.topic { display: grid; grid-template-columns: 22px 22px minmax(0, 1fr); gap: 8px; align-items: center; font-size: 14px; }
+.topic i { display: block; width: 22px; height: 22px; }
+
+/* type */
+.faces { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-top: 24px; }
+.face { border-top: 2px dashed var(--kajol); padding-top: 12px; min-width: 0; display: grid; gap: 6px; align-content: start; }
+.face .sample { font-size: 40px; line-height: 1.1; overflow-wrap: anywhere; }
+.face p { font-size: 14px; }
+.scale { margin-top: 32px; display: grid; gap: 0; }
+.step { display: grid; grid-template-columns: 74px 90px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 10px 0; border-top: 1px dashed var(--rule); }
+.step .k { font-weight: 600; font-size: 13px; letter-spacing: .08em; }
+.step .v { font-size: 13px; color: var(--kajol-60); font-variant-numeric: tabular-nums; }
+.step .s { min-width: 0; overflow-wrap: anywhere; line-height: 1.15; }
+.bil { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 32px; margin-top: 32px; align-items: start; }
+.spec-card { background: var(--paper); padding: 22px; display: grid; gap: 10px; }
+.spec-card .eye { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--sindur); }
+.spec-card .eye .bn { letter-spacing: 0; text-transform: none; font-family: var(--f-head); font-size: 14px; margin-left: 6px; }
+.spec-card .hd { font-family: var(--f-head); font-size: 32px; line-height: 1.08; border-top: 3px solid var(--kajol); padding-top: 10px; }
+.spec-card .dk { font-weight: 300; font-size: 18px; line-height: 1.45; }
+.spec-card .bd { font-size: 15px; }
+.spec-card .wb { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; border-top: 2px dashed var(--sindur); padding-top: 10px; }
+.spec-card .wb .w { font-family: var(--f-mark); font-size: 40px; line-height: 1; color: var(--sindur); }
+.spec-card .wb p { font-size: 14px; }
+.list { margin: 0; padding-left: 20px; }
+.list li { margin-bottom: 8px; max-width: 60ch; }
+.list li::marker { color: var(--sindur); }
+
+/* shapes */
+.fam { margin-top: 40px; display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 28px; align-items: start; }
+.fam .why { display: grid; gap: 10px; }
+.fam .why p { font-size: 15px; }
+.fam .use { font-size: 14px; border-left: 3px solid var(--sindur); padding-left: 12px; }
+.fam .use b { font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.tile { display: grid; gap: 6px; min-width: 0; margin: 0; }
+.tile figcaption { font-size: 13px; color: var(--kajol-60); }
+
+/* finish */
+.fin { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 24px; }
+.fin figure { margin: 0; display: grid; gap: 8px; }
+.fin h3 { font-size: 19px; }
+.fin p { font-size: 14px; }
+.fin-list { margin-top: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 28px; }
+.fin-list p { font-size: 14px; }
+.fin-list b { font-family: var(--f-head); font-weight: 400; font-size: 17px; display: block; }
+
+/* page */
+.pagegrid { display: grid; grid-template-columns: minmax(0, 300px) minmax(0, 1fr); gap: 32px; margin-top: 24px; align-items: start; }
+.pagegrid svg { width: 100%; height: auto; display: block; }
+.devices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 28px; }
+.dev { border-top: 2px dashed var(--kajol); padding-top: 10px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.dev h3 { font-size: 19px; }
+.dev p { font-size: 14px; }
+.dev .ex { font-size: 12px; color: var(--kajol-60); }
+
+/* pictures, voice, rules */
+.cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; margin-top: 24px; }
+.cols3 h3 { margin-bottom: 8px; }
+.cols3 p, .cols3 li { font-size: 15px; }
+.voice { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; margin-top: 24px; }
+.say { padding: 16px 18px; display: grid; gap: 6px; }
+.say.yes { background: var(--paper); }
+.say.no { border: 2px dashed var(--rule); }
+.say .label { color: var(--sindur); }
+.say.no .label { color: var(--kajol-60); }
+.say p { font-family: var(--f-head); font-size: 19px; line-height: 1.35; }
+.rations { margin-top: 24px; overflow-x: auto; }
+.rations table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 15px; }
+.rations th { text-align: left; font-size: 12px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid var(--kajol); }
+.rations td { padding: 10px; border-bottom: 1px dashed var(--rule); vertical-align: top; }
+.rations td:first-child { font-family: var(--f-head); font-size: 18px; white-space: nowrap; }
+
+.check { position: relative; margin-top: 72px; color: var(--shankha); background: var(--kajol); }
+.check canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.check.painted { background: transparent; }
+.check .in { position: relative; padding: 30px clamp(18px, 3vw, 40px); display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+.check h2 { font-family: var(--f-head); font-weight: 400; font-size: 30px; margin: 0 0 10px; }
+.check ol { margin: 0; padding-left: 22px; }
+.check li { margin-bottom: 8px; max-width: 60ch; font-size: 15px; }
+.check li::marker { color: var(--holud); font-weight: 700; }
+.check p { font-size: 15px; }
+footer { margin-top: 40px; display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; font-size: 13px; color: var(--kajol-60); }
+
+@media (max-width: 960px) {
+  .hero, .two, .bil, .fin, .pagegrid, .fam, .check .in, .voice { grid-template-columns: minmax(0, 1fr); }
+  .faces, .topics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .devices, .cols3, .ratio, .fin-list { grid-template-columns: minmax(0, 1fr); }
+  .chips.sec { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .chips.core { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rung { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+@media (max-width: 520px) {
+  .edge { width: 10px; }
+  .chips.sec, .faces, .topics { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .matra { grid-template-columns: minmax(0, 1fr); }
+  .step { grid-template-columns: 60px minmax(0, 1fr); }
+  .step .v { display: none; }
+  .face .sample { font-size: 32px; }
+}
+</style>
+
+<div class="book">
+<div class="edge" aria-hidden="true"><canvas data-art="edge"></canvas></div>
+<main class="wrap">
+
+  <header class="hero">
+    <div role="img" aria-label="Ochin wordmark: অচিন in Bengali brush lettering, Ochin beneath in sindur, the bird on its line">
+      <canvas data-art="lockup" data-aspect="0.55"></canvas>
+    </div>
+    <div>
+      <p class="label kick">Design system · v1 · October 2026</p>
+      <p class="tag-bn">অচিন পাখির খোঁজে</p>
+      <p class="tag-en">In search of the unknown bird</p>
+      <p class="body">Ochin makes stories, magazines and pictures that help people fall in love with what the world knows, and with what it still wonders about.</p>
+      <p class="body">It is written in English with a Bengali heart, drawn by hand, and made for every age.</p>
+      <hr class="stitch">
+      <p class="small">This page is the rulebook. Anything that makes Ochin pages, whether a person, Quire or a script, reads it and does not restate it.</p>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Contents">
+    <a href="#idea">The idea</a><a href="#order">Who decides what</a><a href="#colour">Colour</a><a href="#type">Type and language</a>
+    <a href="#shapes">Shapes</a><a href="#finish">Finish</a><a href="#page">The page</a><a href="#pictures">Pictures</a><a href="#voice">Voice</a><a href="#rations">Rations</a><a href="#check">Brand check</a>
+  </nav>
+
+  <section class="leaf" id="idea" aria-labelledby="h-idea">
+    <div class="matra"><h2 id="h-idea">The idea</h2><span class="bn">ভাবনা</span></div>
+    <div class="two">
+      <div>
+        <p>অচিন (Ochin) means <em>the unknown, the one not yet met</em>. The word comes from the best-known song of Lalon Fakir, the nineteenth-century Baul poet of Bengal: <em>khachar bhitor ochin pakhi</em>, an unknown bird that flies in and out of the cage.</p>
+        <p>For Lalon the bird is the soul. For Ochin it is every question nobody has fully answered yet: why the night sky is dark, how light became a photograph, what a self is. The cage is everything we already know. Each story follows one bird.</p>
+        <p>That gives the brand its one promise: <b>we never pretend to catch the bird.</b> We show where it flies, who chased it before, and what is still open. Wonder is the product; certainty is not.</p>
+      </div>
+      <p class="pull">The magazine does not hand you the bird. It shows you where it flies.<small>Any topic on earth, seen through Bengali eyes: the way Satyajit Ray drew the whole world for Sandesh in his own hand.</small></p>
+    </div>
+  </section>
+
+  <section class="leaf" id="order" aria-labelledby="h-order">
+    <div class="matra"><h2 id="h-order">Who decides what</h2><span class="bn">কে কী ঠিক করে</span></div>
+    <p class="lede">Variety and identity used to fight, because every section was told to invent its own world. They stop fighting once each layer may only <em>choose from</em> the layer above it, never redefine it. Variety lives at the bottom of this list.</p>
+    <div class="ladder">
+      <div class="rung"><p class="who">Brand<span>fixed · this page</span></p><p><b>Owns:</b> the nine colours and paper, the four typefaces and the ladder, the shape kit and its meanings, the finish, the bird, the bilingual rule, the voice.</p><p><b>Changes:</b> almost never, and only by a new version of this page.</p></div>
+      <div class="rung"><p class="who">Series<span>per magazine title</span></p><p><b>Owns:</b> masthead lockup, trim and margins, grid, folio style, which signatures the series leans on.</p><p><b>Chooses from:</b> the brand. It may not add a colour or a face.</p></div>
+      <div class="rung"><p class="who">Section<span>per topic</span></p><p><b>Owns:</b> two of the six section colours, one illustration register, which signature leads (kantha for a journey, alpana for a ritual, the bird for a question).</p><p><b>Chooses from:</b> the brand's options. Sections still look different; they never look foreign.</p></div>
+      <div class="rung"><p class="who">Spread<span>per two pages</span></p><p><b>Owns:</b> the device (a film strip across the fold, a magnifier, an exploded stack), the composition, the crop.</p><p><b>Must be fresh:</b> no device twice running. This is where the surprise lives.</p></div>
+    </div>
+  </section>
+
+  <section class="leaf" id="colour" aria-labelledby="h-colour">
+    <div class="matra"><h2 id="h-colour">Colour</h2><span class="bn">রং</span></div>
+    <p class="lede">The core is the <em>lal paar</em>: the white sari with the red border worn at every Puja. Those three never change. Six section colours, each taken from a Bengali thing, are how a topic gets its look. Nothing outside these ten is ever drawn.</p>
+    <div class="chips core">
+      <div class="chip"><canvas data-art="chip" data-colour="#F6EEDC" data-aspect="0.5"></canvas><span class="label">Ground</span><span class="sw-name">শাঁখা · Shankha</span><span class="sw-meta">#F6EEDC</span><span class="sw-mean">The conch-shell bangle. The page itself.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#1E1A1D" data-aspect="0.75"></canvas><span class="label">Ink</span><span class="sw-name">কাজল · Kajol</span><span class="sw-meta">#1E1A1D</span><span class="sw-mean">Kohl, lamp-black. Every word.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#D23A1E" data-aspect="1.07"></canvas><span class="label">Signal</span><span class="sw-name">সিঁদুর · Sindur</span><span class="sw-meta">#D23A1E</span><span class="sw-mean">Vermilion. A mark, never a field.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#EDE2CA" data-aspect="1.07"></canvas><span class="label">Second paper</span><span class="sw-name">কাগজ · Paper</span><span class="sw-meta">#EDE2CA</span><span class="sw-mean">Older paper: boxes, mounts, quiet pages.</span></div>
+    </div>
+    <div class="chips sec">
+      <div class="chip"><canvas data-art="chip" data-colour="#EBA417" data-aspect="1.1"></canvas><span class="sw-name">হলুদ · Holud</span><span class="sw-meta">#EBA417 · turmeric</span><span class="sw-mean">Light, lamps, the sun, first things.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#27357A" data-aspect="1.1"></canvas><span class="sw-name">নীল · Neel</span><span class="sw-meta">#27357A · indigo</span><span class="sw-mean">Night, space, depth, history's weight.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#2F7D46" data-aspect="1.1"></canvas><span class="sw-name">কলাপাতা · Kolapata</span><span class="sw-meta">#2F7D46 · banana leaf</span><span class="sw-mean">Life, plants, growth, the body.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#12807E" data-aspect="1.1"></canvas><span class="sw-name">পদ্মা · Padma</span><span class="sw-meta">#12807E · the river</span><span class="sw-mean">Water, weather, travel, machines.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#E07A9A" data-aspect="1.1"></canvas><span class="sw-name">শাপলা · Shapla</span><span class="sw-meta">#E07A9A · water lily</span><span class="sw-mean">People, feeling, art, the self.</span></div>
+      <div class="chip"><canvas data-art="chip" data-colour="#A9502B" data-aspect="1.1"></canvas><span class="sw-name">মাটি · Mati</span><span class="sw-meta">#A9502B · terracotta</span><span class="sw-mean">Earth, craft, the past, home.</span></div>
+    </div>
+
+    <div class="ratio">
+      <div><div class="bar" aria-hidden="true"><i style="flex:50;background:var(--shankha);outline:1px solid var(--rule)"></i><i style="flex:20;background:var(--kajol)"></i><i style="flex:9;background:var(--neel)"></i><i style="flex:8;background:var(--holud)"></i><i style="flex:3;background:var(--sindur)"></i><i style="flex:10;background:var(--paper)"></i></div><p><b>Inside pages.</b> Paper about half, ink a fifth, the section's two colours a sixth, sindur a sliver.</p></div>
+      <div><div class="bar" aria-hidden="true"><i style="flex:70;background:var(--neel)"></i><i style="flex:15;background:var(--holud)"></i><i style="flex:10;background:var(--shankha)"></i><i style="flex:5;background:var(--sindur)"></i></div><p><b>Covers and openers.</b> One section colour may fill the page; the lal paar still closes it.</p></div>
+      <div><div class="bar" aria-hidden="true"><i style="flex:92;background:var(--shankha);outline:1px solid var(--rule)"></i><i style="flex:5;background:var(--kajol)"></i><i style="flex:3;background:var(--sindur)"></i></div><p><b>Quiet pages.</b> Paper and ink only, one sindur mark. Every loud spread is followed by one of these.</p></div>
+    </div>
+
+    <h3 style="margin-top:36px">Which text may sit on which ground</h3>
+    <p class="small" style="margin-top:6px">Measured contrast. Body needs 4.5:1, headings 3:1. Anything not listed is not allowed.</p>
+    <div class="pairs">
+      <table>
+        <thead><tr><th>Ground</th><th>Body and captions</th><th>Headings only</th></tr></thead>
+        <tbody>
+          <tr><td><span class="g" style="background:var(--shankha);outline:1px solid var(--rule)">Shankha</span></td><td><span class="g" style="color:var(--kajol)">Kajol 14.9</span><span class="g" style="color:var(--neel)">Neel 9.7</span><span class="g" style="color:var(--mati)">Mati 4.7</span></td><td><span class="g" style="color:var(--sindur)">Sindur 4.2</span><span class="g" style="color:var(--kolapata)">Kolapata 4.4</span><span class="g" style="color:var(--padma)">Padma 4.1</span></td></tr>
+          <tr><td><span class="g" style="background:var(--paper)">Paper</span></td><td><span class="g" style="color:var(--kajol)">Kajol 13.4</span><span class="g" style="color:var(--neel)">Neel 8.7</span></td><td><span class="g" style="color:var(--mati)">Mati 4.2</span><span class="g" style="color:var(--sindur)">Sindur 3.7</span><span class="g" style="color:var(--padma)">Padma 3.7</span></td></tr>
+          <tr><td><span class="g" style="background:var(--kajol);color:var(--shankha)">Kajol</span></td><td><span class="g" style="background:var(--kajol);color:var(--shankha)">Shankha 14.9</span><span class="g" style="background:var(--kajol);color:var(--holud)">Holud 8.1</span><span class="g" style="background:var(--kajol);color:var(--shapla)">Shapla 6.1</span></td><td><span class="g" style="background:var(--kajol);color:var(--sindur)">Sindur 3.6</span><span class="g" style="background:var(--kajol);color:var(--padma)">Padma 3.6</span></td></tr>
+          <tr><td><span class="g" style="background:var(--neel);color:var(--shankha)">Neel</span></td><td><span class="g" style="background:var(--neel);color:var(--shankha)">Shankha 9.7</span><span class="g" style="background:var(--neel);color:var(--holud)">Holud 5.3</span></td><td><span class="g" style="background:var(--neel);color:var(--shapla)">Shapla 4.0</span></td></tr>
+          <tr><td><span class="g" style="background:var(--holud)">Holud</span></td><td><span class="g" style="background:var(--holud);color:var(--kajol)">Kajol 8.1</span><span class="g" style="background:var(--holud);color:var(--neel)">Neel 5.3</span></td><td></td></tr>
+          <tr><td><span class="g" style="background:var(--shapla)">Shapla</span></td><td><span class="g" style="background:var(--shapla);color:var(--kajol)">Kajol 6.1</span></td><td><span class="g" style="background:var(--shapla);color:var(--neel)">Neel 4.0</span></td></tr>
+          <tr><td><span class="g" style="background:var(--mati);color:var(--shankha)">Mati</span></td><td><span class="g" style="background:var(--mati);color:var(--shankha)">Shankha 4.7</span></td><td><span class="g" style="background:var(--mati);color:var(--kajol)">Kajol 3.2</span></td></tr>
+          <tr><td><span class="g" style="background:var(--kolapata);color:var(--shankha)">Kolapata</span></td><td></td><td><span class="g" style="background:var(--kolapata);color:var(--shankha)">Shankha 4.4</span><span class="g" style="background:var(--kolapata);color:var(--kajol)">Kajol 3.4</span></td></tr>
+          <tr><td><span class="g" style="background:var(--padma);color:var(--shankha)">Padma</span></td><td></td><td><span class="g" style="background:var(--padma);color:var(--shankha)">Shankha 4.1</span><span class="g" style="background:var(--padma);color:var(--kajol)">Kajol 3.6</span></td></tr>
+          <tr><td><span class="g" style="background:var(--sindur);color:var(--shankha)">Sindur</span></td><td></td><td><span class="g" style="background:var(--sindur);color:var(--shankha)">Shankha 4.2</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:36px">Pairs by topic</h3>
+    <p class="small" style="margin-top:6px">A starting point. The section picks two; the copy decides, not habit.</p>
+    <div class="topics">
+      <div class="topic"><i style="background:var(--neel)"></i><i style="background:var(--holud)"></i><span>Space, light, photography</span></div>
+      <div class="topic"><i style="background:var(--padma)"></i><i style="background:var(--kolapata)"></i><span>Rivers, monsoon, weather</span></div>
+      <div class="topic"><i style="background:var(--shapla)"></i><i style="background:var(--holud)"></i><span>Philosophy, the self</span></div>
+      <div class="topic"><i style="background:var(--mati)"></i><i style="background:var(--neel)"></i><span>History, archaeology</span></div>
+      <div class="topic"><i style="background:var(--kolapata)"></i><i style="background:var(--holud)"></i><span>Plants, food, the body</span></div>
+      <div class="topic"><i style="background:var(--padma)"></i><i style="background:var(--mati)"></i><span>Machines, maps, travel</span></div>
+      <div class="topic"><i style="background:var(--shapla)"></i><i style="background:var(--neel)"></i><span>Music, art, other cultures</span></div>
+      <div class="topic"><i style="background:var(--mati)"></i><i style="background:var(--holud)"></i><span>Craft, home, festivals</span></div>
+    </div>
+  </section>
+
+  <section class="leaf" id="type" aria-labelledby="h-type">
+    <div class="matra"><h2 id="h-type">Type and language</h2><span class="bn">অক্ষর ও ভাষা</span></div>
+    <p class="lede">Four faces, each drawn for Bengali <em>and</em> Latin, so the two scripts share stroke, weight and rhythm on the same line. A page never uses any other face.</p>
+    <div class="faces">
+      <div class="face"><span class="label" style="color:var(--sindur)">Mark</span><span class="sample" style="font-family:var(--f-mark)">অচিন Ochin</span><p><b>Galada.</b> Brush lettering. Masthead, big numbers, years, the word box. Never a sentence.</p></div>
+      <div class="face"><span class="label" style="color:var(--sindur)">Head</span><span class="sample" style="font-family:var(--f-head)">আলো <i>Light</i></span><p><b>Tiro Bangla</b>, roman and italic. Headlines, pull quotes, subheads. Italic carries the other language's line.</p></div>
+      <div class="face"><span class="label" style="color:var(--sindur)">Text</span><span class="sample" style="font-family:var(--f-text);font-weight:400">পড়া Read</span><p><b>Anek Bangla</b>, 300 to 700. Body, decks, captions, labels, data.</p></div>
+      <div class="face"><span class="label" style="color:var(--sindur)">Young</span><span class="sample" style="font-family:var(--f-kids);font-weight:600">খেলা Play</span><p><b>Atma.</b> Only for the youngest readers' pages and activity boxes.</p></div>
+    </div>
+
+    <h3 style="margin-top:36px">The ladder (A4, points)</h3>
+    <p class="small" style="margin-top:6px">Every size on every page comes from here. A page never invents a size.</p>
+    <div class="scale" aria-label="Type ladder">
+      <div class="step"><span class="k">N1</span><span class="v">96 / 96</span><span class="s" style="font-family:var(--f-mark);font-size:64px;color:var(--sindur)">১৮৩৯</span></div>
+      <div class="step"><span class="k">D1</span><span class="v">66 / 70</span><span class="s" style="font-family:var(--f-head);font-size:48px">Writing with light</span></div>
+      <div class="step"><span class="k">D2</span><span class="v">42 / 46</span><span class="s" style="font-family:var(--f-head);font-size:34px">The first photographs</span></div>
+      <div class="step"><span class="k">D3</span><span class="v">28 / 32</span><span class="s" style="font-family:var(--f-head);font-size:26px">Why film cannot be copied</span></div>
+      <div class="step"><span class="k">PULL</span><span class="v">21 / 28</span><span class="s" style="font-family:var(--f-head);font-size:22px">“Every photograph is a cage the light sat in.”</span></div>
+      <div class="step"><span class="k">D4</span><span class="v">16 / 21</span><span class="s" style="font-family:var(--f-head);font-size:19px">Julia Margaret Cameron</span></div>
+      <div class="step"><span class="k">DECK</span><span class="v">14 / 20.5</span><span class="s" style="font-weight:300;font-size:18px">How a box with a hole became the most honest witness we have.</span></div>
+      <div class="step"><span class="k">BODY</span><span class="v">11 / 16.6</span><span class="s" style="font-size:16px">In 1826 Niépce left a plate in his window for days. What came back was a roof, a pear tree and a barn.</span></div>
+      <div class="step"><span class="k">CHIP</span><span class="v">10 / 14.6</span><span class="s" style="font-size:15px">Short notes beside a person or a date.</span></div>
+      <div class="step"><span class="k">CAP</span><span class="v">9.2 / 13.4</span><span class="s" style="font-size:14px;color:var(--kajol-60)">View from the Window at Le Gras, 1826. Public domain.</span></div>
+      <div class="step"><span class="k">LABEL</span><span class="v">8.4 / 11</span><span class="s label" style="font-size:12px;color:var(--sindur)">Chapter 2 · First light</span></div>
+    </div>
+
+    <div class="bil">
+      <div>
+        <h3>The bilingual rule <span class="bn">দুই ভাষা</span></h3>
+        <p style="margin-top:10px"><b>English carries the reading. Bengali carries the heart.</b> Roughly 85 words in 100 are English. A reader with no Bengali misses nothing they need; a Bengali reader finds home on every spread.</p>
+        <ul class="list" style="margin-top:14px">
+          <li><b>Always Bengali:</b> the mark অচিন, folio numerals (১২), section names as an eyebrow beside the English one.</li>
+          <li><b>Once per story:</b> one Bengali line, either an epigraph, a pull quote from a Bengali source, or a closing line, with its English beneath in italic.</li>
+          <li><b>The word box (শব্দ):</b> one Bengali word per feature that names the idea better than English does, with how it sounds and what it means.</li>
+          <li><b>Never:</b> whole paragraphs side by side. It halves the page and doubles the effort.</li>
+          <li><b>Bengali text is shaped, not typed:</b> where a tool cannot shape Bengali (Affinity), it is drawn as outlines by HarfBuzz.</li>
+        </ul>
+      </div>
+      <div class="spec-card" aria-label="Example of the bilingual rule on a page">
+        <span class="eye">Chapter 2 · First light <span class="bn">প্রথম আলো</span></span>
+        <span class="hd">The window at Le Gras</span>
+        <span class="dk">A roof, a pear tree and eight hours of sun: the oldest photograph that survives.</span>
+        <span class="bd">In 1826 Nicéphore Niépce coated a pewter plate with bitumen and left it in his window. Where light fell, the bitumen hardened. What washed away became the shadows.</span>
+        <div class="wb"><span class="w">ছায়া</span><p><b>chhaya</b> · shadow, and also shelter. Every photograph is made of what the light did not reach.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="leaf" id="shapes" aria-labelledby="h-shapes">
+    <div class="matra"><h2 id="h-shapes">Shapes and what they mean</h2><span class="bn">চিহ্ন ও অর্থ</span></div>
+    <p class="lede">Every drawn shape comes from one kit, made in Affinity with the <em>Ochin Shape</em> script, and every shape stands for something. A shape used without its meaning is decoration, and decoration is what makes a brand look like a template.</p>
+
+    <div class="fam">
+      <div class="why"><h3>Lal paar <span class="bn">লাল পাড়</span></h3><p>The red border of the Puja sari. It marks an occasion and a threshold: you are entering, or you are leaving.</p><p class="use"><b>Use:</b> the foot of covers, the edge of section openers, the back cover. <b>Never</b> inside a running page.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="lp0" data-aspect="0.5"></canvas><figcaption>Single thread</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="lp1" data-aspect="0.5"></canvas><figcaption>Double thread</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="lp2" data-aspect="0.5"></canvas><figcaption>Thread and dots</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>Matra rule <span class="bn">মাত্রা</span></h3><p>The headstroke Bengali letters hang from. It is what makes an English headline look Bengali-born: knowledge needs a line to hold on to.</p><p class="use"><b>Use:</b> above every headline. It is furniture, so it never counts against a ration.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="m0" data-aspect="0.5"></canvas><figcaption>Kajol</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="m1" data-aspect="0.5"></canvas><figcaption>With a hairline</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="m2" data-aspect="0.5"></canvas><figcaption>End beads, sindur</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="m3" data-aspect="0.5"></canvas><figcaption>Shankha on kajol</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>Kantha stitch <span class="bn">কাঁথা</span></h3><p>The running stitch that turns old saris into new quilts. Old pieces, joined, become something warm: that is how knowledge is made.</p><p class="use"><b>Use:</b> only when it connects: a path through a diagram, a timeline, a river's route, a line from a word to what it names. Never as a border for its own sake.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="k0" data-aspect="0.62"></canvas><figcaption>With end knots</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="k1" data-aspect="0.62"></canvas><figcaption>Double thread</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="k2" data-aspect="0.62"></canvas><figcaption>A river, on padma</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="k3" data-aspect="0.62"></canvas><figcaption>A path, on neel</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>Alpana <span class="bn">আলপনা</span></h3><p>Rice-paste drawn on the floor at a doorway to welcome what comes. Made by hand, symmetrical, gone by next week: order found in nature, offered as a greeting.</p><p class="use"><b>Use:</b> to open a section and to mark the end of a story, as a lens or a frame around a picture. One per spread at most.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="a0" data-aspect="1"></canvas><figcaption>Leaf eight, on mati</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="a1" data-aspect="1"></canvas><figcaption>Lotus six, on holud</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="a2" data-aspect="1"></canvas><figcaption>Spear twelve, on neel</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="a3" data-aspect="1"></canvas><figcaption>Drop ten, on kajol</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>The bird <span class="bn">অচিন পাখি</span></h3><p>The mark itself: the question. It may perch, turn back, or fly, and it may be any colour. One rule never bends: <b>the bird is never drawn inside a cage.</b> We chase it; we do not catch it.</p><p class="use"><b>Use:</b> the cover, the last line of every story (small, on its line), the back cover. At most one per spread.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="b0" data-aspect="0.86"></canvas><figcaption>Kajol</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="b1" data-aspect="0.86"></canvas><figcaption>Night, on neel</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="b2" data-aspect="0.86"></canvas><figcaption>Lily, on shapla</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="b3" data-aspect="0.86"></canvas><figcaption>On its line</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>Panel <span class="bn">পট</span></h3><p>A patch of colour under text or a picture, cut like cloth or a <em>pat</em> scroll. Its edge says where you are: a wave for water, a scallop for petals, a zigzag for mountains or stitching, steps for ghats and buildings.</p><p class="use"><b>Use:</b> freely, with a plain edge by default. A profiled edge must match the subject. Any edge may fade to clear, or a panel may grade into a second brand colour.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="p0" data-aspect="0.7"></canvas><figcaption>Plain</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p1" data-aspect="0.7"></canvas><figcaption>Wave</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p2" data-aspect="0.7"></canvas><figcaption>Scallop</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p3" data-aspect="0.7"></canvas><figcaption>Zigzag</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p4" data-aspect="0.7"></canvas><figcaption>Steps</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p5" data-aspect="0.7"></canvas><figcaption>Fades to clear</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="p6" data-aspect="0.7"></canvas><figcaption>Grades neel to padma</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="fam">
+      <div class="why"><h3>Festival ornaments <span class="bn">উৎসব</span></h3><p>Generated alpona, kolam, rosettes and woven border bands. Rich, and therefore rare: they belong to festivals, crafts and cultures, where the pattern <em>is</em> the subject.</p><p class="use"><b>Use:</b> only when the topic is ritual, craft or pattern. Never as a page filler. One per issue outside those topics.</p></div>
+      <div class="tiles">
+        <figure class="tile"><canvas data-art="sig" data-sig="o0" data-aspect="1"></canvas><figcaption>Kolam, on paper</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="o1" data-aspect="1"></canvas><figcaption>Rosette, on padma</figcaption></figure>
+        <figure class="tile"><canvas data-art="sig" data-sig="o2" data-aspect="0.5"></canvas><figcaption>Border band</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="leaf" id="finish" aria-labelledby="h-finish">
+    <div class="matra"><h2 id="h-finish">Finish</h2><span class="bn">বুনোট</span></div>
+    <p class="lede">Ochin is printed, never just rendered. Every drawn shape is finished the same way, with seeded noise worked into the material rather than a filter laid over the page. Type stays sharp. Imperfection is the point: wonder is made by hands.</p>
+    <div class="fin">
+      <figure><div id="flat-demo"></div><h3>Flat</h3><p>What software draws by default: ruled edges, even fills. Clean, and lifeless next to a painting.</p></figure>
+      <figure><canvas data-art="demo" data-aspect="0.6667"></canvas><h3>Ochin</h3><p>The same shapes, finished: edges moved by noise, pigment pooled, a darker rim where the wash dried, ink worn in clusters, paper with mottle and grain.</p></figure>
+    </div>
+    <div class="fin-list">
+      <p><b>Wobble</b>Every edge is displaced by slow noise, so nothing is ruled.</p>
+      <p><b>Watercolour</b>Pigment pools, the dried edge darkens, colour bleeds into the paper in a broken halo.</p>
+      <p><b>Wear</b>Ink lifted in fine specks gathered in patches, like a block print.</p>
+      <p><b>Grain</b>Inside the ink only, never floated over the type.</p>
+      <p><b>Paper</b>Warm shankha with a slow mottle and its own grain.</p>
+      <p><b>Seeded</b>Each shape has its own seed: no two alike, and any one can be rebuilt exactly.</p>
+    </div>
+  </section>
+
+  <section class="leaf" id="page" aria-labelledby="h-page">
+    <div class="matra"><h2 id="h-page">The page</h2><span class="bn">পাতা</span></div>
+    <div class="pagegrid">
+      <svg viewBox="0 0 220 312" role="img" aria-label="A4 page with 16 millimetre margins, six columns, matra rule at the head and the folio at the foot">
+        <rect x="5" y="5" width="210" height="297" fill="#F6EEDC" stroke="#1E1A1D" stroke-width=".6"/>
+        <g fill="#27357A" opacity=".08"><rect x="21" y="21" width="26.3" height="265"/><rect x="51.3" y="21" width="26.3" height="265"/><rect x="81.6" y="21" width="26.3" height="265"/><rect x="111.9" y="21" width="26.3" height="265"/><rect x="142.2" y="21" width="26.3" height="265"/><rect x="172.5" y="21" width="26.7" height="265"/></g>
+        <rect x="21" y="21" width="178" height="265" fill="none" stroke="#D23A1E" stroke-width=".5" stroke-dasharray="2 1.6"/>
+        <rect x="21" y="30" width="120" height="1.4" fill="#1E1A1D"/>
+        <rect x="21" y="34" width="110" height="9" fill="#1E1A1D" opacity=".85"/>
+        <rect x="21" y="48" width="86" height="3" fill="#1E1A1D" opacity=".35"/><rect x="21" y="53" width="76" height="3" fill="#1E1A1D" opacity=".35"/>
+        <g fill="#1E1A1D" opacity=".18"><rect x="21" y="66" width="56.6" height="120"/><rect x="81.6" y="66" width="56.6" height="120"/></g>
+        <rect x="142.2" y="66" width="57" height="76" fill="#EBA417" opacity=".7"/>
+        <text x="21" y="294" font-family="Anek Bangla, sans-serif" font-size="5" fill="#1E1A1D">১২   Ochin · Writing with light</text>
+        <text x="110" y="310" text-anchor="middle" font-family="Anek Bangla, sans-serif" font-size="5.5" fill="#5A5157">210 × 297 mm · margins 16 · gutter 4 · six columns</text>
+      </svg>
+      <div>
+        <ul class="list">
+          <li><b>Trim</b> A4, 210 × 297 mm, 3 mm bleed. Pages are designed as spreads, never alone.</li>
+          <li><b>Margins</b> 16 mm all round, six columns with 4 mm gutters. Pictures may bleed; text never crosses the fold.</li>
+          <li><b>Folio</b> at the foot, outer corner, every page: Bengali numerals, then <em>Ochin · issue title</em> in Anek at 7.5 pt. Same place, same size, always.</li>
+          <li><b>Headline</b> hangs from its matra rule. Eyebrow above in label caps, Bengali section name beside it.</li>
+          <li><b>Capacity</b> is measured, not hoped: text frames are test-poured, and overflow is a design bug.</li>
+          <li><b>Pacing</b> no device twice running; every loud spread is followed by a quiet or dense one.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin-top:40px">The device catalogue</h3>
+    <p class="small" style="margin-top:6px">Each spread takes one device that belongs to its subject. These were built for issue 01; the list grows with every issue.</p>
+    <div class="devices">
+      <div class="dev"><h3>Across the fold</h3><p>One picture or object spans both pages, so the gutter becomes part of it.</p><span class="ex">The camera obscura, the room as the camera</span></div>
+      <div class="dev"><h3>Magnifier</h3><p>An alpana ring holds a close crop of a detail the reader would miss.</p><span class="ex">The bootblack in Daguerre's boulevard</span></div>
+      <div class="dev"><h3>Exploded stack</h3><p>Layers pulled apart and labelled, so a hidden structure becomes visible.</p><span class="ex">The layers of colour film</span></div>
+      <div class="dev"><h3>Film strip</h3><p>Frames in sequence across the spread; time reads left to right.</p><span class="ex">Muybridge's galloping horse</span></div>
+      <div class="dev"><h3>Number stack</h3><p>One huge figure in Galada, the story told beside it.</p><span class="ex">8 hours, 15 minutes, 1/1000 s</span></div>
+      <div class="dev"><h3>Kantha timeline</h3><p>Dates threaded on a running stitch, each knot a moment.</p><span class="ex">Digital photography, 1975 to now</span></div>
+      <div class="dev"><h3>Album mount</h3><p>Photographs held by four photo corners on paper, like a family album.</p><span class="ex">Bengal's own photographers</span></div>
+      <div class="dev"><h3>Opposing pages</h3><p>Two pages argue: same grid, opposite grounds.</p><span class="ex">Grain against pixel</span></div>
+      <div class="dev"><h3>Measured chart</h3><p>Drawn to real data by code, on a log scale when the range demands it. Never a number the sources do not have.</p><span class="ex">Exposure times, 1826 to today</span></div>
+    </div>
+  </section>
+
+  <section class="leaf" id="pictures" aria-labelledby="h-pictures">
+    <div class="matra"><h2 id="h-pictures">Pictures</h2><span class="bn">ছবি</span></div>
+    <div class="cols3">
+      <div><h3>Photographs</h3><p>Real, and credited on the page or the credits page: public domain or open licence, with source and licence recorded. Crops are part of the story; a detail that matters gets its own magnifier. A photograph is never recoloured into the palette; the brand sits around it.</p></div>
+      <div><h3>Illustration</h3><p>Gouache, the pinned house style: flat opaque colour, visible brush, paper showing through. A world topic keeps its own art (Hokusai's wave stays Hokusai's) inside Ochin's frame, palette and stitch.</p></div>
+      <div><h3>Figures</h3><p>Anything exact, such as a wavelength, a scale or a curve, is drawn as vectors to real data, never generated. Anything figurative may be painted. No invented portraits: without an honest photograph, a person gets initials in a disc.</p></div>
+    </div>
+  </section>
+
+  <section class="leaf" id="voice" aria-labelledby="h-voice">
+    <div class="matra"><h2 id="h-voice">Voice</h2><span class="bn">কণ্ঠ</span></div>
+    <p class="lede">An elder sibling at the window: curious, warm, exact. Simple enough for a ten-year-old to follow, layered enough that an adult keeps finding more. It asks before it tells, names real people, and admits what nobody knows yet.</p>
+    <div class="voice">
+      <div class="say yes"><span class="label">Ochin says</span><p>Niépce waited eight hours for a roof and a pear tree. Today your phone waits a thousandth of a second. What did we lose, and what did we gain?</p></div>
+      <div class="say no"><span class="label">Ochin never says</span><p>Discover the amazing world of photography! Did you know there are many fascinating facts about cameras?</p></div>
+    </div>
+  </section>
+
+  <section class="leaf" id="rations" aria-labelledby="h-rations">
+    <div class="matra"><h2 id="h-rations">Rations</h2><span class="bn">মাপ</span></div>
+    <p class="lede">The signatures are what make a page Ochin, and overuse is what kills them. So they are rationed, not banned.</p>
+    <div class="rations">
+      <table>
+        <thead><tr><th>Signature</th><th>Where</th><th>How often</th></tr></thead>
+        <tbody>
+          <tr><td>Lal paar</td><td>Cover foot, section openers, back cover</td><td>Doors only; never on a running page</td></tr>
+          <tr><td>The bird</td><td>Cover, end of every story, back cover</td><td>At most one per spread</td></tr>
+          <tr><td>Alpana</td><td>Section openers, story ends, as a lens or frame</td><td>At most one per spread</td></tr>
+          <tr><td>Kantha</td><td>Wherever something connects to something</td><td>As often as it carries meaning, never as ornament</td></tr>
+          <tr><td>Matra</td><td>Every headline</td><td>Furniture: unrationed</td></tr>
+          <tr><td>Festival ornaments</td><td>Ritual, craft and pattern topics</td><td>Otherwise one per issue</td></tr>
+          <tr><td>Sindur</td><td>Border, bird, kicker, one mark</td><td>A sliver; never a full-page field except the lal paar</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="check" id="check" aria-labelledby="h-check">
+    <canvas data-art="panel" data-fit="1" aria-hidden="true"></canvas>
+    <div class="in">
+      <div>
+        <h2 id="h-check">Brand check</h2>
+        <p>Prompts drift; code does not. Every page Ochin publishes passes these before anyone sees it.</p>
+      </div>
+      <ol>
+        <li>Every colour drawn is one of the ten.</li>
+        <li>Every face is Galada, Tiro Bangla, Anek Bangla or Atma, at a ladder size.</li>
+        <li>Text meets the contrast table above.</li>
+        <li>Signature counts stay inside the rations.</li>
+        <li>The section uses two section colours, no more.</li>
+        <li>Folio present, same place, Bengali numerals.</li>
+        <li>No text overlaps other text or a picture's subject; nothing overflows.</li>
+        <li>Every photograph has a source and licence in the ledger.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer><span>অচিন · Ochin design system v1</span><span>Palette, faces and shapes as used in Ochin 01, “Writing with light”</span></footer>
+</main>
+</div>
+
+<script>
+(function () {
+'use strict';
+// ===== The finish (Ornament Studio maths, as in the brand board): seeded value noise, fbm fields, grain,
+// wear, wobble, watercolour and paper, applied per material.
+const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: Math.max(1, w), height: Math.max(1, h) });
+function rng(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function noise2(seed, px = 0, py = 0) {
+  const h = (x, y) => { if (px) { x = ((x % px) + px) % px; y = ((y % py) + py) % py; } let n = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 982451653) | 0; n = Math.imul(n ^ (n >>> 13), 1274126177); return ((n ^ (n >>> 16)) >>> 0) / 4294967296; };
+  return (x, y) => { const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1); return a + (b - a) * sx + (c - a) * sy + (a - b - c + d) * sx * sy; };
+}
+const cache = new Map();
+const cached = (key, make) => { if (!cache.has(key)) { if (cache.size > 80) cache.clear(); cache.set(key, make()); } return cache.get(key); };
+function field(seed, W, H, freq, oct, seam) {
+  const s = Math.min(1, 600 / Math.max(W, H)), w = Math.max(1, Math.round(W * s)), h = Math.max(1, Math.round(H * s));
+  return cached(['f', seed, w, h, freq, oct, !!seam] + '', () => {
+    const n = noise2(seed), v = new Float32Array(w * h), sc = freq / Math.max(w, h);
+    const per = Array.from({ length: oct }, (_, o) => { const px = Math.max(1, Math.round(w * sc * 2 ** o)), py = Math.max(1, Math.round(h * sc * 2 ** o)); return { n: noise2(seed + o, px, py), fx: px / w, fy: py / h }; });
+    let norm = 0; for (let o = 0, a = 1; o < oct; o++, a /= 2) norm += a;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let t = 0, a = 1, f = sc;
+      for (let o = 0; o < oct; o++) { t += a * (seam ? per[o].n(x * per[o].fx, y * per[o].fy) : n(x * f + o * 19.1, y * f + o * 7.3)); a /= 2; f *= 2; }
+      v[y * w + x] = t / norm;
+    }
+    return { w, h, v };
+  });
+}
+function shade(seed, W, H, freq, oct, contrast, seam) {
+  const F = field(seed, W, H, freq, oct, seam);
+  return cached(['s', seed, F.w, F.h, freq, oct, contrast, !!seam] + '', () => {
+    const c = mk(F.w, F.h), x = c.getContext('2d'), id = x.createImageData(F.w, F.h), d = id.data;
+    for (let i = 0; i < F.v.length; i++) { const s = Math.max(-1, Math.min(1, (F.v[i] - 0.5) * contrast * 2)), g = s > 0 ? 255 : 0; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = g; d[i * 4 + 3] = Math.abs(s) * 255; }
+    x.putImageData(id, 0, 0); return c;
+  });
+}
+function grain(seed, W, H) {
+  const cell = Math.max(1, Math.max(W, H) / 1000 * 0.8), w = Math.ceil(W / cell), h = Math.ceil(H / cell);
+  return cached(['g', seed, w, h] + '', () => {
+    const c = mk(w, h), x = c.getContext('2d'), id = x.createImageData(w, h), d = id.data, r = rng(seed ^ 0x5bd1e995);
+    for (let i = 0; i < w * h; i++) { const s = r() * 2 - 1; d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = s > 0 ? 255 : 0; d[i * 4 + 3] = Math.abs(s) * 200; }
+    x.putImageData(id, 0, 0); return c;
+  });
+}
+function wearMask(seed, W, H, wear) {
+  const A = field(seed + 3, W, H, 5, 3), B = field(seed + 5, W, H, 160, 2);
+  return cached(['w', seed, A.w, A.h, wear] + '', () => {
+    const v = A.v.map((a, i) => 0.35 * a + 0.65 * B.v[i]), q = []; for (let i = 0; i < v.length; i += 97) q.push(v[i]); q.sort((a, b) => a - b);
+    const t = q[Math.min(q.length - 1, Math.floor(wear * 0.4 * q.length))], soft = (q[q.length - 1] - q[0]) * 0.03;
+    const c = mk(A.w, A.h), x = c.getContext('2d'), id = x.createImageData(A.w, A.h), d = id.data;
+    for (let i = 0; i < v.length; i++) d[i * 4 + 3] = Math.max(0, Math.min(1, (t - v[i]) / soft + 0.5)) * 255;
+    x.putImageData(id, 0, 0); return c;
+  });
+}
+function blurred(src, px) { const c = mk(src.width, src.height), x = c.getContext('2d'); if (px >= 0.5) x.filter = `blur(${px}px)`; x.drawImage(src, 0, 0); return c; }
+function silhouette(src, colour) { const c = mk(src.width, src.height), x = c.getContext('2d'); x.drawImage(src, 0, 0); x.globalCompositeOperation = 'source-in'; x.fillStyle = colour; x.fillRect(0, 0, c.width, c.height); return c; }
+function wobble(src, seed, amt) {
+  const W = src.width, H = src.height, lam = Math.hypot(W, H) * 0.012, A = amt * lam * 0.45, fr = Math.max(W, H) / lam;
+  const n1 = field(seed + 11, W, H, fr, 1), n2 = field(seed + 12, W, H, fr, 1);
+  const sd = src.getContext('2d').getImageData(0, 0, W, H).data, out = mk(W, H), oc = out.getContext('2d'), id = oc.createImageData(W, H), d = id.data;
+  const kx = (n1.w - 1) / Math.max(1, W - 1), ky = (n1.h - 1) / Math.max(1, H - 1);
+  const at = (F, fx, fy) => { const x0 = fx | 0, y0 = fy | 0, x1 = Math.min(F.w - 1, x0 + 1), y1 = Math.min(F.h - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+    const a = F.v[y0 * F.w + x0], b = F.v[y0 * F.w + x1], c = F.v[y1 * F.w + x0], e = F.v[y1 * F.w + x1]; return a + (b - a) * tx + (c - a) * ty + (a - b - c + e) * tx * ty; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const fx = x * kx, fy = y * ky;
+    const sx = Math.min(W - 1, Math.max(0, Math.round(x + A * (2 * at(n1, fx, fy) - 1)))), sy = Math.min(H - 1, Math.max(0, Math.round(y + A * (2 * at(n2, fx, fy) - 1))));
+    const i = (y * W + x) * 4, j = (sy * W + sx) * 4; d[i] = sd[j]; d[i + 1] = sd[j + 1]; d[i + 2] = sd[j + 2]; d[i + 3] = sd[j + 3];
+  }
+  oc.putImageData(id, 0, 0); return out;
+}
+function paper(q, seed, W, H, amt, seam) {
+  q.save(); q.globalCompositeOperation = 'source-atop';
+  q.globalAlpha = amt * 0.2; q.drawImage(shade(seed + 7, W, H, 4, 5, 1.4, seam), 0, 0, W, H);
+  q.globalAlpha = amt * 0.2; q.drawImage(grain(seed + 9, W, H), 0, 0, W, H);
+  q.restore();
+}
+function finish(art, o) {
+  const W = art.width, H = art.height, u = Math.max(W, H) / 1000, seed = o.seed | 0;
+  const ink = o.wobble ? wobble(art, seed, o.wobble) : blurred(art, 0), x = ink.getContext('2d');
+  if (o.wear) { x.globalCompositeOperation = 'destination-out'; x.drawImage(wearMask(seed, W, H, o.wear), 0, 0, W, H); x.globalCompositeOperation = 'source-over'; }
+  const sil = silhouette(ink, '#000');
+  x.globalCompositeOperation = 'source-atop';
+  if (o.grain) { x.globalAlpha = o.grain * 0.45; x.drawImage(grain(seed, W, H), 0, 0, W, H); }
+  if (o.water) {
+    const a = o.water;
+    x.globalAlpha = a * 0.5; x.drawImage(shade(seed + 41, W, H, 7, 4, 1.6), 0, 0, W, H);
+    const edge = silhouette(sil, '#000'), e = edge.getContext('2d');
+    e.globalCompositeOperation = 'destination-out'; e.drawImage(blurred(sil, u * (1 + 2.5 * a)), 0, 0);
+    x.globalAlpha = a * 0.55; x.drawImage(edge, 0, 0);
+    const halo = blurred(ink, u * (3 + 10 * a)), h = halo.getContext('2d');
+    h.globalCompositeOperation = 'destination-out'; h.drawImage(shade(seed + 43, W, H, 6, 3, 2.6), 0, 0, W, H);
+    x.globalCompositeOperation = 'destination-over'; x.globalAlpha = a * 0.6; x.drawImage(halo, 0, 0);
+  }
+  x.globalAlpha = 1; x.globalCompositeOperation = 'source-over';
+  if (!o.ground) return ink;
+  const out = mk(W, H), q = out.getContext('2d'); q.fillStyle = o.ground; q.fillRect(0, 0, W, H);
+  paper(q, seed, W, H, o.paper ?? 1);
+  q.drawImage(ink, 0, 0); return out;
+}
+
+// ===== The shape kit as SVG (same drawings as shapes.js: the bird, alpana petals, panel profiles)
+const C = { shankha: '#F6EEDC', kajol: '#1E1A1D', sindur: '#D23A1E', holud: '#EBA417', neel: '#27357A', kolapata: '#2F7D46', padma: '#12807E', shapla: '#E07A9A', mati: '#A9502B', paper: '#EDE2CA' };
+const BIRD = (x, y, w, c = {}) => { const b = c.body || C.kajol; return `<g transform="translate(${x} ${y}) scale(${w / 120})${c.flip ? ' translate(120 0) scale(-1 1)' : ''}">
+  ${c.perch ? `<line x1="-10" y1="98" x2="130" y2="98" stroke="${c.pcol || C.sindur}" stroke-width="7" stroke-linecap="round"/>` : ''}
+  <path d="M16 52 C24 66 32 74 44 79 C52 84 64 86 76 84 C90 80 97 67 93 53 C91 45 86 39 81 36 C70 32 58 38 48 56 Z" fill="${b}"/>
+  <path d="M16 52 L6 42 L22 50 L10 58 Z" fill="${b}"/><circle cx="83" cy="36" r="13" fill="${b}"/>
+  <path d="M95 33 L109 38 L95 42 Z" fill="${c.beak || C.holud}"/>
+  <circle cx="87" cy="33" r="3.6" fill="${c.eye || C.shankha}"/><circle cx="88" cy="33" r="1.6" fill="${c.pupil || C.kajol}"/>
+  <path d="M44 62 C56 50 74 52 82 64 C70 74 54 74 44 62 Z" fill="${c.wing || C.neel}"/>
+  <path d="M50 63 C60 57 70 58 76 64" fill="none" stroke="${c.stitch || C.shankha}" stroke-width="2" stroke-dasharray="3 3" stroke-linecap="round"/>
+  <path d="M62 84 L60 92 M72 83 L72 92" stroke="${b}" stroke-width="3" stroke-linecap="round"/></g>`; };
+const PETAL = { leaf: 'M50 14 C56 26 56 34 50 42 C44 34 44 26 50 14 Z', lotus: 'M50 12 C63 20 61 35 50 42 C39 35 37 20 50 12 Z', drop: 'M50 42 C57 33 62 21 50 13 C38 21 43 33 50 42 Z', spear: 'M50 9 C53 23 53 34 50 42 C47 34 47 23 50 9 Z' };
+// n petals of a form; ring: outer dots (0 none, 1 dots, 2 double); inner: 0 none, 1 dots, 2 small petals
+const ALPANA = (x, y, w, col, n = 8, form = 'leaf', ring = 1, inner = 0) => {
+  const k = Math.min(1, 8 / n), out = [];
+  for (let i = 0; i < n; i++) {
+    const r = i * 360 / n, h = r + 180 / n;
+    out.push(`<path transform="rotate(${r} 50 50) translate(50 0) scale(${k} 1) translate(-50 0)" d="${PETAL[form]}"/>`);
+    if (ring) out.push(`<circle transform="rotate(${r} 50 50)" cx="50" cy="5" r="2.4"/>`);
+    if (ring === 2) out.push(`<circle transform="rotate(${h} 50 50)" cx="50" cy="9" r="1.6"/>`);
+    if (inner === 1) out.push(`<circle transform="rotate(${h} 50 50)" cx="50" cy="38" r="1.4"/>`);
+    if (inner === 2) out.push(`<path transform="rotate(${h} 50 50) translate(50 36) scale(${.4 * k} .4) translate(-50 -50)" d="${PETAL[form]}"/>`);
+  }
+  return `<g transform="translate(${x} ${y}) scale(${w / 100})" fill="${col}"><circle cx="50" cy="50" r="5"/>${out.join('')}</g>`;
+};
+const PROF = { plain: () => 0, wave: (u) => Math.sin(2 * Math.PI * u), scallop: (u) => 1 - 2 * Math.abs(Math.sin(Math.PI * u)), zigzag: (u) => 1 - 4 * Math.abs(u - Math.floor(u) - .5), steps: (u) => (u - Math.floor(u) < .5 ? 1 : -1) };
+function panelPath(x, y, w, h, prof, depth = 5, pitch = 16) {
+  const f = PROF[prof], half = prof === 'plain' ? 0 : depth / 2, pts = [];
+  const side = (x0, y0, x1, y1, nx, ny) => { const L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / .6)), reps = Math.max(1, Math.round(L / pitch));
+    for (let i = 0; i < n; i++) { const t = i / n, o = half * f(t * reps); pts.push([x0 + (x1 - x0) * t + nx * o, y0 + (y1 - y0) * t + ny * o]); } };
+  side(x, y, x + w, y, 0, -1); side(x + w, y, x + w, y + h, 1, 0); side(x + w, y + h, x, y + h, 0, 1); side(x, y + h, x, y, -1, 0);
+  return 'M' + pts.map((p) => p[0].toFixed(2) + ' ' + p[1].toFixed(2)).join('L') + 'Z';
+}
+const DASH = (d, col, w, a = 5, b = 4) => `<path d="${d}" fill="none" stroke="${col}" stroke-width="${w}" stroke-dasharray="${a} ${b}" stroke-linecap="round"/>`;
+function kolam() {
+  const out = [], n = 4, s = 18, o = 50 - (n - 1) * s / 2;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const cx = o + i * s, cy = o + j * s; out.push(`<circle cx="${cx}" cy="${cy}" r="1.8" fill="${C.kajol}"/>`); if ((i + j) % 2 === 0) out.push(`<rect x="${cx - 7}" y="${cy - 7}" width="14" height="14" rx="7" transform="rotate(45 ${cx} ${cy})" fill="none" stroke="${C.sindur}" stroke-width="1.6"/>`); }
+  out.push(`<rect x="${o - 12}" y="${o - 12}" width="${(n - 1) * s + 24}" height="${(n - 1) * s + 24}" rx="14" fill="none" stroke="${C.sindur}" stroke-width="1.6"/>`);
+  return out.join('');
+}
+function rosette() {
+  const out = []; for (let i = 0; i < 18; i++) out.push(`<ellipse cx="50" cy="31" rx="7" ry="19" transform="rotate(${i * 20} 50 50)" fill="none" stroke="${C.shankha}" stroke-width="1.1"/>`);
+  return out.join('') + `<circle cx="50" cy="50" r="6" fill="${C.holud}"/>`;
+}
+function band() {
+  const out = [`<rect x="0" y="16" width="100" height="18" fill="${C.holud}"/>`];
+  for (let x = 0; x < 100; x += 10) out.push(`<path d="M${x} 25 L${x + 5} 18 L${x + 10} 25 L${x + 5} 32 Z" fill="${C.sindur}"/><circle cx="${x + 5}" cy="25" r="1.4" fill="${C.shankha}"/>`);
+  out.push(`<line x1="0" y1="14" x2="100" y2="14" stroke="${C.sindur}" stroke-width="1.4"/><line x1="0" y1="36" x2="100" y2="36" stroke="${C.sindur}" stroke-width="1.4"/>`);
+  return out.join('');
+}
+const NIGHT = { body: C.shankha, wing: C.holud, stitch: C.neel, eye: C.neel, pupil: C.shankha };
+// each signature tile: viewBox, ground, art
+const SIG = {
+  lp0: ['0 0 100 50', C.shankha, `<rect x="-2" y="18" width="104" height="34" fill="${C.sindur}"/>${DASH('M0 25 L100 25', C.shankha, 1.4, 3, 2.4)}`],
+  lp1: ['0 0 100 50', C.shankha, `<rect x="-2" y="18" width="104" height="34" fill="${C.sindur}"/>${DASH('M0 24 L100 24', C.shankha, 1.3, 3, 2.4)}${DASH('M0 28.5 L100 28.5', C.shankha, 1.3, 3, 2.4)}`],
+  lp2: ['0 0 100 50', C.shankha, `<rect x="-2" y="18" width="104" height="34" fill="${C.sindur}"/>${DASH('M0 24 L100 24', C.shankha, 1.4, 3, 2.4)}<g fill="${C.shankha}">${Array.from({ length: 10 }, (_, i) => `<circle cx="${4 + i * 10.8}" cy="29.5" r="1.1"/>`).join('')}</g>`],
+  m0: ['0 0 100 50', C.paper, `<rect x="10" y="18" width="80" height="2.4" fill="${C.kajol}"/><rect x="12" y="23" width="54" height="7" fill="${C.kajol}" opacity=".8"/>`],
+  m1: ['0 0 100 50', C.paper, `<rect x="10" y="18" width="80" height="2.4" fill="${C.kajol}"/><rect x="10" y="22.6" width="80" height=".6" fill="${C.kajol}"/><rect x="12" y="26" width="54" height="7" fill="${C.kajol}" opacity=".8"/>`],
+  m2: ['0 0 100 50', C.paper, `<rect x="10" y="18" width="80" height="2.4" fill="${C.sindur}"/><circle cx="10" cy="19.2" r="3.2" fill="${C.sindur}"/><circle cx="90" cy="19.2" r="3.2" fill="${C.sindur}"/><rect x="14" y="24" width="54" height="7" fill="${C.kajol}" opacity=".8"/>`],
+  m3: ['0 0 100 50', C.kajol, `<rect x="10" y="18" width="80" height="2.4" fill="${C.shankha}"/><rect x="12" y="23" width="54" height="7" fill="${C.shankha}" opacity=".8"/>`],
+  k0: ['0 0 100 62', C.paper, `${DASH('M10 48 C26 10 46 58 62 22 S84 12 90 14', C.sindur, 2.4)}<circle cx="10" cy="48" r="3.4" fill="${C.kajol}"/><circle cx="90" cy="14" r="3.4" fill="${C.kajol}"/>`],
+  k1: ['0 0 100 62', C.paper, `${DASH('M8 40 C30 14 50 54 92 22', C.sindur, 1.8)}${DASH('M8 45 C30 19 50 59 92 27', C.sindur, 1.8)}`],
+  k2: ['0 0 100 62', C.padma, `${DASH('M-2 12 C22 20 18 38 40 40 S70 26 76 44 S92 58 104 54', C.shankha, 2.2)}`],
+  k3: ['0 0 100 62', C.neel, `${DASH('M10 52 L30 20 L50 46 L70 16 L90 40', C.holud, 2.2)}<g fill="${C.shankha}"><circle cx="10" cy="52" r="3"/><circle cx="50" cy="46" r="3"/><circle cx="90" cy="40" r="3"/></g>`],
+  a0: ['0 0 100 100', C.mati, ALPANA(14, 14, 72, C.shankha)],
+  a1: ['0 0 100 100', C.holud, ALPANA(14, 14, 72, C.neel, 6, 'lotus', 1, 1)],
+  a2: ['0 0 100 100', C.neel, ALPANA(14, 14, 72, C.shankha, 12, 'spear', 2, 0)],
+  a3: ['0 0 100 100', C.kajol, ALPANA(14, 14, 72, C.holud, 10, 'drop', 1, 2)],
+  b0: ['0 0 100 86', C.paper, BIRD(18, 6, 66)],
+  b1: ['0 0 100 86', C.neel, BIRD(18, 6, 66, NIGHT)],
+  b2: ['0 0 100 86', C.shapla, BIRD(18, 6, 66, { body: C.holud, wing: C.kajol, beak: C.sindur, eye: C.kajol, pupil: C.holud, stitch: C.holud })],
+  b3: ['0 0 100 86', C.paper, BIRD(18, 4, 62, { perch: 1 })],
+  p0: ['0 0 100 70', C.shankha, `<path d="${panelPath(14, 14, 72, 42, 'plain')}" fill="${C.kolapata}"/>`],
+  p1: ['0 0 100 70', C.shankha, `<path d="${panelPath(14, 14, 72, 42, 'wave')}" fill="${C.padma}"/>`],
+  p2: ['0 0 100 70', C.shankha, `<path d="${panelPath(14, 14, 72, 42, 'scallop', 6, 12)}" fill="${C.shapla}"/>`],
+  p3: ['0 0 100 70', C.shankha, `<path d="${panelPath(14, 14, 72, 42, 'zigzag', 5, 10)}" fill="${C.mati}"/>`],
+  p4: ['0 0 100 70', C.shankha, `<path d="${panelPath(14, 14, 72, 42, 'steps', 4, 14)}" fill="${C.neel}"/>`],
+  p5: ['0 0 100 70', C.shankha, `<defs><linearGradient id="fd" x1="0" y1="0" x2="1" y2="0"><stop offset=".45" stop-color="${C.holud}"/><stop offset="1" stop-color="${C.holud}" stop-opacity="0"/></linearGradient></defs><rect x="14" y="14" width="80" height="42" fill="url(#fd)"/>`],
+  p6: ['0 0 100 70', C.shankha, `<defs><linearGradient id="gr" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${C.neel}"/><stop offset="1" stop-color="${C.padma}"/></linearGradient></defs><rect x="14" y="14" width="72" height="42" fill="url(#gr)"/>`],
+  o0: ['0 0 100 100', C.paper, kolam()],
+  o1: ['0 0 100 100', C.padma, rosette()],
+  o2: ['0 0 100 50', C.shankha, band()],
+};
+// panels and fades are big fills: grain only (wobble would tear them); everything else gets the full finish
+const FLAT = /^p|^lp|^m/;
+const DEMO = `<circle cx="210" cy="96" r="58" fill="${C.sindur}"/><rect x="0" y="150" width="300" height="50" fill="${C.kolapata}"/>
+  ${BIRD(60, 72, 96)}<line x1="0" y1="157" x2="300" y2="157" stroke="${C.shankha}" stroke-width="1.8" stroke-dasharray="6 4"/>`;
+const svg = (vb, body) => `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}" preserveAspectRatio="none">${body}</svg>`;
+
+// ===== Rendering
+const DPR = Math.min(2, window.devicePixelRatio || 1);
+function sizeOf(cv) { const w = Math.round((cv.parentElement.clientWidth || 300) * DPR); if (cv.dataset.fit) return [w, Math.round(cv.parentElement.clientHeight * DPR)]; return [w, Math.round(w * parseFloat(cv.dataset.aspect || 1))]; }
+function svgCanvas(markup, W, H) {
+  return new Promise((ok, bad) => { const url = URL.createObjectURL(new Blob([markup], { type: 'image/svg+xml' })), im = new Image();
+    im.onload = () => { const c = mk(W, H); c.getContext('2d').drawImage(im, 0, 0, W, H); URL.revokeObjectURL(url); ok(c); };
+    im.onerror = (e) => { URL.revokeObjectURL(url); bad(e); }; im.src = url; });
+}
+function put(cv, art, W, H) { cv.width = W; cv.height = H; cv.getContext('2d').drawImage(art, 0, 0); }
+const text = (c, s, font, colour, x, y) => { const q = c.getContext('2d'); q.font = font; q.fillStyle = colour; q.textBaseline = 'alphabetic'; q.fillText(s, x, y); };
+const R = {
+  async lockup(cv) {
+    const [W, H] = sizeOf(cv), k = W / 600;
+    const a = await svgCanvas(svg('0 0 600 330', `<line x1="420" y1="149" x2="585" y2="149" stroke="${C.sindur}" stroke-width="10" stroke-linecap="round"/>${BIRD(438, 29, 144)}`), W, H);
+    text(a, 'অচিন', `${190 * k}px Galada`, C.kajol, 40 * k, 266 * k);
+    text(a, 'Ochin', `${58 * k}px Galada`, C.sindur, 44 * k, 320 * k);
+    put(cv, finish(a, { seed: 7, wobble: 0.175, wear: 0.01, grain: .7, water: 0.15 }), W, H);
+  },
+  async chip(cv) {
+    const [W, H] = sizeOf(cv), col = cv.dataset.colour, light = col === C.shankha;
+    const a = await svgCanvas(svg(`0 0 ${W} ${H}`, light
+      ? `<rect x="${W * .03}" y="${H * .05}" width="${W * .94}" height="${H * .9}" fill="none" stroke="${C.kajol}" stroke-width="${2 * DPR}" stroke-dasharray="${7 * DPR} ${5 * DPR}" opacity=".55"/>`
+      : `<rect x="${W * .03}" y="${H * .05}" width="${W * .94}" height="${H * .9}" fill="${col}"/>`), W, H);
+    put(cv, finish(a, { seed: parseInt(col.slice(1), 16) % 997, wobble: 0.4, grain: .5, water: 0.15 }), W, H);
+  },
+  async sig(cv) {
+    const id = cv.dataset.sig, [vb, ground, art] = SIG[id], [W, H] = sizeOf(cv), a = await svgCanvas(svg(vb, art), W, H);
+    const flat = FLAT.test(id), seed = [...id].reduce((s, ch) => s * 31 + ch.charCodeAt(0), 7) % 9973;
+    put(cv, finish(a, flat ? { seed, ground, grain: .5, paper: .6 } : { seed, ground, wobble: 0.3, wear: 0.01, grain: .5, water: 0.125, paper: .6 }), W, H);
+  },
+  async demo(cv) { const [W, H] = sizeOf(cv), a = await svgCanvas(svg('0 0 300 200', DEMO), W, H); put(cv, finish(a, { seed: 55, ground: C.holud, wobble: 0.3, wear: 0.01, grain: .5, water: 0.125, paper: .6 }), W, H); },
+  async panel(cv) {
+    const [W, H] = sizeOf(cv), a = await svgCanvas(svg(`0 0 ${W} ${H}`, `<rect x="${4 * DPR}" y="${4 * DPR}" width="${W - 8 * DPR}" height="${H - 8 * DPR}" fill="${C.kajol}"/>`), W, H);
+    put(cv, finish(a, { seed: 77, grain: .5 }), W, H); cv.parentElement.classList.add('painted');
+  },
+  async edge(cv) {
+    const W = Math.round(cv.parentElement.clientWidth * DPR), H = Math.min(Math.round(cv.parentElement.clientHeight * DPR), 16000);
+    const a = await svgCanvas(svg(`0 0 ${W} ${H}`, `<rect x="0" y="0" width="${W * .8}" height="${H}" fill="${C.sindur}"/><line x1="${W * .4}" y1="0" x2="${W * .4}" y2="${H}" stroke="${C.shankha}" stroke-width="${1.6 * DPR}" stroke-dasharray="${6 * DPR} ${5 * DPR}"/>`), W, H);
+    put(cv, finish(a, { seed: 9, grain: .5 }), W, H);
+  },
+};
+function paperTile() { const S = Math.round(420 * DPR), c = mk(S, S), q = c.getContext('2d'); q.fillStyle = C.shankha; q.fillRect(0, 0, S, S); paper(q, 3, S, S, .4, true); document.body.style.backgroundImage = `url(${c.toDataURL('image/png')})`; }
+const frame = () => new Promise((r) => setTimeout(r, 0));
+async function renderAll() {
+  for (const cv of document.querySelectorAll('canvas[data-art]')) { try { await R[cv.dataset.art](cv); } catch (e) { console.error('render', cv.dataset.art, e); } await frame(); }
+}
+document.getElementById('flat-demo').innerHTML = svg('0 0 300 200', `<rect width="300" height="200" fill="${C.holud}"/>${DEMO}`).replace('preserveAspectRatio="none"', 'role="img" aria-label="Flat version" style="width:100%;height:auto;display:block"');
+let lastW = innerWidth, t;
+addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { if (Math.abs(innerWidth - lastW) > 40) { lastW = innerWidth; renderAll(); } }, 250); });
+(async () => {
+  paperTile();
+  try { await Promise.all(['190px Galada'].map((f) => document.fonts.load(f, 'অচিন Ochin'))); } catch (e) {}
+  await renderAll();
+})();
+})();
+</script>

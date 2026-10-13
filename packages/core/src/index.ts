@@ -566,6 +566,7 @@ export * from "./translation/index.js";
 export { countChapterLength, resolveLengthCountingMode, formatLengthCount, buildLengthSpec, defaultChapterLength, DEFAULT_CHAPTER_LENGTH_ZH, DEFAULT_CHAPTER_LENGTH_EN, isOutsideSoftRange, isOutsideHardRange, type LengthLanguage } from "./utils/length-metrics.js";
 export { createLogger, createStderrSink, createJsonLineSink, nullSink, type Logger, type LogSink, type LogLevel, type LogEntry } from "./utils/logger.js";
 export { inferLanguage, type WritingLanguage } from "./utils/language.js";
+export { configDir, configFile, stateDir } from "./utils/config-dir.js";
 export { loadProjectConfig, GLOBAL_CONFIG_DIR, GLOBAL_ENV_PATH, isApiKeyOptionalForEndpoint } from "./utils/config-loader.js";
 export { resolveEffectiveLLMConfig, type EffectiveLLMConfigResult, type EffectiveLLMDiagnostics, type LLMConfigCliOverrides, type LLMConfigMode, type LLMConsumer, type LLMValueSource } from "./utils/effective-llm-config.js";
 export { loadLLMEnvLayers, mergeEnvMaps, studioIgnoredEnv, cliOverlayEnv, legacyEnv, type LLMEnvLayers, type LLMEnvMap } from "./utils/llm-env.js";
@@ -935,7 +936,7 @@ export {
   type PageScoreInput, type ScoreFile, type ScoreType, type LayoutReport, type LaidFrame,
 } from "./pipeline/page-score.js";
 export {
-  layoutScored, logScore, problemsFor, scoreAndSave, scoreIssuePage, variantFor,
+  layoutScored, logScore, problemsFor, scoreAndSave, scoreIssuePage, variantFor, perfectPage, perfectIssue, type Perfected,
 } from "./pipeline/page-score-run.js";
 export {
   BLOCK_KINDS, blockRules, cleanBlocks, gridOf, placedBlocks, sizeOf,
@@ -1017,7 +1018,7 @@ export type { PipelineState, PipelineStatus, GateState } from "./pipeline/pipeli
 export { validateDefinition, renderTemplate } from "./publications/types.js";
 export { parseJson as parsePublicationJson } from "./publications/parse-json.js";
 export {
-  listIssues, readIssue, createIssue, setNotes as setPublicationNotes, removeIssue,
+  listIssues, readIssue, createIssue, setNotes as setPublicationNotes, removeIssue, forkIssue as forkPublication,
   setLastError as setPublicationLastError,
   checkPlan as checkPublicationPlan, checkDesign as checkPublicationDesign,
   approve as approvePublication, unapprove as unapprovePublication,
@@ -1025,7 +1026,7 @@ export {
   startQueue as startPublicationQueue, stopQueue as stopPublicationQueue,
   queueState as publicationQueueState, outstanding as outstandingPublicationPages,
   run as runPublication,
-  approveDesign as approvePublicationDesign, unapproveDesign as unapprovePublicationDesign,
+  approveDesign as approvePublicationDesign, chooseDesign as choosePublicationDesign, installDesign as installPublicationDesign, setIssueLook as setPublicationLook, setIssueBrand as setPublicationBrand, setDesignCount as setPublicationDesignCount, unapproveDesign as unapprovePublicationDesign,
   runAudit as runPublicationAudit, runDeslop as runPublicationDeslop,
   revisePage as revisePublicationPage, renderPage as renderPublicationPage,
   placePage as placePublicationPage, runDesign as runPublicationDesign,
@@ -1034,6 +1035,8 @@ export {
   appendReview as appendPublicationReview, readReviews as readPublicationReviews,
   type PageReview as PublicationPageReview,
 } from "./pipeline/publication-runner.js";
+export { buildAuthored as buildPublicationSpreads } from "./pipeline/publication-runner.js";
+export { spreadResults as publicationSpreads, spreadsOf, faultsOf as spreadFaults } from "./pipeline/spread-author.js";
 export { openIssueContext as openPublicationIssue, listIssueIds as listPublicationIssueIds } from "./pipeline/publication-context.js";
 export { createPublicationAsk } from "./pipeline/publication-session.js";
 export { PUBLICATION_DIMENSIONS } from "./pipeline/publication-review.js";
@@ -1096,3 +1099,17 @@ export {
   readRunTotals, runTotals, withRunMeter, asAgent, recordLlmCall, overBudget, telemetryFile, readWhoWrote,
   type LlmCall, type RunTotals, type Budget, type WhoWrote,
 } from "./llm/telemetry.js";
+
+// The house book (Phase 7, analysis/26-design-engine.md) and each section's own language.
+export {
+  GRID_SYSTEMS, GENERATORS, RULE_STYLES,
+  readHouse, writeHouse, houseInForce, checkHouse, scaleOf,
+  houseBlock, applyHouse, proposeHousePrompt, houseFile,
+  type House, type GridSystem,
+} from "./pipeline/house.js";
+export { holdLanguage, mix, ROLES, LANGUAGE_GUIDE, type Language, type Panel } from "./pipeline/visual-language.js";
+export { holdShapes, pageArtPrompt, SHAPE_KINDS, type Shape } from "./pipeline/page-art.js";
+export { pageBlockers } from "./pipeline/publication-design.js";
+export { lookAtPage, readLook, parseLook, lookPrompt, layoutHash, LOOK_PASS, type PageLook, type LookDefect } from "./pipeline/page-look.js";
+export { listLooks, lookOf, imageStyleOf, saveImageStyle, type Look, type ImageStyle } from "./pipeline/looks.js";
+export { loadBrand, listBrands, brandsDir, brandHouse, brandBlock, bengaliDigits, BRAND_KINDS, selectedBrand, selectBrand, type Brand } from "./pipeline/brand.js";

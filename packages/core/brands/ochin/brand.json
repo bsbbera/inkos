@@ -1,0 +1,106 @@
+{
+  "id": "ochin",
+  "version": 1,
+  "name": "Ochin",
+  "mark": "অচিন",
+  "tagline": { "bn": "অচিন পাখির খোঁজে", "en": "In search of the unknown bird" },
+  "promise": "We never pretend to catch the bird: every story shows where an open question flies, who chased it before, and what is still unknown. Wonder, not trivia. For every age.",
+  "colours": {
+    "shankha":  { "hex": "#F6EEDC", "role": "ground", "bn": "শাঁখা", "means": "the conch-shell bangle; the page itself" },
+    "kajol":    { "hex": "#1E1A1D", "role": "ink", "bn": "কাজল", "means": "kohl, lamp-black; every word" },
+    "sindur":   { "hex": "#D23A1E", "role": "signal", "bn": "সিঁদুর", "means": "vermilion; a mark, never a field" },
+    "paper":    { "hex": "#EDE2CA", "role": "second paper", "bn": "কাগজ", "means": "older paper: boxes, mounts, quiet pages" },
+    "holud":    { "hex": "#EBA417", "role": "section", "bn": "হলুদ", "means": "turmeric: light, lamps, the sun, first things" },
+    "neel":     { "hex": "#27357A", "role": "section", "bn": "নীল", "means": "indigo: night, space, depth, history's weight" },
+    "kolapata": { "hex": "#2F7D46", "role": "section", "bn": "কলাপাতা", "means": "banana leaf: life, plants, growth, the body" },
+    "padma":    { "hex": "#12807E", "role": "section", "bn": "পদ্মা", "means": "the river: water, weather, travel, machines" },
+    "shapla":   { "hex": "#E07A9A", "role": "section", "bn": "শাপলা", "means": "water lily: people, feeling, art, the self" },
+    "mati":     { "hex": "#A9502B", "role": "section", "bn": "মাটি", "means": "terracotta: earth, craft, the past, home" }
+  },
+  "sectionColours": ["holud", "neel", "kolapata", "padma", "shapla", "mati"],
+  "pairsByTopic": [
+    ["space, light, photography", "neel", "holud"],
+    ["rivers, monsoon, weather", "padma", "kolapata"],
+    ["philosophy, the self", "shapla", "holud"],
+    ["history, archaeology", "mati", "neel"],
+    ["plants, food, the body", "kolapata", "holud"],
+    ["machines, maps, travel", "padma", "mati"],
+    ["music, art, other cultures", "shapla", "neel"],
+    ["craft, home, festivals", "mati", "holud"]
+  ],
+  "ratios": {
+    "inside": "paper about half, ink a fifth, the section's two colours a sixth, sindur a sliver",
+    "openers": "one section colour may fill the page; the lal paar still closes it",
+    "quiet": "paper and ink only, one sindur mark; every loud spread is followed by a quiet or dense one"
+  },
+  "text": {
+    "body": { "shankha": ["kajol", "neel", "mati"], "paper": ["kajol", "neel"], "kajol": ["shankha", "holud", "shapla"], "neel": ["shankha", "holud"], "holud": ["kajol", "neel"], "shapla": ["kajol"], "mati": ["shankha"] },
+    "heads": { "shankha": ["sindur", "kolapata", "padma"], "paper": ["mati", "sindur", "padma"], "kajol": ["sindur", "padma"], "neel": ["shapla"], "shapla": ["neel"], "mati": ["kajol"], "kolapata": ["shankha", "kajol"], "padma": ["shankha", "kajol"], "sindur": ["shankha"] }
+  },
+  "type": {
+    "mark": "Galada",
+    "display": "Tiro Bangla",
+    "text": "Anek Bangla",
+    "young": "Atma",
+    "files": { "mark": "Galada-Regular.ttf", "display": "TiroBangla-Regular.ttf", "displayItalic": "TiroBangla-Italic.ttf", "text": "AnekBangla[wdth,wght].ttf" },
+    "roles": {
+      "mark": "masthead, big numbers, years, the word box; never a sentence",
+      "display": "headlines, pull quotes, subheads; italic carries the other language's line",
+      "text": "body, decks (weight 300), captions, labels (weight 600, caps, tracked), data",
+      "young": "only the youngest readers' pages and activity boxes"
+    },
+    "ladder": { "N1": [96, 96], "D1": [66, 70], "D2": [42, 46], "D3": [28, 32], "pull": [21, 28], "D4": [16, 21], "deck": [14, 20.5], "body": [11, 16.6], "chip": [10, 14.6], "cap": [9.2, 13.4], "label": [8.4, 11] },
+    "scale": [66, 42, 28, 16, 11]
+  },
+  "bilingual": {
+    "split": "English carries the reading, Bengali carries the heart: about 85 words in 100 are English. A reader with no Bengali misses nothing they need.",
+    "always": ["the mark অচিন", "folio numerals in Bengali digits", "each section's name in Bengali beside the English eyebrow"],
+    "oncePerStory": "one Bengali line (an epigraph, a pull quote from a Bengali source, or a closing line) with its English beneath in italic",
+    "wordBox": "one Bengali word per feature (শব্দ) that names the idea better than English: the word in Galada, how it sounds, what it means",
+    "never": "whole paragraphs side by side",
+    "shaping": "Bengali is shaped by HarfBuzz and drawn as outlines; Affinity cannot shape it"
+  },
+  "house": {
+    "trimMm": [210, 297], "bleedMm": 3, "marginMm": 16, "gutterMm": 4, "baselineMm": 4.5, "columns": 6,
+    "grids": ["columns", "modular"],
+    "rule": "thick-thin",
+    "folio": "foot of every page, outer corner: Bengali numerals, then 'Ochin · issue title' in Anek Bangla 7.5 pt",
+    "kicker": "label caps in sindur, tracked, with the section's Bengali name beside it",
+    "matra": "every headline hangs from a kajol matra rule (1.1 mm), or shankha on a dark ground"
+  },
+  "shapes": {
+    "lalpaar": { "label": "Lal paar", "bn": "লাল পাড়", "means": "the red border of the Puja sari: a threshold, you are entering or leaving", "where": ["cover", "opener", "back"], "perSpread": 1, "params": "solid sindur, ink shankha, tstyle 0 single thread | 1 double | 2 thread and dots, toff mm from top" },
+    "matra":   { "label": "Matra rule", "bn": "মাত্রা", "means": "the headstroke Bengali letters hang from; makes an English headline look Bengali-born", "where": ["any"], "perSpread": 99, "params": "solid kajol (shankha on dark), rule mm thickness, rstyle 0 single | 1 with hairline | 2 end beads" },
+    "kantha":  { "label": "Kantha stitch", "bn": "কাঁথা", "means": "old cloth stitched into new: knowledge made of joined pieces", "where": ["any"], "perSpread": 6, "params": "pts: the path it runs along (page mm), ink colour, weight pt, ends mm (knot radius, 0 none), endcol, thread 1 for double" , "rule": "only where something connects to something; never a border for its own sake" },
+    "alpana":  { "label": "Alpana", "bn": "আলপনা", "means": "rice-paste welcome at the door; order found in nature", "where": ["opener", "end", "frame"], "perSpread": 1, "params": "solid colour, apet 1 six | 2 eight | 3 ten | 4 twelve | 5 sixteen petals, aform 1 leaf | 2 lotus | 3 drop | 4 spear, aring 1 dots | 2 none | 3 double dots, ainner 1 none | 2 dots | 3 small petals" },
+    "bird":    { "label": "The bird", "bn": "অচিন পাখি", "means": "the question itself; any colour, may perch or look back; never drawn inside a cage", "where": ["cover", "end", "back"], "perSpread": 1, "params": "body, wing, beak, eye, pupil, wstitch colours; flip 1 looks left; perch 1 stands on a line, pcol its colour" },
+    "panel":   { "label": "Panel", "bn": "পট", "means": "a patch of cloth or a pat scroll; its edge says where you are", "where": ["any"], "perSpread": 6, "params": "pfill colour, profile 0 plain | 1 wave (water) | 2 scallop (petals) | 3 zigzag (mountains, stitch) | 4 steps (ghats, buildings), depth mm, pitch mm, fadeL/fadeR/fadeT/fadeB mm, gcol colour to grade into, gang degrees" },
+    "ornament":{ "label": "Festival ornament", "bn": "উৎসব", "means": "generated alpona, kolam, rosette, border band: for ritual, craft and pattern topics", "where": ["festival"], "perIssue": 1, "params": "kind alpona | kolam | rosette | band, solid and ink colours, seed" }
+  },
+  "finish": {
+    "drawn": { "fwob": 0.3, "fwear": 0.01, "fgrain": 0.5, "fwater": 0.125 },
+    "panel": { "fgrain": 0.5, "fdpi": 200 },
+    "note": "wobble, watercolour, wear, grain and paper on every drawn shape; type stays sharp; seeded so any shape rebuilds exactly"
+  },
+  "pictures": {
+    "photographs": "real, credited, public domain or open licence, source and licence recorded; crops are part of the story; never recoloured into the palette",
+    "illustration": "opaque gouache, flat colour, visible brush, warm paper showing through, in the brand's colours; a world topic keeps its own art inside Ochin's frame",
+    "figures": "anything exact (a scale, a curve, a wavelength) is drawn as vectors to real data, never generated; no invented portraits"
+  },
+  "imageStyle": {
+    "style": "opaque gouache illustration, flat colour areas with visible brush strokes, warm cream paper showing through, limited palette of turmeric yellow, deep indigo, banana-leaf green, river teal, water-lily pink, terracotta and vermilion with kohl-black lines, Bengali folk-painting warmth",
+    "negative": "text, letters, photograph, 3d render, gold, neon, gradient background, glossy"
+  },
+  "devices": [
+    ["Across the fold", "one picture or object spans both pages, so the gutter becomes part of it"],
+    ["Magnifier", "an alpana ring holds a close crop of a detail the reader would miss"],
+    ["Exploded stack", "layers pulled apart and labelled, so a hidden structure becomes visible"],
+    ["Film strip", "frames in sequence across the spread; time reads left to right"],
+    ["Number stack", "one huge figure in Galada, the story told beside it"],
+    ["Kantha timeline", "dates threaded on a running stitch, each knot a moment"],
+    ["Album mount", "photographs held by four photo corners on paper"],
+    ["Opposing pages", "two pages argue: same grid, opposite grounds"],
+    ["Measured chart", "drawn to real data by code, log scale when the range demands it"]
+  ],
+  "voice": "An elder sibling at the window: curious, warm, exact. Simple enough for a ten-year-old, layered enough that an adult keeps finding more. Asks before it tells, names real people, admits what nobody knows yet. Never 'Discover the amazing world of...'."
+}

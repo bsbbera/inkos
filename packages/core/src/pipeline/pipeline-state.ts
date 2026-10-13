@@ -93,6 +93,8 @@ export interface PipelineState {
   readonly history: ReadonlyArray<HistoryEntry>;
   /** Pins for this production only, over the project's (21). Keyed like quire.json modelOverrides. */
   readonly modelOverrides?: Readonly<Record<string, string | { readonly service?: string; readonly model: string }>>;
+  /** The process running it, while it runs: dev and prod share one workspace. */
+  readonly owner?: { readonly pid: number };
 }
 
 /** Deterministic clock injection keeps the transitions testable. */

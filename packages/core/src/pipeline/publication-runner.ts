@@ -12,10 +12,11 @@
  * `ask` function from the caller, so a run uses whatever provider the session
  * already uses, with the tools that session already has.
  */
+import { replaceFile } from "../utils/replace-file.js";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import type { PublicationDefinition } from "../publications/types.js";
 import { renderTemplate } from "../publications/types.js";
 import {
@@ -65,14 +66,22 @@ import { buildRuleStack } from "../utils/rule-stack.js";
 import { requireDesigner, requireRenderer } from "../utils/renderer-preflight.js";
 import { validateIssue } from "./publication-schema.js";
 import {
-  BLOCK_GUIDE,
   DEFAULT_DESIGN_PROMPT,
   checkSpec,
   contrast,
   designReferences,
+  pageBlockers,
   type DesignSpec,
 } from "./publication-design.js";
 import { goldenRules, readMath, repairGoldenRules } from "./design-rules.js";
+import { GRID_SYSTEMS, applyHouse, houseBlock, houseInForce } from "./house.js";
+import { brandBlock, brandHouse, brandLanguage, holdBrandSpec, loadBrand, offBrandColours, pairOf, placeOf, selectedBrand, type Brand } from "./brand.js";
+import { LANGUAGE_GUIDE, holdLanguage, type Language } from "./visual-language.js";
+import { holdShapes, pageArtPrompt } from "./page-art.js";
+import { imageStyleOf, issueLook, lookOf, type IssueLook } from "./looks.js";
+import { checkComposition, composePrompt, compositionSummary, layoutOf, slotManifest, type ComposedPage, type PageSetting } from "./composition.js";
+import { layoutOfPlan, planPage, rerank, type Arrangement } from "./page-plan.js";
+
 
 /* ------------------------------------------------------------------- types */
 
@@ -226,6 +235,10 @@ export interface PublicationSection {
 
 export interface DesignWorld {
   n: number;
+  /** Legacy: the art style a world was picked from before sections wrote their own language. */
+  style?: string;
+  /** The section's own colours, panels and motif, written from its copy (visual-language.ts). */
+  language?: Language;
   register: string;
   technique?: string;
   idiom: string;
@@ -238,17 +251,35 @@ export interface DesignWorld {
   imagePrompt?: string;
   negative?: string;
   props?: string[];
+  /** Held to a brand (brand.ts): its colours are the brand's, its register is the brand's own. */
+  brand?: string;
+  /** The brand's two section colours this section is made of, by name. */
+  pair?: [string, string];
+  /** The brand signature that leads the section. */
+  lead?: string;
+  /** The section's name in Bengali, set beside its English eyebrow. */
+  bn?: string;
 }
 
 export interface PublicationDesign {
   sections: DesignWorld[];
   fixed?: {
     folio?: string; trim?: string; grid?: string; divider?: string;
+    /** The masthead the wordmark and running head set: the house's name. */
+    masthead?: string;
+    /** Legacy house panel style; panels now come from each section's language. */
+    panel?: string;
+    /** The house's rule style (house.ts). */
+    rule?: string;
     /** Brand furniture placed on every page built from blocks (runhead, rule, folio). */
     blocks?: PageBlock[];
   };
   /** What the design stage decided: the one source both renderers read. */
   spec?: DesignSpec | null;
+  /** The issue's design direction, written by the model from the copy (plan 27). */
+  direction?: string;
+  /** What the composer and illustrator reported during the last design run. */
+  notes?: string[];
 }
 
 export interface PublicationIssue {
@@ -260,18 +291,34 @@ export interface PublicationIssue {
   title: string;
   thesis: string;
   extent: number;
+  /** The extent asked for, when the type's rules changed it (a magazine is 16 to 64). */
+  extentAsked?: number;
   status: string;
   createdAt: string;
   updatedAt?: string;
   notes?: string;
   /** Images the user attached at intake, for the design stage. */
   referenceImages?: string[];
+  /** The look the editor chose for this issue (looks.ts); none chosen imposes none. */
+  look?: IssueLook | null;
+  /** The brand this work is held to (brand.ts, core/brands/<id>); none: it invents its own. */
+  brand?: string | null;
   research: Record<string, unknown> | null;
   /** The connection web, once research has found enough to draw it. */
   web?: IssueWeb | null;
   sections: PublicationSection[];
   pages: PublicationPage[];
   design?: PublicationDesign | null;
+  /**
+   * How many designs the design stage makes for the editor to choose among at
+   * the design gate (1 when unset). One creation, several looks: a second look
+   * is an option of this issue, never a copy of it.
+   */
+  designCount?: number;
+  /** The designs the stage made, when it made more than one; `design` is the chosen one. */
+  designOptions?: PublicationDesign[];
+  /** Which of `designOptions` is `design`. */
+  designChoice?: number;
   designPrefs?: { register: string; technique: string; notes: string };
   warnings?: string[];
   approved?: { at: string; by: string } | null;
@@ -307,7 +354,8 @@ export interface PublicationIssue {
 }
 
 /** Parsed JSON from the model. The caller owns the provider and the transport. */
-export type AskFn = (prompt: string, tag: string) => Promise<Record<string, unknown>>;
+/** `images`: files the model is shown with the prompt (a rendered page it judges). */
+export type AskFn = (prompt: string, tag: string, opts?: { readonly images?: ReadonlyArray<string> }) => Promise<Record<string, unknown>>;
 
 export interface PublicationEvent {
   readonly type: string;
@@ -395,15 +443,18 @@ export async function readIssue(ctx: RunnerContext, id: string): Promise<Publica
  * over the target, which is atomic on both NTFS and POSIX, so a crash or a full
  * disk cannot leave half a JSON file where the issue used to be.
  */
+let saves = 0;
+
 async function save(ctx: RunnerContext, issue: PublicationIssue): Promise<PublicationIssue> {
   issue.updatedAt = new Date().toISOString();
   validateIssue(issue, issue.id);
 
   await mkdir(dirOf(ctx, issue.id), { recursive: true });
   const target = fileOf(ctx, issue.id);
-  const temp = `${target}.${process.pid}.tmp`;
+  // One temp per write: two saves in flight shared `<pid>.tmp` and raced.
+  const temp = `${target}.${process.pid}.${++saves}.tmp`;
   await writeFile(temp, JSON.stringify(issue, null, 2), "utf-8");
-  await rename(temp, target);
+  await replaceFile(temp, target);
 
   // Nothing indexes here: `recall` re-records before every query, so the index
   // is right even when the issue was changed by something that never called
@@ -469,6 +520,8 @@ export async function createIssue(
   // magazine does, because every section plate has to land on a recto.
   if (def.rules.evenExtent) extent = Math.round(extent / 2) * 2;
   extent = Math.min(def.extent.max, Math.max(def.extent.min, extent));
+  // Said, not silent: 8 asked for and 16 made read as a miscount.
+  const asked = Number(args.extent) || 0;
 
   return save(ctx, {
     id,
@@ -479,8 +532,11 @@ export async function createIssue(
     title: "",
     thesis: "",
     extent,
+    ...(asked && asked !== extent ? { extentAsked: asked } : {}),
     status: "new",
     createdAt: new Date().toISOString(),
+    // The workspace's selected brand (the Brand page); the issue can still be moved off it.
+    brand: selectedBrand(ctx.projectRoot),
     research: null,
     sections: [],
     pages: [],
@@ -528,6 +584,7 @@ export async function startNextIssue(ctx: RunnerContext, id: string, now = new D
   });
   next.recurring = issue.recurring ?? null;
   if (issue.audience) next.audience = issue.audience;
+  if (issue.brand) next.brand = issue.brand;
   await save(ctx, next);
   issue.recurring = null;
   await save(ctx, issue);
@@ -580,6 +637,41 @@ export async function setLastError(
       : null;
     await save(ctx, issue);
   } catch { /* the run's own error is the one worth keeping */ }
+}
+
+/**
+ * The same approved copy, to be designed again in another design language.
+ *
+ * The copy, its research and its approval come along; the design, its art,
+ * the build and the editor's visual notes do not, because they are the language. The fork's design stage
+ * reads the workspace's other designs (`recentBlock`) and so does not repeat
+ * this one. The original is not touched.
+ */
+export async function forkIssue(ctx: RunnerContext, id: string): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  let k = 2;
+  while (existsSync(dirOf(ctx, `${id}--l${k}`))) k++;
+  const forkId = `${id}--l${k}`;
+  const from = dirOf(ctx, id), to = dirOf(ctx, forkId);
+  await mkdir(join(to, "pages"), { recursive: true });
+  for (const f of ["research-cache.json", "memory.db"]) {
+    if (existsSync(join(from, f))) await writeFile(join(to, f), await readFile(join(from, f)));
+  }
+  for (const f of await readdir(join(from, "pages")).catch(() => [] as string[])) {
+    if (f.endsWith(".md")) await writeFile(join(to, "pages", f), await readFile(join(from, "pages", f)));
+  }
+  // The editor's notes and reference pictures pin the original's look (Rain's said "kraft, #D9693A"):
+  // a fork made for another language that kept them came back in the same colours.
+  const { design: _d, designOptions: _o, designChoice: _c, designApproved: _a, build: _b, sectionBoard: _s, lastError: _e, notes: _n, referenceImages: _r, ...kept } = issue;
+  const fork: PublicationIssue = {
+    ...kept,
+    id: forkId,
+    status: "approved",
+    createdAt: new Date().toISOString(),
+    // The pictures are drawn in the language; the briefs (what they show) are content and stay.
+    pages: issue.pages.map(({ image: _i, images: _is, ...p }) => p as PublicationPage),
+  };
+  return save(ctx, fork);
 }
 
 export async function removeIssue(ctx: RunnerContext, id: string): Promise<boolean> {
@@ -704,14 +796,15 @@ export function checkDesign(design: PublicationDesign | null | undefined): strin
 
   for (const w of worlds) {
     const reg = styles.byName(w.register);
-    if (!reg) bad.push(`s${w.n}: "${w.register}" is not one of the 50`);
+    if (w.brand) { /* the brand's own register: held by brand.ts, not the 50 */ }
+    else if (!reg) bad.push(`s${w.n}: "${w.register}" is not one of the 50`);
     else if (reg.tier !== 1) {
       bad.push(`s${w.n}: ${reg.name} is tier ${reg.tier} - only a tier 1 system may run a section`);
     } else if (reg.screenOnly) {
       bad.push(`s${w.n}: ${reg.name} is a screen register and leaves no legible ink on paper`);
     }
 
-    if (w.technique) {
+    if (w.technique && !w.brand) {
       const t = styles.byName(w.technique);
       if (!t) bad.push(`s${w.n}: "${w.technique}" is not one of the 50`);
       else if (t.tier !== 2) {
@@ -744,9 +837,14 @@ export function checkDesign(design: PublicationDesign | null | undefined): strin
 }
 
 export function worldFor(issue: PublicationIssue, n: number): DesignWorld | null {
+  const worlds = [...(issue.design?.sections ?? [])].sort((a, b) => a.n - b.n);
   const section = (issue.sections ?? []).find((s) => n >= s.from && n <= s.to);
-  if (!section) return null;
-  return (issue.design?.sections ?? []).find((w) => w.n === section.n) ?? null;
+  if (section) return worlds.find((w) => w.n === section.n) ?? null;
+  // Front matter wears the first section's world and back matter the last's:
+  // a cover with no world fell back to the toolkit's tint and came out grey.
+  if (!worlds.length) return null;
+  const first = Math.min(...(issue.sections ?? []).map((s) => s.from));
+  return n < first ? worlds[0]! : worlds[worlds.length - 1]!;
 }
 
 /* ------------------------------------------------------------------- gates */
@@ -877,6 +975,18 @@ function blocksLine(def: PublicationDefinition, archetype: string): string {
   return "BLOCKS this page may carry, beside the body — these are objects placed on the\n"
     + "page, not sentences inside the prose, so each one must stand alone and be worth\n"
     + `its own space: ${allowed.join(", ")}.`;
+}
+
+/** The brand's bilingual blocks (bilingualLine), kept whatever the archetype allows: at most one of each. */
+function bilingualBlocks(issue: PublicationIssue, raw: unknown): NonNullable<PublicationPage["furniture"]> {
+  if (!issue.brand || !Array.isArray(raw)) return [];
+  const out: NonNullable<PublicationPage["furniture"]> = [];
+  for (const kind of ["wordbox", "bengali-line"]) {
+    const f = raw.find((x) => x && typeof x === "object" && (x as { kind?: unknown }).kind === kind) as { text?: unknown } | undefined;
+    const text = String(f?.text ?? "").trim();
+    if (text && /[ঀ-৿]/.test(text) && text.includes("|")) out.push({ kind, text: text.slice(0, 300) } as NonNullable<PublicationPage["furniture"]>[number]);
+  }
+  return out;
 }
 
 /**
@@ -1205,8 +1315,24 @@ export function connectionLines(issue: PublicationIssue, page: PublicationPage):
     wonderLine: web?.wonder
       ? `THE ISSUE'S WONDER MOMENT, if this page can touch it from its own side: ${web.wonder.text}`
       : "",
-    signatureLine: signature[page.type] ?? "",
+    signatureLine: [signature[page.type] ?? "", bilingualLine(issue, page)].filter(Boolean).join("\n"),
   };
+}
+
+/** Under a brand with a bilingual rule (brand.ts): the Bengali this page carries, beside its English. */
+function bilingualLine(issue: PublicationIssue, page: PublicationPage): string {
+  const brand = loadBrand(issue.brand);
+  if (!brand) return "";
+  const lastOfSection = (issue.sections ?? []).some((s) => s.to === page.n);
+  return [
+    `THIS PAGE IS ${brand.name.toUpperCase()} (${brand.mark}): ${String(brand.bilingual.split ?? "")}`,
+    "Write the body, deck and title in English. Then add, as furniture (they are always allowed):",
+    `- {"kind":"wordbox","text":"<one Bengali word> | <how it sounds, in Latin letters> | <what it means, under 18 words>"} when this page's idea has a Bengali word that names it better than English (at most one; features only).`,
+    lastOfSection || page.type === "cover" || page.type === "opener"
+      ? `- {"kind":"bengali-line","text":"<one line of Bengali, from a real Bengali source when quoted> | <its English>"}: this page ${lastOfSection ? "closes its story" : "opens"}, so it carries the story's one Bengali line.`
+      : "",
+    "Bengali is never a translation of the English beside it, and never more than one line.",
+  ].filter(Boolean).join("\n");
 }
 
 export async function writePage(
@@ -1312,7 +1438,7 @@ export async function writePage(
     deck: (out.deck as string) || "",
     body: (out.body as string) ?? "",
     pullQuote: (out.pull_quote as string) || "",
-    furniture: keepAllowedBlocks(def, page.type, out.furniture),
+    furniture: [...(keepAllowedBlocks(def, page.type, out.furniture) ?? []), ...bilingualBlocks(issue, out.furniture)],
     // The page prompt asks for `image_prompts`, a list. This read only the old
     // single `image_prompt`, so every brief of a 50-page issue was thrown away
     // and art read "no page asked for a picture" before it had started.
@@ -1331,7 +1457,8 @@ export async function writePage(
     issue.approved = null;
     emit(ctx, "publication:issue", { id, approved: false });
   }
-  issue.status = "writing";
+  // The last page in says so; otherwise a finished issue reads "writing" for as long as it sits.
+  issue.status = issue.pages.every((p) => p.body !== null && p.body !== undefined) ? "written" : "writing";
   emit(ctx, "publication:stage", {
     id, stage: "write", state: "done", page: page.n, words: page.words,
   });
@@ -1357,6 +1484,24 @@ export async function writePage(
  * Gated on approval: rendering art for copy nobody signed off wastes GPU time
  * on pages that are about to be rewritten.
  */
+/** Pixels for a picture of this aspect at about the area the renderer draws best (1.5 MP), in steps of 64. */
+export function sizeForFrame(aspect: number): { width: number; height: number } {
+  // Within 1:2 and 2.4:1: past that the renderer repeats its subject down a strip (Birds p12
+  // drew the same two feathers twice at 0.32). A narrower frame crops the middle of it.
+  const a = Math.min(2.4, Math.max(0.5, aspect || 1));
+  const step = (v: number) => Math.max(512, Math.round(v / 64) * 64);
+  return { width: step(Math.sqrt(1536 * 1024 * a)), height: step(Math.sqrt(1536 * 1024 / a)) };
+}
+
+/** How a picture's frame sits on the page, in words the renderer acts on. */
+export function placementOf(f: { x: number; y: number; w: number; h: number }): string {
+  const a = f.w / f.h;
+  const shape = a < 0.8 ? "A tall upright composition" : a > 1.4 ? "A wide composition" : "A square composition";
+  const face = f.x < 1 && f.x + f.w < 200 ? ", the subject facing right, into the page"
+    : f.x + f.w > 209 && f.x > 10 ? ", the subject facing left, into the page" : ", the subject centred";
+  return `${shape}${face}, whole and uncropped.`;
+}
+
 /** The design's own slot for a page, said in the treatment table's words. */
 function treatmentForSlot(slot: string | undefined): string | undefined {
   switch (slot) {
@@ -1395,9 +1540,19 @@ export async function artPage(
   ctx: RunnerContext,
   id: string,
   n: number,
+  { redo = false, from }: {
+    readonly redo?: boolean;
+    /**
+     * A picture already made (another page's, the gallery's, an earlier render) to use
+     * for this page's first picture instead of drawing a new one. Only its treatment is
+     * run on it: the editor kept the Birds gouaches and asked for no new generation.
+     */
+    readonly from?: string;
+  } = {},
 ): Promise<PublicationPage> {
   const def = ctx.definition;
   if (!def.needsImages) throw new Error(`${def.label} does not use generated images`);
+  if (from && !existsSync(from)) throw new Error(`no picture at ${from}`);
 
   const issue = await readIssue(ctx, id);
   requireApproval(issue, "art");
@@ -1415,7 +1570,8 @@ export async function artPage(
   emit(ctx, "publication:stage", { id, stage: "art", state: "start", page: page.n });
   await mkdir(join(dirOf(ctx, id), "art"), { recursive: true });
 
-  const done = [...(page.images ?? [])];
+  // A redo asked for one page draws its pictures again; the stage resumes what it has.
+  const done = redo || from ? [] : [...(page.images ?? [])];
   /*
    * The section's world, or the issue's image direction when the design gave
    * no per-section worlds. Both were generated and neither ever reached a
@@ -1439,6 +1595,9 @@ export async function artPage(
     }
     const portrait = brief.orientation === "portrait";
     const square = brief.orientation === "square";
+    const frame = (issue.design?.spec?.pages?.[String(page.n)]?.blocks ?? [])
+      .filter((b) => b.kind === "image" && b.box)[i]?.box;
+    const frameSize = frame ? sizeForFrame(frame.w / frame.h) : null;
     const suffix = briefs.length > 1 ? `-${i + 1}` : "";
     const outFile = join(dirOf(ctx, id), "art", `${String(page.n).padStart(2, "0")}${suffix}.png`);
     // Rolled once and kept on the brief, so a re-render keeps its place on the
@@ -1453,7 +1612,12 @@ export async function artPage(
      * words had nowhere to go. The roll stays as the fallback for a page the
      * design said nothing about.
      */
-    const treatment = brief.treatment
+    // A picture in a frame short of the whole page shares the paper with the type.
+    // It keeps its painted ground, as a plate: a cutout of a gouache bird on cream was never
+    // clean (Birds), so the page is drawn round the plate in its ground's colour and grain
+    // (shim postprocess `ground`, affinity `held`) and the plate's edge disappears into it.
+    const sharesPaper = !!frame && (frame.w < 205 || frame.h < 290);
+    const treatment = (sharesPaper ? "plate" : brief.treatment)
       ?? treatmentForSlot(issue.design?.spec?.pages?.[String(page.n)]?.imageSlot)
       ?? rollTreatment({
         type: "publication", id, unit: page.n, k: i, slot: "page",
@@ -1477,10 +1641,36 @@ export async function artPage(
      * value, so the colour that is drawn is the colour that is keyed away.
      */
     const ground = section?.paper ?? issue.design?.spec?.palette?.paper;
+    // Where the picture stands, so the subject faces into the page and fills its frame's
+    // shape: told nothing, the Birds hornbill on the left edge faced off the page.
+    const placement = frame ? placementOf(frame) : "";
     const composed = composeImagePrompt({
-      type: "publication", prompt: brief.prompt, world, treatment, surface,
+      type: "publication", prompt: placement ? `${brief.prompt} ${placement}` : brief.prompt, world, treatment, surface,
       ...(ground ? { ground } : {}),
     });
+    const post = postProcessFor(treatment, {
+      paper: section?.paper, ink: section?.ink, hue: section?.hue,
+      ...(ground ? { ground } : {}),
+    });
+    if (from && i === 0) {
+      // The kept original is the picture given; the treatment is run on it by the shim,
+      // which writes only inside the workspace.
+      const { copyFile } = await import("node:fs/promises");
+      await mkdir(join(dirname(outFile), ".raw"), { recursive: true });
+      await copyFile(from, join(dirname(outFile), ".raw", basename(outFile)));
+      await copyFile(from, outFile);
+      const treated = await fetch(`${ctx.shimUrl}/image/post`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ file: outFile, ops: post }),
+      }).then((r) => r.json()).catch((e) => ({ ok: false, error: String(e) })) as { ok?: boolean; error?: string; applied?: unknown[] };
+      if (treated.ok === false) throw new Error(`art p${page.n}: the picture from ${from} could not be treated (${treated.error})`);
+      await writeFile(outFile.replace(/\.png$/i, ".recipe.json"), JSON.stringify({
+        type: "publication", id, unit: page.n, slot: `p${page.n}${suffix}`, treatment,
+        ...(section ? { section: section.n } : {}), reused: from, postProcess: treated.applied ?? [], at: new Date().toISOString(),
+      }, null, 2) + "\n", "utf-8");
+      done[i] = outFile;
+      continue;
+    }
 
     const res = await fetch(`${ctx.shimUrl}/image/render`, {
       method: "POST",
@@ -1488,8 +1678,12 @@ export async function artPage(
       body: JSON.stringify({
         prompt: composed.prompt,
         negative: composed.negative,
-        width: square ? 1280 : portrait ? 1024 : 1536,
-        height: square ? 1280 : portrait ? 1536 : 1024,
+        // At the shape of the frame it fills, when the plan gave it one: a landscape picture
+        // cropped into a tall side frame loses its subject, contained it leaves bands.
+        ...(frameSize ?? {
+          width: square ? 1280 : portrait ? 1024 : 1536,
+          height: square ? 1280 : portrait ? 1536 : 1024,
+        }),
         outFile,
         // A magazine picture is a one-off on its own page: no recurring cast to
         // keep steady, so it is the one surface a hosted engine may draw
@@ -1499,10 +1693,7 @@ export async function artPage(
         // (09 §2B). It was never sent, so no LoRA could ever be chosen.
         ...(world.technique ? { technique: world.technique } : {}),
         needs: [],
-        post: postProcessFor(treatment, {
-          paper: section?.paper, ink: section?.ink, hue: section?.hue,
-          ...(ground ? { ground } : {}),
-        }),
+        post,
         recipe: {
           type: "publication",
           id,
@@ -1545,7 +1736,8 @@ function pageDigest(issue: PublicationIssue): string {
       + (blocks.length ? `, blocks: ${blocks.join(", ")}` : ", no blocks")
       + (briefsOf(p).length
         ? `, images: ${briefsOf(p).map((b) => b.orientation).join(" + ")}`
-        : ", no image");
+        : ", no image")
+      + (p.body ? `\n   opens: ${p.body.replace(/[#*_>]/g, "").replace(/\s+/g, " ").slice(0, 420)}` : "");
   }).join("\n");
 }
 
@@ -1556,12 +1748,42 @@ function pageDigest(issue: PublicationIssue): string {
  * section of every issue was drawn in one look and `worldFor` answered null.
  */
 /** Exported for the test that asserts the prompt offers the law's own catalogue. */
-export function sectionBlockFor(issue: PublicationIssue): string {
-  return sectionBlock(issue);
+export function sectionBlockFor(issue: PublicationIssue, house?: string, brand?: Brand | null): string {
+  return sectionBlock(issue, house, brand);
 }
 
-function sectionBlock(issue: PublicationIssue): string {
+function sectionBlock(issue: PublicationIssue, house?: string, brand?: Brand | null): string {
   const sections = issue.sections ?? [];
+  // A brand fixes colour, faces and pictures; a section chooses its pair and its lead signature.
+  if (brand) {
+    return [
+      "",
+      house ?? "",
+      "",
+      sections.length ? `SECTIONS. Each chooses inside the ${brand.name} brand:` : "",
+      ...sections.map((s) => `s${s.n} "${s.label}" (pages ${s.from}-${s.to}): ${s.question}`),
+      sections.length ? `For each section give: n, bn (its name in Bengali, two or three words, for the eyebrow), pair (two of ${brand.sectionColours.join(", ")}, the main one first), lead (one of ${Object.keys(brand.shapes).join(", ")}), idiom (in the brand's vocabulary: which of its shapes, how its panels are edged, what its devices are), and language.motif (one or two sentences: what this section's drawn art is built from, using the brand's shapes). Colours, faces, panel style and pictures are the brand's and are filled in for you.` : "",
+      "",
+      ...brandDesignLines(issue).filter((l) => !/colour|Colour/.test(l)),
+    ].join("\n");
+  }
+  // With a house in force the house speaks: fixed type and colours, and worlds
+  // picked from its art styles rather than invented (house.ts, Phase 7).
+  if (house) {
+    return [
+      "",
+      house,
+      "",
+      sections.length ? "SECTIONS. Each gets its own world and its own language, sharing the house's type and folio:" : "",
+      ...sections.map((s) => `s${s.n} "${s.label}" (pages ${s.from}-${s.to}): ${s.question}`),
+      sections.length ? `Registers to choose from, spelled exactly: ${styles.registers().map((r) => r.name).join(", ")}.` : "",
+      sections.length ? `Figure techniques to choose from, spelled exactly: ${styles.techniques().map((t) => t.name).join(", ")}.` : "",
+      sections.length ? "For each section give: register, technique, idiom (a named visual idiom in your own words), language, imagePrompt (how its pictures look, no single subject) and negative." : "",
+      sections.length ? LANGUAGE_GUIDE : "",
+      "",
+      ...brandDesignLines(issue),
+    ].join("\n");
+  }
   if (!sections.length) return "";
   return [
     "",
@@ -1581,9 +1803,10 @@ function sectionBlock(issue: PublicationIssue): string {
     `Registers to choose from, spelled exactly: ${styles.registers().map((r) => r.name).join(", ")}.`,
     `Figure techniques to choose from, spelled exactly: ${styles.techniques().map((t) => t.name).join(", ")}.`,
     "For each section give: register (from that list), technique (from that list),",
-    "idiom (a named visual idiom of your own words), paper, ink, hue, imagePrompt",
+    "idiom (a named visual idiom of your own words), language, imagePrompt",
     "(how every image in that section looks, no single subject) and negative (what",
     "those images must avoid). No two sections may share a register.",
+    LANGUAGE_GUIDE,
     "",
     ...brandDesignLines(issue),
   ].join("\n");
@@ -1594,15 +1817,28 @@ function sectionBlock(issue: PublicationIssue): string {
  * preflight, Phase 5). Without the list a design names fonts this machine
  * does not have, and the build quietly sets everything in the house face.
  */
-async function fontBlock(ctx: RunnerContext): Promise<string> {
-  if (!ctx.shimUrl) return "";
+/** The faces Affinity has, or null when the shim cannot say. */
+async function installedFonts(ctx: RunnerContext): Promise<string[] | null> {
+  if (!ctx.shimUrl) return null;
   try {
     const res = await fetch(`${ctx.shimUrl}/affinity/fonts`, { signal: AbortSignal.timeout(60_000) });
     const out = await res.json() as { fonts?: string[] };
-    if (!res.ok || !out.fonts?.length) return "";
+    return res.ok && out.fonts?.length ? out.fonts : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fontBlock(ctx: RunnerContext): Promise<string> {
+  if (!ctx.shimUrl) return "";
+  try {
+    const listed = await installedFonts(ctx);
+    if (!listed) return "";
+    const fonts = [...listed];
+    for (let i = fonts.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [fonts[i], fonts[j]] = [fonts[j]!, fonts[i]!]; }
     return `
-INSTALLED FONTS. type.display and type.text must each be one of these, spelled exactly:
-${out.fonts.join(", ")}
+INSTALLED FONTS (in no order). type.display and type.text must each be one of these, spelled exactly:
+${fonts.join(", ")}
 `;
   } catch {
     return "";
@@ -1621,28 +1857,34 @@ function brandDesignLines(issue: PublicationIssue): string[] {
   return [
     "THE BRAND'S CONSTANTS (the same in every issue — do not vary them by section):",
     "- One display face and one text face for the whole issue: spec.type.display and spec.type.text.",
-    "- One accent colour, spec.palette.accent, and it is the only strong colour in the issue."
-      + " Section hues are quiet: tints or shades of paper and ink, never a second accent.",
+    "- The folio, the running head and the grid. Colour is NOT a constant: each section's language owns it.",
     web?.accent
-      ? `- The accent is the centre's own colour: ${web.accent.name} ${web.accent.hex}. Use that hex, or the`
-        + " nearest one that holds contrast on the paper."
+      ? `- The centre's own colour is ${web.accent.name} ${web.accent.hex}: let it appear in every section's`
+        + " language, as accent or second."
       : "",
     web?.motif
       ? `- The motif is ${web.motif}. Put it in fixed.divider, and let every section's imagePrompt`
         + " carry it in a small way, so the issue reads as one object."
       : "",
-    "- Pictures stay quiet so the accent can speak: muted, duotone or sepia, never a rainbow.",
   ].filter(Boolean).concat("");
 }
 
 /** The model's section worlds, kept only where they name a real section. */
-function worldsFrom(raw: unknown, issue: PublicationIssue, spec: DesignSpec): DesignWorld[] {
+function worldsFrom(raw: unknown, issue: PublicationIssue, spec: DesignSpec, notes: string[] = []): DesignWorld[] {
   const known = new Set((issue.sections ?? []).map((s) => s.n));
   const hex = (v: unknown, fallback: string) => (/^#[0-9a-f]{6}$/i.test(String(v ?? "")) ? String(v) : fallback);
+  // The language is held to print here; a colour it had to move is said.
+  const speak = (w: DesignWorld, raw: unknown): DesignWorld => {
+    if (!raw || typeof raw !== "object") return w;
+    const { language, notes: said } = holdLanguage(raw, { paper: w.paper, ink: w.ink, accent: w.hue ?? spec?.palette?.accent ?? "#b03a2e" });
+    notes.push(...said.map((x) => `s${w.n}: ${x}`));
+    return { ...w, paper: language.paper, ink: language.ink, hue: language.accent, field: language.field, language };
+  };
   return (Array.isArray(raw) ? raw : [])
     .filter((w): w is Record<string, unknown> => !!w && typeof w === "object" && known.has(Number(w.n)))
-    .map((w) => ({
+    .map((w) => speak({
       n: Number(w.n),
+      ...(w.style ? { style: String(w.style) } : {}),
       register: String(w.register ?? w.technique ?? ""),
       ...(w.technique ? { technique: String(w.technique) } : {}),
       idiom: String(w.idiom ?? ""),
@@ -1651,7 +1893,328 @@ function worldsFrom(raw: unknown, issue: PublicationIssue, spec: DesignSpec): De
       ...(w.hue ? { hue: hex(w.hue, spec?.palette?.accent ?? "") } : {}),
       ...(w.imagePrompt ? { imagePrompt: String(w.imagePrompt) } : {}),
       ...(w.negative ? { negative: String(w.negative) } : {}),
-    }));
+    }, w.language));
+}
+
+/** A section world held to the brand: its pair and lead from the model, every colour the brand's. */
+function brandWorld(brand: Brand, w: DesignWorld, raw: unknown): DesignWorld {
+  const r = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const lang = (r.language && typeof r.language === "object" ? r.language : {}) as Record<string, unknown>;
+  const pair = pairOf(brand, r.pair, [w.hue, w.language?.accent, w.language?.second, String(lang.accent ?? ""), String(lang.second ?? "")].filter((v): v is string => !!v));
+  const language = brandLanguage(brand, pair, w.language ?? null);
+  const lead = Object.keys(brand.shapes).includes(String(r.lead ?? "")) ? String(r.lead) : "panel";
+  const { technique: _t, ...rest } = w;
+  return {
+    ...rest, brand: brand.id, pair, lead, language,
+    ...(/[ঀ-৿]/.test(String(r.bn ?? "")) ? { bn: String(r.bn).slice(0, 40) } : {}),
+    register: `${brand.name} · ${pair.join(" + ")}`,
+    idiom: w.idiom || `${brand.name} ${lead}`,
+    paper: language.paper, ink: language.ink, hue: language.accent, field: language.field,
+    imagePrompt: brand.imageStyle.style, negative: brand.imageStyle.negative,
+  };
+}
+
+/**
+ * Draw every laid page's art: one model call per page, given its copy, its
+ * section's language and where its type sits (page-art.ts). A page whose call
+ * fails keeps no shapes and the shim draws its fallback generator, said.
+ */
+async function drawArt(
+  ctx: RunnerContext, issue: PublicationIssue, spec: DesignSpec, worlds: DesignWorld[], only?: readonly number[],
+  direction?: string,
+  note?: string,
+): Promise<{ spec: DesignSpec; notes: string[] }> {
+  type Box = { x: number; y: number; w: number; h: number };
+  const withWorlds = { ...issue, design: { ...(issue.design ?? {}), sections: worlds } } as PublicationIssue;
+  // A planned page's art is its picture, in an image slot. Rain's pages were composed
+  // with drawn areas only, so the pictures the art stage made never printed.
+  const pages = issue.pages.filter((p) => (!only || only.includes(p.n)) && spec.pages?.[String(p.n)]?.blocks?.length && !spec.pages?.[String(p.n)]?.plan);
+  const next: Record<string, PageLayout> = { ...spec.pages };
+  const notes: string[] = [];
+  const sectionOf = (n: number) => (issue.sections ?? []).find((s) => n >= s.from && n <= s.to)?.label;
+  const brand = loadBrand(issue.brand);
+  const placeFor = (p: PublicationIssue["pages"][number]) =>
+    placeOf(p.type ?? "", (issue.sections ?? []).some((s) => s.to === p.n));
+  const one = async (p: PublicationIssue["pages"][number]) => {
+    const l = next[String(p.n)]!;
+    const language = worldFor(withWorlds, p.n)?.language;
+    if (!language) { notes.push(`p${p.n}: its section has no language, so the fallback art is drawn`); return; }
+    const boxed = (l.blocks ?? []).filter((b): b is PageBlock & { box: Box } => !!(b as { box?: Box }).box);
+    const art = boxed.filter((b) => b.kind === "drawn" || b.kind === "image").map((b) => b.box);
+    const type = boxed.filter((b) => !["drawn", "image", "rule"].includes(b.kind)).map((b) => ({ kind: b.kind, box: b.box }));
+    try {
+      const out = await ctx.ask(pageArtPrompt({
+        title: p.title ?? "", deck: p.deck, body: p.body ?? "", type: p.type, language,
+        ...(sectionOf(p.n) ? { section: sectionOf(p.n)! } : {}), art, blocks: type,
+        ...(direction ? { direction } : {}),
+        ...(l.reading ? { reading: l.reading } : {}),
+        ...(l.composed?.idea ? { idea: l.composed.idea } : {}),
+        ...(note ? { note } : {}),
+        ...(brand ? { brand: { brand, place: placeFor(p) } } : {}),
+      }), "design-art") as Record<string, unknown>;
+      const held: string[] = [];
+      const shapes = holdShapes(out, type, brand ? { brand, place: placeFor(p), notes: held } : undefined);
+      if (held.length) notes.push(`p${p.n}: ${held.join("; ")}`);
+      if (!shapes.length) { notes.push(`p${p.n}: the art came back with no shapes it could draw`); return; }
+      next[String(p.n)] = { ...l, shapes, ...(typeof out.idea === "string" ? { artIdea: out.idea.slice(0, 200) } : {}) };
+    } catch (e) {
+      notes.push(`p${p.n}: the art call failed (${e instanceof Error ? e.message : String(e)})`);
+    }
+  };
+  // Three at a time: each is a full model call, and one issue is a few dozen pages.
+  for (let i = 0; i < pages.length; i += 3) {
+    if (ctx.signal?.aborted) throw new PublicationStopped();
+    await Promise.all(pages.slice(i, i + 3).map(one));
+  }
+  return { spec: { ...spec, pages: next }, notes };
+}
+
+/** The model's direction object, as the one text every later call is given. */
+function directionOf(raw: unknown): string {
+  if (typeof raw === "string") return raw.trim().slice(0, 3000);
+  if (!raw || typeof raw !== "object") return "";
+  return Object.entries(raw as Record<string, unknown>)
+    .filter(([, v]) => typeof v === "string" && v.trim())
+    .map(([k, v]) => `- ${k}: ${String(v).trim()}`).join("\n").slice(0, 3000);
+}
+
+const fingerprintsFile = (ctx: RunnerContext) => join(ctx.projectRoot, "_taste", "design-fingerprints.jsonl");
+
+/**
+ * What other creations already look like, so this one is not drawn the same
+ * way (plan 27, Phase 13): the type pair, colours, grid and direction of the
+ * last few designs in the workspace, this issue's own earlier ones left out.
+ */
+async function recentBlock(ctx: RunnerContext, id: string): Promise<string> {
+  const lines = await readFile(fingerprintsFile(ctx), "utf-8").then((t) => t.split("\n").filter(Boolean)).catch(() => [] as string[]);
+  const seen = new Map<string, Record<string, any>>();
+  for (const l of lines) { try { const f = JSON.parse(l); if (f.id !== id) { seen.delete(f.id); seen.set(f.id, f); } } catch { /* a torn line */ } }
+  const recent = [...seen.values()].slice(-6);
+  if (!recent.length) return "";
+  // A design kept before worlds were fingerprinted is read for them, from the issue itself.
+  for (const f of recent) {
+    if (!f.worlds) f.worlds = await readIssue(ctx, f.id).then((i) => (i.design?.sections ?? []).map((w) => `${w.register} / ${w.technique}`).join(" | ")).catch(() => "");
+  }
+  return [
+    "",
+    "OTHER CREATIONS IN THIS WORKSPACE ALREADY LOOK LIKE THIS. This one must not repeat their type pair,",
+    "their colours, their direction, or any of their worlds' registers - every section takes a register none of them used:",
+    ...recent.map((f) => `- "${f.title}": ${f.fonts}; colours ${f.colours}; grid ${f.system};${f.worlds ? ` worlds ${f.worlds};` : ""} ${String(f.composition ?? "").slice(0, 220)}`),
+    "",
+  ].join("\n");
+}
+
+async function keepFingerprint(ctx: RunnerContext, issue: PublicationIssue, spec: DesignSpec, worlds: DesignWorld[], direction: string): Promise<void> {
+  const { appendFile } = await import("node:fs/promises");
+  await mkdir(dirname(fingerprintsFile(ctx)), { recursive: true });
+  const line = {
+    id: issue.id, at: new Date().toISOString(), title: issue.title || issue.subject,
+    fonts: `${spec.type?.display} / ${spec.type?.text}`, system: spec.grid?.system ?? "columns",
+    worlds: worlds.map((w) => `${w.register} / ${w.technique}`).join(" | "),
+    colours: (worlds.length ? worlds.map((w) => [w.paper, w.hue, w.language?.second].filter(Boolean).join(" ")) : [spec.palette?.paper, spec.palette?.accent]).join(" | "),
+    composition: /composition: ([^\n]*)/.exec(direction)?.[1] ?? direction.slice(0, 220),
+  };
+  await appendFile(fingerprintsFile(ctx), JSON.stringify(line) + "\n", "utf-8").catch(() => undefined);
+}
+
+/** Every picture slot of the issue, for ComfyUI later: `<issue>/slots.json` (plan 27, Phase 15). */
+async function writeSlots(ctx: RunnerContext, issue: PublicationIssue): Promise<void> {
+  const spec = issue.design?.spec;
+  if (!spec) return;
+  const slots = slotManifest(spec, (n) => worldFor(issue, n));
+  await writeFile(join(dirOf(ctx, issue.id), "slots.json"), JSON.stringify({ issue: issue.id, slots }, null, 2) + "\n", "utf-8");
+}
+
+/** The colours and furniture words the builder will set on page n, so the checks read what prints. */
+export function pageSetting(issue: PublicationIssue, spec: DesignSpec, n: number): PageSetting | undefined {
+  const w = worldFor(issue, n);
+  const paper = w?.paper ?? spec.palette?.paper, ink = w?.ink ?? spec.palette?.ink;
+  if (!paper || !ink) return undefined;
+  const runhead = [issue.design?.fixed?.masthead || issue.series || "", issue.title || ""].filter(Boolean).join(" — ");
+  const section = (issue.sections ?? []).find((s) => n >= s.from && n <= s.to)?.label;
+  return {
+    paper, ink, field: w?.field ?? paper, accent: spec.palette?.accent ?? w?.hue ?? ink, runhead, ...(section ? { section } : {}),
+    // The chosen look's numbers; with no look chosen nothing is limited.
+    ...(issue.look?.extras != null ? { extras: issue.look.extras } : {}),
+    ...(issue.look?.layers ? { layers: true } : {}),
+  };
+}
+
+/**
+ * What the planner needs of a page's picture: its width:height and the edges that cut its
+ * subject. A plate measured by the art stage (postprocess `ground`) gives its subject's box,
+ * with a margin, and its cut edges: the Birds kingfisher is a 0.32 picture of a nearly square
+ * bird cut at the right. Else the picture's pixels (a PNG's header), else its brief's
+ * orientation, else nothing.
+ */
+export async function pictureFacts(page: PublicationPage): Promise<{ aspect?: number; cut?: string[] }> {
+  const file = page.images?.[0] ?? page.image;
+  if (file && existsSync(file)) {
+    const recipe = await readFile(file.replace(/\.png$/i, ".recipe.json"), "utf-8").then((t) => JSON.parse(t) as { postProcess?: Array<Record<string, unknown>> }).catch(() => null);
+    const m = recipe?.postProcess?.find((x) => x.op === "ground");
+    const head = await readFile(file).then((b) => b.subarray(0, 24)).catch(() => null);
+    if (head && head.length >= 24 && head.toString("ascii", 12, 16) === "IHDR") {
+      const w = head.readUInt32BE(16), h = head.readUInt32BE(20);
+      const box = Array.isArray(m?.subject) ? m!.subject as number[] : null;
+      const cut = Array.isArray(m?.cut) ? (m!.cut as string[]) : [];
+      if (box && box.length === 4 && w > 0 && h > 0) {
+        // The subject with a margin on every side the picture does not cut.
+        const mx = (box[2]! - box[0]!) * 0.08, my = (box[3]! - box[1]!) * 0.08;
+        const bw = (box[2]! - box[0]! + (cut.includes("left") ? 0 : mx) + (cut.includes("right") ? 0 : mx)) * w;
+        const bh = (box[3]! - box[1]! + (cut.includes("top") ? 0 : my) + (cut.includes("bottom") ? 0 : my)) * h;
+        return { aspect: bw / bh, cut };
+      }
+      if (w > 0 && h > 0) return { aspect: w / h };
+    }
+  }
+  const o = briefsOf(page)[0]?.orientation;
+  return { aspect: o === "portrait" ? 2 / 3 : o === "square" ? 1 : o === "landscape" ? 3 / 2 : undefined };
+}
+
+
+/** "head 0.618 / pull" -> "head". */
+const arrangementOf = (plan?: string): Arrangement | undefined => {
+  const a = plan?.split(" ")[0];
+  return a === "head" || a === "foot" || a === "side" || a === "type" ? a : undefined;
+};
+
+/**
+ * The visual loop's next move (page-score-run.ts): the best arrangement of the
+ * page not tried yet, ranked again for what its proof was found to lack. No
+ * model call, so a round costs a layout and a look, not a recomposition. False
+ * when every arrangement has been tried.
+ */
+export async function replanPage(
+  ctx: RunnerContext, id: string, n: number, tried: ReadonlySet<string>, faults: readonly string[],
+): Promise<string | null> {
+  const issue = await readIssue(ctx, id);
+  const spec = issue.design?.spec;
+  const page = issue.pages.find((p) => p.n === n);
+  if (!spec || !page) return null;
+  const previous = arrangementOf(spec.pages?.[String(n - 1)]?.plan);
+  const setting = pageSetting(issue, spec, n);
+  const facts = await pictureFacts(page);
+  const ranked = rerank(planPage(page, spec, { ...(previous ? { previous } : {}), shows: briefsOf(page)[0]?.prompt ?? page.title ?? "", ...(setting ? { setting } : {}), ...facts }), faults);
+  const pick = ranked.find((c) => !tried.has(c.id) && !c.composed.problems.length);
+  if (!pick) return null;
+  const before = spec.pages?.[String(n)];
+  issue.design = { ...(issue.design ?? { sections: [] }), spec: { ...spec, pages: { ...spec.pages, [String(n)]: layoutOfPlan(pick, spec, n, before, setting) } } };
+  await save(ctx, issue);
+  return pick.id;
+}
+
+/**
+ * Compose pages on the grid, one model call each (composition.ts): the model
+ * places the frames, code checks them, and what is wrong goes back for at most
+ * two repairs. Pages go in order so each one sees how its neighbours were built.
+ * ponytail: sequential, one page at a time; parallel by section if long issues get slow.
+ */
+async function composePages(
+  ctx: RunnerContext, issue: PublicationIssue, spec: DesignSpec, direction: string,
+  opts: { only?: readonly number[]; note?: string; rules?: readonly string[]; reviewed?: boolean } = {},
+): Promise<{ spec: DesignSpec; notes: string[] }> {
+  const next: Record<string, PageLayout> = { ...spec.pages };
+  const notes: string[] = [];
+  const settingOf = (n: number) => pageSetting(issue, spec, n);
+  /*
+   * The page planned by arithmetic (page-plan.ts) unless the spec asks for the
+   * model's composition, or an editor's note asks for something only words can
+   * say. The model composer took about eighteen calls a design and left holes;
+   * the plan takes none and sizes every frame to its copy.
+   */
+  if (spec.composer !== "model" && !opts.note) {
+    let previous: Arrangement | undefined;
+    for (const p of [...issue.pages].sort((a, b) => a.n - b.n)) {
+      const before = next[String(p.n)];
+      if (opts.only && !opts.only.includes(p.n)) { previous = arrangementOf(before?.plan); continue; }
+      const setting = settingOf(p.n);
+      const facts = await pictureFacts(p);
+      const [best] = planPage(p, spec, { ...(previous ? { previous } : {}), shows: briefsOf(p)[0]?.prompt ?? p.title ?? "", ...(setting ? { setting } : {}), ...facts });
+      if (!best) throw new Error(`page ${p.n} could not be planned: no arrangement on this grid holds its copy`);
+      if (best.composed.problems.length) notes.push(`p${p.n} planned as ${best.id} still has: ${best.composed.problems.join("; ")}`);
+      next[String(p.n)] = layoutOfPlan(best, spec, p.n, before, setting);
+      previous = best.arrangement;
+    }
+    return { spec: { ...spec, pages: next }, notes };
+  }
+  const rules = opts.rules ?? await rulesFor(ctx.projectRoot, { type: "publication", id: issue.id, surface: "design" }).catch(() => [] as string[]);
+  const sectionOf = (n: number) => (issue.sections ?? []).find((s) => n >= s.from && n <= s.to)?.label;
+  const done: string[] = [];
+  for (const p of [...issue.pages].sort((a, b) => a.n - b.n)) {
+    const before = next[String(p.n)];
+    if (opts.only && !opts.only.includes(p.n)) {
+      if (before?.composed?.idea) done.push(`p${p.n}: ${before.composed.idea}`);
+      continue;
+    }
+    let c: ComposedPage | null = null;
+    let raw: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // A stopped run stops here, between model calls, not after the whole stage.
+      if (ctx.signal?.aborted) throw new PublicationStopped();
+      try {
+        raw = await ctx.ask(composePrompt({
+          issueTitle: issue.title || issue.subject, page: p, spec, direction,
+          ...(before?.reading ? { reading: before.reading } : {}),
+          ...(sectionOf(p.n) ? { section: sectionOf(p.n)! } : {}),
+          ...(done.length ? { neighbours: done.slice(-3).join("\n") } : {}),
+          rules, ...(opts.note ? { note: opts.note } : {}),
+          ...(issue.look?.extras != null ? { extras: issue.look.extras } : {}),
+          ...(c?.problems.length ? { previous: { blocks: (raw as { blocks?: unknown } | null)?.blocks ?? [], problems: c.problems } } : {}),
+        }), "design-page");
+      } catch (e) {
+        // A failed call is asked again: Night Markets lost its first two pages to one.
+        notes.push(`p${p.n}: the composition call failed (${e instanceof Error ? e.message : String(e)})`);
+        continue;
+      }
+      c = checkComposition(raw, p, spec, settingOf(p.n));
+      if (!c.problems.length) break;
+      emit(ctx, "publication:stage", { id: issue.id, stage: "design", state: "progress", message: `p${p.n} sent back: ${c.problems.join("; ")}` });
+    }
+    // A page with no composition is said, never built from some other arrangement.
+    if (!c) throw new Error(`page ${p.n} could not be composed: ${notes.filter((x) => x.startsWith(`p${p.n}:`)).join("; ")}`);
+    notes.push(...c.notes.map((x) => `p${p.n}: ${x}`));
+    if (c.problems.length) notes.push(`p${p.n} still has after two repairs: ${c.problems.join("; ")}`);
+    next[String(p.n)] = layoutOf(c, spec, p.n, before);
+    done.push(compositionSummary(p.n, c));
+  }
+  // The issue read against its own direction, by the model that wrote both: pages
+  // that break the rhythm it promised are composed again with its own note. No
+  // rule of Quire's decides what counts as repetition (the Octopuses test promised
+  // "treatment changes on every page turn" and built four pages the same way).
+  if (!opts.only && !opts.reviewed && done.length > 2 && direction) {
+    try {
+      const out = await ctx.ask(rhythmPrompt(issue.title || issue.subject, direction, done), "design-page") as { recompose?: unknown };
+      const redo = (Array.isArray(out.recompose) ? out.recompose : [])
+        .map((r) => r as { n?: unknown; why?: unknown })
+        .filter((r) => issue.pages.some((p) => p.n === Number(r.n)) && typeof r.why === "string")
+        .slice(0, 2);
+      for (const r of redo) {
+        notes.push(`p${r.n} composed again for the rhythm: ${r.why}`);
+        const again = await composePages(ctx, issue, { ...spec, pages: next }, direction, { only: [Number(r.n)], note: String(r.why), rules, reviewed: true });
+        next[String(r.n)] = again.spec.pages[String(r.n)]!;
+        notes.push(...again.notes);
+      }
+    } catch (e) {
+      notes.push(`the rhythm review failed (${e instanceof Error ? e.message : String(e)})`);
+    }
+  }
+  return { spec: { ...spec, pages: next }, notes };
+}
+
+function rhythmPrompt(title: string, direction: string, pages: readonly string[]): string {
+  return `You art-directed "${title}" and composed its pages. Read them against your own direction.
+
+YOUR DIRECTION:
+${direction}
+
+YOUR PAGES, in order (frames as kind, cells c<first>+<span>, rows r<first>+<count>):
+${pages.join("\n")}
+
+Name the pages, at most two, whose composition breaks what your direction says about rhythm and
+composition across the issue, and say for each what it should do instead. Name none if the issue
+already does what the direction says.
+
+Return ONLY JSON: {"recompose": [{"n": 2, "why": "one or two sentences"}]}`;
 }
 
 /**
@@ -1678,7 +2241,81 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
   await save(ctx, issue);
   emit(ctx, "publication:stage", { id, stage: "design", state: "start" });
 
+  // A brand is the house: the series cannot redraft what the brand fixes.
+  const brand = loadBrand(issue.brand);
+  if (issue.brand && !brand) throw new Error(`this issue is held to brand "${issue.brand}", which is not installed`);
+  const house = brand ? brandHouse(brand) : await houseInForce(brandDirOf(ctx));
+  if (brand) emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Held to the ${brand.name} brand: its colours, faces, shapes and pictures` });
+  else if (!house) {
+    emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: "No house approved yet: this issue chooses its own type and colours" });
+  }
+  // Several looks for one creation are options at its design gate (Rain was forked
+  // into three issues to get three looks; one creation is the unit, the look a choice).
+  const count = Math.max(1, Math.min(4, Math.round(issue.designCount ?? 1)));
+  const options: PublicationDesign[] = [];
+  const failed: string[] = [];
+  for (let k = 0; k < count; k++) {
+    if (count > 1) emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Design option ${k + 1} of ${count}` });
+    try {
+      options.push(await designOne(ctx, issue, house, optionsBlock(options, count, !!brand), k));
+    } catch (e) {
+      if (e instanceof PublicationStopped) throw e;
+      const message = e instanceof Error ? e.message : String(e);
+      if (count === 1) { emit(ctx, "publication:stage", { id, stage: "design", state: "error" }); throw e; }
+      failed.push(`option ${k + 1}: ${message}`);
+      emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Option ${k + 1} did not hold up: ${message.slice(0, 300)}` });
+    }
+  }
+  if (!options.length) {
+    emit(ctx, "publication:stage", { id, stage: "design", state: "error" });
+    throw new Error(`no design option held up:\n- ${failed.join("\n- ")}`);
+  }
+  issue.design = options[0]!;
+  if (count > 1) { issue.designOptions = options; issue.designChoice = 0; } else { delete issue.designOptions; delete issue.designChoice; }
+  await writeSlots(ctx, issue);
+  for (const o of options) await keepFingerprint(ctx, issue, o.spec!, o.sections, o.direction ?? "");
+  // A new spec is a new decision, so any previous sign-off on the old one goes.
+  issue.designApproved = null;
+  issue.status = "designed";
+  emit(ctx, "publication:stage", { id, stage: "design", state: "done" });
+  return save(ctx, issue);
+}
+
+/** The options already made for this issue, so the next one is a different look. */
+export function optionsBlock(made: readonly PublicationDesign[], count: number, branded = false): string {
+  if (count < 2) return "";
+  if (branded) return [
+    "",
+    `THIS IS DESIGN OPTION ${made.length + 1} OF ${count} FOR THIS SAME ISSUE, all inside the same brand. Options differ in`,
+    "each section's colour pair and lead signature, the grid system, the devices chosen per spread and the composition; never in faces or palette.",
+    ...made.map((o, i) => `- option ${i + 1}: grid ${o.spec?.grid?.system ?? "columns"}; sections ${o.sections.map((w) => `s${w.n} ${(w.pair ?? []).join("+")} led by ${w.lead ?? "?"}`).join(" | ")}`),
+    "",
+  ].join("\n");
+  return [
+    "",
+    `THIS IS DESIGN OPTION ${made.length + 1} OF ${count} FOR THIS SAME ISSUE. The editor will choose one at the design gate,`,
+    "so each option is a clearly different design language: its own type pair, colours, grid system, world registers and composition.",
+    ...(made.length ? ["The options already made (do not repeat any of their decisions):",
+      ...made.map((o, i) => `- option ${i + 1}: ${o.spec?.type?.display} / ${o.spec?.type?.text}; colours ${[o.spec?.palette?.paper, o.spec?.palette?.ink, o.spec?.palette?.accent].filter(Boolean).join(" ")}; grid ${o.spec?.grid?.system ?? "columns"}; worlds ${o.sections.map((w) => `${w.register} / ${w.technique}`).join(" | ")}; ${(/composition: ([^\n]*)/.exec(o.direction ?? "")?.[1] ?? (o.direction ?? "").slice(0, 200)).slice(0, 220)}`)] : []),
+    "",
+  ].join("\n");
+}
+
+/** One whole design of the issue: spec, worlds, composed pages and their art. Throws when it does not hold up. */
+async function designOne(ctx: RunnerContext, issue: PublicationIssue, house: Awaited<ReturnType<typeof houseInForce>>, others: string, k = 0): Promise<PublicationDesign> {
+  const def = ctx.definition;
+  const id = issue.id;
   const template = def.prompts.design || DEFAULT_DESIGN_PROMPT;
+  // The editor's reference pages, seen, not described: each option is shown a different few.
+  const { referencePages } = await import("./page-look.js");
+  const brand = loadBrand(issue.brand);
+  // A brand's own spreads are its standard, unless the editor also chose a look; each option sees a different few.
+  const refs = brand && !issue.look?.name && brand.references.length
+    ? Array.from({ length: Math.min(4, brand.references.length) }, (_, i) => brand.references[(k * 4 + i) % brand.references.length]!)
+    : await referencePages(ctx.projectRoot, k, 4, issue.look?.name);
+  const look = await lookOf(ctx.projectRoot, issue.look?.name);
+  // The brand's picture style is the brand's; the editor's pinned style holds everywhere else.
+  const imageStyle = brand ? brand.imageStyle : await imageStyleOf(ctx.projectRoot);
   const out = await ctx.ask(renderTemplate(template, {
     voice: await voiceFor(ctx, issue),
     title: issue.title || issue.subject,
@@ -1687,7 +2324,32 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     extent: String(issue.extent),
     notes: notesBlock(issue),
     referenceNote: [
+      brand ? brandBlock(brand) : "",
       await designReferences(ctx.projectRoot),
+      look
+        ? `THE LOOK THE EDITOR CHOSE FOR THIS ISSUE: "${look.name}". Design every page to it.${look.standard ? `
+What its best pages share:
+${look.standard.slice(0, 2500)}` : ""}`
+        : brand ? "" : "THE EDITOR CHOSE NO LOOK FOR THIS ISSUE: take it from the content and say it in the direction. No standard of another issue applies.",
+      look?.layers
+        ? "THE DRAWN LAYER OF THIS LOOK IS FLAT SOLID SHAPES - arches, discs, bands, blocks and rows of dots in the section's colours - "
+          + "computed from where the frames fall. Choose each section's register, technique and motif so they speak through flat colour shapes "
+          + "and the pictures' own style; a language that needs gradients, translucency, facets or hairline ornament cannot be drawn on these pages."
+        : "",
+      issue.design?.spec?.composer === "model" ? "" :
+        "THE PAGES ARE LAID BY QUIRE'S PLANNER FROM THE COPY: columns, measures, sizes and positions are computed on the grid. "
+        + "Your direction says how the pages look - colour, shapes, the character of the type, the pictures - and never fixes a count of "
+        + "columns, characters, points or millimetres, which the planner decides page by page.",
+      imageStyle
+        ? `THE PICTURES ARE MADE IN THE STYLE THE EDITOR CHOSE, and it is not yours to change: "${imageStyle.style}". `
+          + "Every section's imagePrompt is this style; design the pages, colours and shapes around pictures made in it."
+        : "",
+      refs.length && brand && !issue.look?.name
+        ? `The ${refs.length} images attached are spreads of ${brand.name} itself: its palette, faces, shapes, finish and the way its pictures and drawn colour sit together ARE the brand - hold to them exactly. Take nothing of their subject or words.`
+        : refs.length
+        ? `The ${refs.length} images attached are pages the editor holds up as the standard. Take their level and their thinking`
+          + " - how art and type are composed together, how colour carries a page - never their subject, words or exact palette."
+        : "",
       issue.referenceImages?.length
         ? `The editor also attached ${issue.referenceImages.length} reference image(s): `
           + `${issue.referenceImages.join(", ")}.`
@@ -1701,14 +2363,49 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
         .catch(() => ""),
     ].filter(Boolean).join("\n\n"),
     pageDigest: pageDigest(issue),
-    sectionBlock: sectionBlock(issue),
-    fontBlock: await fontBlock(ctx),
-  }), "design");
+    sectionBlock: sectionBlock(issue, house ? houseBlock(house) : undefined, brand),
+    // A house fixes the faces, so the list of installed ones is only noise then.
+    fontBlock: house ? "" : await fontBlock(ctx),
+    gridSystems: (house?.grids ?? GRID_SYSTEMS).join(", "),
+    // A brand repeats its colours and faces on purpose: other works' designs are not something to avoid.
+    recentBlock: (brand ? "" : await recentBlock(ctx, id)) + others,
+    // A session of its own per run: under the plain "design" tag a re-run read the
+    // last run's answer back and leaned on its look.
+  }), `design-${Date.now().toString(36)}`, refs.length ? { images: refs } : {});
 
   // The section worlds come back beside the spec, not inside it: the spec is
   // the whole issue's law, and a world is one section's look (08 §2).
-  const { sections: rawWorlds, fixed: rawFixed, ...specOnly } = out as Record<string, unknown>;
+  const { sections: rawWorlds, fixed: rawFixed, direction: rawDirection, ...specOnly } = out as Record<string, unknown>;
   let spec = specOnly as unknown as DesignSpec;
+  const direction = directionOf(rawDirection);
+  // What the composer and the illustrator said, kept on the issue: progress lines are not stored.
+  const designNotes: string[] = [];
+  /*
+   * Faces Affinity does not have print in its fallback serif: Rain l2 named
+   * Archivo / IBM Plex Sans for an instrument-sheet language and proofed in an
+   * elegant italic. The prompt listed the installed faces; nothing held it to them.
+   */
+  if (!house && spec?.type) {
+    const fonts = await installedFonts(ctx);
+    const has = (f?: string) => !!f && !!fonts?.some((x) => x.toLowerCase() === f.toLowerCase());
+    if (fonts && (!has(spec.type.display) || !has(spec.type.text))) {
+      const want = `${spec.type.display} / ${spec.type.text}`;
+      const out = await ctx.ask([
+        `A design chose the type pair ${want}, but Affinity does not have ${[spec.type.display, spec.type.text].filter((f) => !has(f)).join(" or ")}.`,
+        `Choose the installed pair closest to it that keeps the design's language${direction ? ` (${direction.slice(0, 400)})` : ""}.`,
+        `Installed fonts, spelled exactly: ${fonts.join(", ")}.`,
+        `Return ONLY JSON: {"display": "...", "text": "..."}`,
+      ].join("\n"), "design-type").catch(() => ({}) as Record<string, unknown>);
+      const display = String(out.display ?? ""), text = String(out.text ?? "");
+      if (has(display) && has(text)) {
+        spec = { ...spec, type: { ...spec.type, display, text } };
+        emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Type ${want} is not installed; set in ${display} / ${text}` });
+      } else {
+        throw new Error(`the design's type ${want} is not installed in Affinity, and no installed pair was chosen in its place`);
+      }
+    }
+  }
+  if (!direction) emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: "The design came back with no direction; pages are composed from their readings alone" });
   /*
    * The furniture is kept beside the spec, where the law looks for it.
    *
@@ -1729,10 +2426,63 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
   // A locked section keeps the world it had; the rest are the stage's to decide.
   const locked = new Set(Object.entries(issue.sectionBoard ?? {}).filter(([, m]) => m.state === "locked").map(([k]) => Number(k)));
   const before = issue.design?.sections ?? [];
-  const worlds = worldsFrom(rawWorlds, issue, spec)
+  const languageNotes: string[] = [];
+  let worlds = worldsFrom(rawWorlds, issue, spec, languageNotes)
     .map((w) => (locked.has(w.n) ? before.find((b) => b.n === w.n) ?? w : w));
+  if (languageNotes.length) {
+    emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Held to print: ${languageNotes.join("; ")}` });
+  }
   for (const w of before) if (locked.has(w.n) && !worlds.some((x) => x.n === w.n)) worlds.push(w);
   worlds.sort((a, b) => a.n - b.n);
+  if (brand) worlds = worlds.map((w) => (locked.has(w.n) ? w : brandWorld(brand, w, (Array.isArray(rawWorlds) ? rawWorlds : []).find((r) => Number((r as { n?: unknown })?.n) === w.n))));
+  // The editor's image style holds whatever the model wrote: a world keeps its colours and
+  // language, its pictures are made in the chosen style.
+  if (imageStyle) {
+    worlds = worlds.map((w) => ({ ...w, imagePrompt: imageStyle.style, ...(imageStyle.negative ? { negative: imageStyle.negative } : {}) }));
+    if (spec) spec = { ...spec, imageDirection: imageStyle.style };
+  }
+  // The house holds what it fixes, whatever the model returned.
+  const houseProblems: string[] = [];
+  if (house && spec) {
+    spec = applyHouse(spec, house);
+    fixed = { ...(fixed ?? {}), masthead: house.name, rule: house.devices.rule };
+  }
+  if (brand && spec) {
+    spec = holdBrandSpec(spec, brand);
+    fixed = { ...(fixed ?? {}), masthead: brand.name, folio: fixed?.folio || brand.house.folio };
+    const off = offBrandColours(brand, { palette: spec.palette, worlds: worlds.map((w) => w.language) });
+    if (off.length) houseProblems.push(`colours outside the ${brand.name} brand: ${off.join(", ")}`);
+  }
+  // A section with no language is a section that would be drawn in nobody's colours.
+  for (const s of issue.sections ?? []) {
+    if (!worlds.find((w) => w.n === s.n)?.language) houseProblems.push(`s${s.n} "${s.label}" came back with no language`);
+  }
+  // Every page is composed by the model from its reading and the direction
+  // (composition.ts); code only checks the frames. The readings came back in
+  // spec.pages, so the composer is given them.
+  if (spec) {
+    spec = { ...spec, pages: Object.fromEntries(Object.entries(spec.pages ?? {}).map(([k, v]) => {
+      const r = (v as { reading?: unknown } | null)?.reading;
+      return [k, { layout: "", imageSlot: "none", ...(typeof r === "string" && r.trim() ? { reading: r.trim().slice(0, 1200) } : {}) } as PageLayout];
+    })) };
+    // Furniture is part of each page's composition now, placed on that page's own grid.
+    if (fixed?.blocks) { const { blocks: _b, ...rest } = fixed; fixed = rest; }
+    if (fixedRaw) delete (fixedRaw as { blocks?: unknown }).blocks;
+    emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: "Composing each page" });
+    const composed = await composePages(ctx, issue, spec, direction);
+    spec = composed.spec;
+    designNotes.push(...composed.notes);
+    if (composed.notes.length) {
+      emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Composed: ${composed.notes.join("; ")}` });
+    }
+    emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: "Drawing each page's art" });
+    const drawn = await drawArt(ctx, issue, spec, worlds, undefined, direction);
+    spec = drawn.spec;
+    designNotes.push(...drawn.notes);
+    if (drawn.notes.length) {
+      emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Art: ${drawn.notes.join("; ")}` });
+    }
+  }
   // The golden rules, with whatever numbers the taste engine has taught this scope.
   const math = await readMath(ctx.projectRoot, { type: "publication", id, worlds: worlds.map((w) => w.register) });
   // What can be mended without a model is mended first, and said: a run of
@@ -1757,6 +2507,7 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     }
   }
   const problems = [
+    ...houseProblems,
     ...checkSpec(spec, issue.pages.map((p) => p.n)),
     ...goldenRules(spec, issue.sections, math),
   ];
@@ -1770,20 +2521,120 @@ export async function runDesign(ctx: RunnerContext, id: string): Promise<Publica
     }
   }
   if (problems.length) {
-    emit(ctx, "publication:stage", { id, stage: "design", state: "error" });
     throw new Error(`the design spec does not hold up:\n- ${problems.join("\n- ")}`);
   }
 
-  issue.design = {
-    ...(issue.design ?? { sections: [] }),
+  const { direction: _dir, notes: _n, ...kept } = issue.design ?? { sections: [] };
+  return {
+    ...kept,
+    sections: worlds.length ? worlds : kept.sections ?? [],
     spec,
+    ...(direction ? { direction } : {}),
+    notes: designNotes,
     ...(fixed && Object.keys(fixed).length ? { fixed } : {}),
-    ...(worlds.length ? { sections: worlds } : {}),
   };
-  // A new spec is a new decision, so any previous sign-off on the old one goes.
+}
+
+/** The editor's pick among the design options: it becomes the issue's design, and any sign-off goes. */
+export async function chooseDesign(ctx: RunnerContext, id: string, k: number): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  const option = issue.designOptions?.[k];
+  if (!option) throw new Error(`there is no design option ${k + 1}`);
+  issue.design = option;
+  issue.designChoice = k;
   issue.designApproved = null;
   issue.status = "designed";
-  emit(ctx, "publication:stage", { id, stage: "design", state: "done" });
+  await writeSlots(ctx, issue);
+  return save(ctx, issue);
+}
+
+/**
+ * The look the issue is designed to, as the editor chose it (looks.ts), or none.
+ * It applies from the next design: a design already made keeps the look it was made to.
+ */
+export async function setIssueLook(ctx: RunnerContext, id: string, name: string | null): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  if (name) {
+    const look = await lookOf(ctx.projectRoot, name);
+    if (!look) throw new Error(`no look named "${name}" under _taste/references`);
+    issue.look = issueLook(look);
+  } else issue.look = null;
+  return save(ctx, issue);
+}
+
+/**
+ * The brand the issue is held to (brand.ts), or none. Like the look, it applies from the
+ * next design; the series' next issues inherit it.
+ */
+export async function setIssueBrand(ctx: RunnerContext, id: string, brandId: string | null): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  if (brandId && !loadBrand(brandId)) throw new Error(`no brand named "${brandId}" in core/brands`);
+  issue.brand = brandId || null;
+  return save(ctx, issue);
+}
+
+/**
+ * A design made outside Quire (an editor's own plan, a reference built by hand),
+ * taken as one more option at the design gate. Each page's frames go through
+ * the same checks a composed page does and get their boxes from the grid, so
+ * the builder lays exactly what was planned; what the checks find is kept on
+ * the page, not refused, because the point of an outside plan is to see what
+ * Affinity makes of it. The issue's own design stays an option beside it.
+ */
+export async function installDesign(ctx: RunnerContext, id: string, given: { spec?: unknown; sections?: unknown; direction?: unknown; fixed?: unknown; label?: unknown }): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  requireApproval(issue, "design");
+  const raw = given.spec as DesignSpec | undefined;
+  if (!raw?.grid || !raw.type || !raw.palette) throw new Error("a design needs a spec with grid, type and palette");
+  const pages: Record<string, PageLayout> = {};
+  const planned: number[] = [];
+  for (const p of [...issue.pages].sort((a, b) => a.n - b.n)) {
+    const l = raw.pages?.[String(p.n)] as (PageLayout & { idea?: string }) | undefined;
+    if (!l?.blocks?.length) {
+      // A page the plan leaves out is planned by Quire, so the issue stays whole.
+      const setting = pageSetting(issue, raw, p.n);
+      const facts = await pictureFacts(p);
+      const [best] = planPage(p, raw, { shows: briefsOf(p)[0]?.prompt ?? p.title ?? "", ...(setting ? { setting } : {}), ...facts });
+      if (best) { pages[String(p.n)] = layoutOfPlan(best, raw, p.n, undefined, setting); planned.push(p.n); }
+      continue;
+    }
+    const c = checkComposition({ idea: l.idea ?? l.layout ?? "", blocks: l.blocks }, p, raw, pageSetting(issue, raw, p.n));
+    const { plan: _p, ...kept } = l;
+    const laid = layoutOf(c, raw, p.n, { ...kept, layout: l.layout ?? "" } as PageLayout);
+    // The plan's own drawn layer is part of it, held to the page like the model's art is.
+    const type = c.blocks.filter((b) => !["image", "drawn", "rule"].includes(b.kind)).map((b) => ({ kind: b.kind, box: b.box }));
+    const planBrand = loadBrand(issue.brand);
+    const shapes = kept.shapes?.length ? holdShapes(kept.shapes, type, planBrand ? { brand: planBrand, place: placeOf(p.type ?? "", (issue.sections ?? []).some((x) => x.to === p.n)) } : undefined) : [];
+    pages[String(p.n)] = shapes.length ? { ...laid, shapes } : laid;
+  }
+  const spec = cleanBlocks({ ...raw, composer: raw.composer ?? "plan", pages }).spec;
+  const problems = checkSpec(spec, issue.pages.map((p) => p.n));
+  if (problems.length) throw new Error(`the design does not hold up:\n- ${problems.join("\n- ")}`);
+  const sections = Array.isArray(given.sections) ? worldsFrom(given.sections, issue, spec) : issue.design?.sections ?? [];
+  const design: PublicationDesign = {
+    sections, spec,
+    ...(typeof given.direction === "string" && given.direction ? { direction: given.direction } : {}),
+    ...(given.fixed && typeof given.fixed === "object" ? { fixed: given.fixed as PublicationDesign["fixed"] } : {}),
+    notes: [`installed from outside${typeof given.label === "string" ? `: ${given.label}` : ""}`,
+      ...(planned.length ? [`pages ${planned.join(", ")} were not in it and were planned by Quire`] : [])],
+  };
+  const options = issue.designOptions?.length ? [...issue.designOptions] : issue.design?.spec ? [issue.design] : [];
+  // The same plan installed again replaces its earlier copy: Birds held three of one plan.
+  const same = options.findIndex((o) => o.notes?.[0] === design.notes?.[0]);
+  if (same >= 0) options[same] = design; else options.push(design);
+  issue.designOptions = options;
+  issue.designChoice = same >= 0 ? same : options.length - 1;
+  issue.design = design;
+  issue.designApproved = null;
+  issue.status = "designed";
+  await writeSlots(ctx, issue);
+  return save(ctx, issue);
+}
+
+/** How many designs the next design stage makes for the gate (1-4). */
+export async function setDesignCount(ctx: RunnerContext, id: string, n: number): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  issue.designCount = Math.max(1, Math.min(4, Math.round(n)));
   return save(ctx, issue);
 }
 
@@ -1829,9 +2680,7 @@ export async function designSection(
     `Section ${n}: "${section.label}" — ${section.question}`,
     `Its pages: ${pages.map((p) => `p${p.n} ${p.title}`).join("; ") || "none yet"}`,
     "",
-    `The issue's law is already decided and does not change: paper ${spec.palette?.paper}, `
-      + `ink ${spec.palette?.ink}, accent ${spec.palette?.accent}, `
-      + `display ${spec.type?.display}, text ${spec.type?.text}.`,
+    `The issue's type is decided and does not change: display ${spec.type?.display}, text ${spec.type?.text}.`,
     mine ? `This section currently reads: ${mine.register} / ${mine.idiom}.` : "This section has no world yet.",
     others.length
       ? `The other sections hold: ${others.map((w) => `s${w.n} ${w.register} / ${w.idiom}`).join("; ")}. `
@@ -1845,11 +2694,14 @@ export async function designSection(
     "",
     "Return ONLY JSON:",
     `{"n": ${n}, "register": "...", "technique": "...", "idiom": "...", `
-      + `"paper": "#rrggbb", "ink": "#rrggbb", "hue": "#rrggbb", `
+      + `"language": {...}, `
       + `"imagePrompt": "under 60 words, no single subject", "negative": "..."}`,
+    LANGUAGE_GUIDE,
   ].filter(Boolean).join("\n"), "design-section");
 
-  const [world] = worldsFrom([{ ...(out as Record<string, unknown>), n }], issue, spec);
+  const [found] = worldsFrom([{ ...(out as Record<string, unknown>), n }], issue, spec);
+  const sectionBrand = loadBrand(issue.brand);
+  const world = found && sectionBrand ? brandWorld(sectionBrand, found, out) : found;
   if (!world) throw new Error(`the answer did not describe section ${n}`);
 
   issue.design = {
@@ -1905,32 +2757,23 @@ export async function redesignPage(
   }).catch(() => [] as string[]);
   const current = spec.pages?.[String(n)];
 
-  const out = await ctx.ask([
-    `You are redesigning ONE page of "${issue.title || issue.subject}" (${issue.series}). Same words, new layout.`,
-    pageDigest({ ...issue, pages: [page] }),
-    page.pullQuote ? `Its pull quote: "${page.pullQuote}"` : "",
-    `The issue's grid: ${JSON.stringify(spec.grid)}; type scale ${JSON.stringify(spec.type?.scale ?? [])}.`,
-    world ? `Its section's world: ${world.register} / ${world.idiom}; paper ${world.paper}, ink ${world.ink}${world.hue ? `, hue ${world.hue}` : ""}.` : "",
-    current ? `What it had, which the editor refused: ${JSON.stringify({ layout: current.layout, blocks: current.blocks ?? [] })}` : "",
+  // The page is composed again by the same composer as the design stage, told what it
+  // had, why that was refused, and this world's rules.
+  const ask = [
+    current?.composed?.idea ? `It was composed as: ${current.composed.idea}.` : "",
+    // What Affinity measured on the laid page: the frame boxes passed, the set type did not.
+    current?.measured?.length ? `Laid out in Affinity, it did not print right: ${current.measured.join("; ")}. Leave more room between those frames.` : "",
     why.cause?.length ? `What went wrong: ${why.cause.join(", ")}.` : "",
-    why.note ? `THE EDITOR ASKS FOR: ${why.note}` : "Give it a different composition from the one above.",
-    rules.length ? `THE EDITOR'S RULES FOR THIS WORLD (follow every one):\n${rules.map((r) => `- ${r}`).join("\n")}` : "",
-    "",
-    BLOCK_GUIDE,
-    "",
-    'Return ONLY JSON: {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [...], "note": "", "breaks": []}',
-  ].filter(Boolean).join("\n"), "design-page");
-
-  const o = out as Record<string, unknown>;
-  const next: PageLayout = {
-    layout: String(o.layout ?? current?.layout ?? "editorial"),
-    imageSlot: (["full-bleed", "top", "bottom", "left", "right", "inset", "none"].includes(String(o.imageSlot))
-      ? String(o.imageSlot) : current?.imageSlot ?? "none") as PageLayout["imageSlot"],
-    blocks: Array.isArray(o.blocks) ? o.blocks as PageBlock[] : [],
-    ...(typeof o.note === "string" && o.note ? { note: o.note } : {}),
-    ...(Array.isArray(o.breaks) && o.breaks.length ? { breaks: o.breaks.map(String) } : {}),
-  };
-  const cleaned = cleanBlocks({ ...spec, pages: { [String(n)]: next } });
+    why.note ?? "Give it a different composition from the one it had.",
+  ].filter(Boolean).join(" ");
+  const composed = await composePages(ctx, issue, spec, issue.design?.direction ?? "", { only: [n], note: ask, rules });
+  if (!composed.spec.pages[String(n)]?.blocks?.length) throw new Error(`page ${n} could not be composed: ${composed.notes.join("; ")}`);
+  if (composed.notes.length) emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Composed: ${composed.notes.join("; ")}` });
+  // A new composition needs its own art: the old shapes were drawn round the old type.
+  const drawn = await drawArt(ctx, issue, composed.spec, issue.design?.sections ?? [], [n], issue.design?.direction, why.note);
+  const laidNext = drawn.spec.pages[String(n)]!;
+  if (drawn.notes.length) emit(ctx, "publication:stage", { id, stage: "design", state: "progress", message: `Art: ${drawn.notes.join("; ")}` });
+  const cleaned = cleanBlocks({ ...spec, pages: { [String(n)]: laidNext } });
   issue.design = { ...(issue.design ?? { sections: [] }), spec: { ...spec, pages: { ...spec.pages, [String(n)]: cleaned.spec.pages[String(n)]! } } };
   // Asked for at the beauty gate, which is where the design is signed off:
   // the sign-off stands, and the page comes back laid out to be judged again.
@@ -2010,12 +2853,20 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
   requireDesignApproval(issue, "build");
   const designProblems = [
     ...checkSpec(issue.design?.spec, issue.pages.map((p) => p.n)),
+    // Not the last measurement: the build measures again, and a fix in the builder
+    // could otherwise only be proved by redesigning a page that was never wrong.
+    ...pageBlockers(issue.design?.spec, { measured: false }),
     ...goldenRules(issue.design?.spec, issue.sections, await readMath(ctx.projectRoot, {
       type: "publication", id, worlds: (issue.design?.sections ?? []).map((w) => w.register),
     })),
   ];
   if (designProblems.length) {
     throw new Error(`the design does not pass its own law:\n- ${designProblems.join("\n- ")}`);
+  }
+  // A page goes to print only once its proof was looked at and passed, on the composition it has now.
+  const unproven = await unprovenPages(ctx, issue);
+  if (unproven.length) {
+    throw new Error(`these pages have not been made right yet (the build stage does it):\n- ${unproven.join("\n- ")}`);
   }
 
   emit(ctx, "publication:stage", { id, stage: "build", state: "start" });
@@ -2024,9 +2875,44 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ issue, issueDir: dirOf(ctx, id) }),
   });
-  const body = await res.json().catch(() => ({})) as { ok?: boolean; error?: string; pdf?: string };
+  const body = await res.json().catch(() => ({})) as {
+    ok?: boolean; error?: string; pdf?: string;
+    pages?: ReadonlyArray<{ n: number; findings?: ReadonlyArray<{ level?: string; what?: string; roles?: ReadonlyArray<string> }> }>;
+  };
   if (!res.ok || body.ok === false) {
     const why = body.error ?? `HTTP ${res.status}`;
+    emit(ctx, "publication:stage", { id, stage: "build", state: "error", error: why });
+    throw new Error(`build: ${why}`);
+  }
+
+  /*
+   * What Affinity measured on each laid page. An error there (a frame that
+   * oversets, two text frames on top of each other) is a page that does not
+   * print right, so it goes back on the page as a design blocker and the build
+   * is not done. Redesigning the page clears it.
+   */
+  const spec = issue.design?.spec;
+  const measured = new Map<number, string[]>();
+  for (const pg of body.pages ?? []) {
+    // Which frames, by their block kind ("mag-p2-deck" -> deck), so a redesign knows what to move.
+    const kinds = (roles?: ReadonlyArray<string>) => (roles ?? []).map((r) => String(r).replace(/^mag-p\d+[:-]/, "")).filter(Boolean);
+    const errs = [...new Set((pg.findings ?? []).filter((f) => f.level === "error" && f.what)
+      .map((f) => kinds(f.roles).length ? `${f.what}: the ${kinds(f.roles).join(" and the ")}` : f.what!))];
+    if (errs.length) measured.set(pg.n, errs);
+  }
+  if (spec && body.pages) {
+    const pages = { ...spec.pages };
+    for (const [n, l] of Object.entries(pages)) {
+      const errs = measured.get(Number(n));
+      const { measured: _old, ...rest } = l;
+      pages[n] = errs ? { ...rest, measured: errs } : rest;
+    }
+    issue.design = { ...issue.design!, spec: { ...spec, pages } };
+  }
+  if (measured.size) {
+    const lines = [...measured].map(([n, e]) => `- p${n}: ${e.join("; ")}`);
+    const why = ["the pages are laid out but do not print right:", ...lines].join("\n");
+    await save(ctx, issue);
     emit(ctx, "publication:stage", { id, stage: "build", state: "error", error: why });
     throw new Error(`build: ${why}`);
   }
@@ -2035,6 +2921,77 @@ export async function build(ctx: RunnerContext, id: string): Promise<Publication
   issue.status = "built";
   emit(ctx, "publication:stage", { id, stage: "build", state: "done", pdf: issue.build.pdf });
   return save(ctx, issue);
+}
+
+/** Whether the issue's brand designs by authored spreads (spread-author.ts). */
+function authorsBrand(issue: PublicationIssue): boolean {
+  const brand = loadBrand(issue.brand ?? null);
+  return !!brand && existsSync(join(brand.dir, "author", "lib.js"));
+}
+
+/**
+ * A branded issue's build: every spread designed as its own script, checked, looked at and
+ * revised (spread-author.ts), then the PDF. A spread that never passed the eye is kept at its
+ * best and named in the issue's warnings: the editor sees it rather than losing the issue to it.
+ */
+export async function buildAuthored(ctx: RunnerContext, id: string, { rounds = 3, only = null as number[] | null } = {}): Promise<PublicationIssue> {
+  const issue = await readIssue(ctx, id);
+  requireApproval(issue, "build");
+  await requireDesigner(ctx.shimUrl, "building the document");
+  const pdf = join(dirOf(ctx, id), "build", `${id}.pdf`);
+  emit(ctx, "publication:stage", { id, stage: "build", state: "start" });
+  const { authorIssue } = await import("./spread-author.js");
+  const res = await fetch(`${ctx.shimUrl}/affinity/open`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ issue, issueDir: dirOf(ctx, id), pdf }),
+  });
+  if (!res.ok) throw new Error(`build: could not open the document (${(await res.json().catch(() => ({})) as { error?: string }).error ?? res.status})`);
+  const spreads = await authorIssue(ctx, id, { rounds, only });
+  const closed = await fetch(`${ctx.shimUrl}/affinity/close`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pdf }),
+  }).then((r) => r.json()).catch(() => ({})) as { exported?: boolean; exportError?: string };
+  const after = await readIssue(ctx, id);
+  const weak = spreads.filter((s) => !s.pass).map((s) => `p${s.pages.join("-")}: best eye ${s.best.eye?.total ?? "none"}${s.best.faults.length ? `, ${s.best.faults.length} fault(s): ${s.best.faults[0]}` : ""}`);
+  after.warnings = [...(after.warnings ?? []).filter((w) => !String(w).startsWith("spread ")), ...weak.map((w) => `spread ${w}`)];
+  if (!closed.exported) {
+    await save(ctx, after);
+    throw new Error(`build: the spreads are laid out but the PDF did not export: ${closed.exportError ?? "no answer"}`);
+  }
+  after.build = { pdf, at: new Date().toISOString() };
+  after.status = "built";
+  emit(ctx, "publication:stage", { id, stage: "build", state: "done", pdf });
+  return save(ctx, after);
+}
+
+/** Pages whose proof was never looked at, failed, or was of another composition than the one they have now. */
+async function unprovenPages(ctx: RunnerContext, issue: PublicationIssue): Promise<string[]> {
+  const { readLook, layoutHash } = await import("./page-look.js");
+  const out: string[] = [];
+  for (const p of issue.pages) {
+    const look = (await readLook(dirOf(ctx, issue.id), p.n))?.latest;
+    if (!look) out.push(`p${p.n}: its proof was never looked at`);
+    else if (look.layout !== layoutHash(issue.design?.spec?.pages?.[String(p.n)])) out.push(`p${p.n}: changed since its proof was looked at`);
+    else if (!look.pass) out.push(`p${p.n}: eye ${look.score}${look.defects[0] ? ` - ${look.defects[0].what}` : ""}`);
+  }
+  return out;
+}
+
+/**
+ * Lay out, look at and redesign every page until it is right (`perfectIssue`),
+ * then say which could not be made right. Those stop the build: a page Quire
+ * could not fix is a lesson for Quire, not a page to print.
+ */
+async function makePagesRight(ctx: RunnerContext, id: string): Promise<void> {
+  const { perfectIssue } = await import("./page-score-run.js");
+  const say = (message: string) => emit(ctx, "publication:stage", { id, stage: "build", state: "progress", message });
+  say("Making every page right: lay out, look at the proof, redesign what fails");
+  const pages = await perfectIssue(ctx, id, { onProgress: say });
+  const wrong = pages.filter((p) => !p.pass);
+  say(`Pages: ${pages.map((p) => `p${p.n} ${p.total}${p.pass ? "" : " (not right)"}`).join(", ")}`);
+  if (wrong.length) {
+    throw new Error(`Quire could not make ${wrong.length === 1 ? "this page" : "these pages"} right:\n`
+      + wrong.map((p) => `- p${p.n} after ${p.rounds} rounds (pixels ${p.pixels}, eye ${p.eye ?? "none"}): ${p.faults.slice(0, 4).join("; ")}`).join("\n"));
+  }
 }
 
 /* --------------------------------------------------------- scoped rebuilds */
@@ -2556,7 +3513,9 @@ export async function deleteElement(
   } else if (at.kind === "brief") {
     page.briefs = [];
   } else if (at.kind === "image") {
+    // Both, or the art stage still counts the old picture as drawn and skips the page.
     page.image = null;
+    page.images = [];
   }
 
   await writePageMarkdown(ctx, id, page);
@@ -2626,12 +3585,20 @@ export async function updateElement(
     shape,
   ].filter(Boolean).join("\n"), `element-${at.page}-${at.kind}`);
 
+  const was = elementValue(page, at);
   applyElement(ctx, page, at, out);
   await writePageMarkdown(ctx, id, page);
 
+  // A new brief means the old picture no longer answers it: drop it so the
+  // art stage draws the page again instead of skipping it as done.
+  if (at.kind === "brief" && elementValue(page, at) !== was) {
+    page.image = null;
+    page.images = [];
+  }
   // Approval is of specific copy. Changing a sidebar is a smaller change than
   // rewriting the page, but it is still not the copy that was signed off.
-  if (issue.approved) {
+  // A picture brief is not copy: it never prints, so it leaves the approval alone.
+  if (issue.approved && at.kind !== "brief") {
     issue.approved = null;
     emit(ctx, "publication:issue", { id, approved: false });
   }
@@ -2925,10 +3892,17 @@ export function publicationExecutor(
     "design.generate": async ({ id, unit }) => {
       if (!def.needsImages) return { ok: true, artifacts: [] };
       const issue = await readIssue(ctx, id);
-      if (outstanding(issue, "art", redo).includes(unit)) await artPage(ctx, id, unit);
+      // A brand that designs by authored spreads finds its own archive pictures per spread.
+      if (authorsBrand(issue)) return { ok: true, artifacts: [] };
+      if (outstanding(issue, "art", redo).includes(unit)) await artPage(ctx, id, unit, { redo });
       return { ok: true, artifacts: [] };
     },
-    "build.export": whole(async (id) => { if (def.needsPdf) await build(ctx, id); }),
+    // Every page made right by Quire itself (page-score-run.ts `perfectPage`) before the PDF.
+    "build.export": whole(async (id) => {
+      if (!def.needsPdf) return;
+      if (authorsBrand(await readIssue(ctx, id))) { await buildAuthored(ctx, id); return; }
+      await makePagesRight(ctx, id); await build(ctx, id);
+    }),
   };
   const executor = table[stage];
   if (!executor) return null;
@@ -2969,16 +3943,10 @@ export async function run(
 ): Promise<PublicationIssue> {
   const order: ReadonlyArray<Stage> = STAGE_ORDER;
   const start = order.indexOf(from);
-  let end = order.indexOf(stopAt);
+  const end = order.indexOf(stopAt);
   if (start < 0 || end < 0) throw new Error(`unknown stage: ${from} or ${stopAt}`);
 
-  // The audit is not a stage a caller gets to stop short of. `stopAt` defaulted
-  // to "write", which meant the checks were reachable on paper and skipped in
-  // practice by every run that took the default — which is every run. A run
-  // that wrote pages audits them.
-  if (order.indexOf("write") >= start && end === order.indexOf("write")) {
-    end = order.indexOf("audit");
-  }
+  // The audit runs only when asked for: stopAt "audit", or its own button.
 
   /*
    * The run is listed with every other piece of work in flight, from here,
@@ -3042,6 +4010,7 @@ export async function run(
 
     const executor = (stage: string) => publicationExecutor(live, stage, { redo });
     let stalls = 0;
+    let blocked: string | undefined;
     for (;;) {
       stopHere();
       const state = await loadPipeline(ctx.projectRoot, ref);
@@ -3065,12 +4034,17 @@ export async function run(
       const after = await loadPipeline(ctx.projectRoot, ref);
       const failed = after?.units.failed.find((f) => f.unit !== 0);
       if (failed) throw new Error(failed.error);
+      // Marked failed from outside while this run was alive - another copy
+      // of the app booting on the same workspace calls every running stage
+      // interrupted. This run is not; it picks itself back up. Done that way
+      // it stalled at "4 of 4 done" and said nothing true about why.
+      if (after?.status === "failed") await resume(where);
       // A gate, or a stage whose units are all in but which has not moved on
       // yet: walking it on is the same step a finished unit takes.
       if (++stalls > 2) {
-        throw new Error(`${running} did not finish: ${after?.units.done.length ?? 0} of ${after?.units.total ?? 0} done`);
+        throw new Error(`${running} could not move on to the next stage: ${blocked ?? "the pipeline gave no reason"}`);
       }
-      await advance(where);
+      blocked = (await advance(where)).reason;
     }
     job.finish();
   } catch (error) {

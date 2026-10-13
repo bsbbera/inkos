@@ -5,6 +5,13 @@ import { join } from "node:path";
 
 import { findingsFor, researchPublication, searchProviders } from "../pipeline/publication-research.js";
 
+// The real ~/.quire/.env holds this machine's keys; every test here reads a fake one.
+const shared = vi.hoisted(() => ({ env: {} as Record<string, string> }));
+vi.mock("../utils/llm-env.js", async (orig) => ({
+  ...(await orig<typeof import("../utils/llm-env.js")>()),
+  parseEnvFile: async () => shared.env,
+}));
+
 const root = () => mkdtempSync(join(tmpdir(), "pub-research-"));
 
 describe("searchProviders", () => {
@@ -25,6 +32,14 @@ describe("searchProviders", () => {
     try {
       expect(await searchProviders(dir)).toEqual([]);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
+  it("finds keys in the shared ~/.quire/.env, so dev and prod search alike", async () => {
+    const dir = root();
+    shared.env = { BRAVE_API_KEY: "shared-key" };
+    try {
+      expect(await searchProviders(dir)).toEqual([{ provider: "brave", apiKey: "shared-key" }]);
+    } finally { shared.env = {}; rmSync(dir, { recursive: true, force: true }); }
   });
 
   it("takes the configured provider before the environment", async () => {
@@ -49,8 +64,12 @@ describe("researchPublication", () => {
     const dir = root();
     const savedT = process.env.TAVILY_API_KEY;
     const savedB = process.env.BRAVE_API_KEY;
+    const savedPort = process.env.SHIM_PORT;
     delete process.env.TAVILY_API_KEY;
     delete process.env.BRAVE_API_KEY;
+    // No shim either: a Quire running on this machine would lend the test its
+    // real MCP search servers (it did, once they were detected).
+    process.env.SHIM_PORT = "1";
     const ask = vi.fn();
     try {
       await expect(researchPublication({
@@ -68,6 +87,7 @@ describe("researchPublication", () => {
     } finally {
       if (savedT) process.env.TAVILY_API_KEY = savedT;
       if (savedB) process.env.BRAVE_API_KEY = savedB;
+      if (savedPort === undefined) delete process.env.SHIM_PORT; else process.env.SHIM_PORT = savedPort;
       rmSync(dir, { recursive: true, force: true });
     }
   });

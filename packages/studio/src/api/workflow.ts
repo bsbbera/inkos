@@ -37,6 +37,8 @@ export interface WorkflowStage {
   readonly state: StageState;
   /** What actually happened, in words. "16/16 pages written", not "true". */
   readonly detail: string;
+  /** Done of total, for a stage that walks units: drawn as a bar. */
+  readonly count?: { readonly done: number; readonly total: number };
 }
 
 export interface Approval {

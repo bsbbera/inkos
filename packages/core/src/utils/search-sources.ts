@@ -78,13 +78,20 @@ interface McpToolInfo {
  * every time the user installs one, and would have missed the Tavily and Brave
  * MCP servers they already had running.
  */
-const LOOKS_LIKE_SEARCH = /\b(web[_-]?search|search[_-]?web|search|find|lookup|query)\b/i;
-const NOT_A_WEB_SEARCH = /\b(file|code|repo|memory|vector|embedding|local|disk|grep|symbol)\b/i;
+// Word edges include "_": MCP tools are snake_case, and `\b` treats "_" as part of a
+// word, so `brave_web_search` matched neither "web_search" nor "search" and a
+// configured Brave server left research with no source at all (prod, 0.1.28).
+const LOOKS_LIKE_SEARCH = /(?:^|[^a-z0-9])(web[_-]?search|search[_-]?web|search|find|lookup|query)(?:$|[^a-z0-9])/i;
+const NOT_A_WEB_SEARCH = /(?:^|[^a-z0-9])(files?|code|repos?|memory|vectors?|embeddings?|local|disk|grep|symbols?)(?:$|[^a-z0-9])/i;
 
-function isWebSearchTool(tool: McpToolInfo): boolean {
+// A search-shaped name is not enough: Affinity's search_sdk_hints and PowerPoint's
+// ppt_find_replace_text both have one. A web search says so, in its name or its words.
+const OF_THE_WEB = /(?:^|[^a-z0-9])(web|internet|online|google|bing|duckduckgo|news|websites?|urls?)(?:$|[^a-z0-9])/i;
+
+export function isWebSearchTool(tool: McpToolInfo): boolean {
   const text = `${tool.name} ${tool.description ?? ""}`;
   if (NOT_A_WEB_SEARCH.test(text)) return false;
-  return LOOKS_LIKE_SEARCH.test(tool.name);
+  return LOOKS_LIKE_SEARCH.test(tool.name) && OF_THE_WEB.test(text);
 }
 
 /** The parameter that takes the query string, whatever this server calls it. */

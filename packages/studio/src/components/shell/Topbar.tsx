@@ -23,6 +23,7 @@ export function Topbar({
   onOpenPalette,
   railOpen,
   onToggleRail,
+  nowPill,
   children,
 }: {
   readonly crumbs: readonly Crumb[];
@@ -34,6 +35,8 @@ export function Topbar({
   readonly railOpen?: boolean;
   /** Absent on screens that have no rail to shut. */
   readonly onToggleRail?: () => void;
+  /** What is running: the same answer on every screen. */
+  readonly nowPill?: ReactNode;
   /** Screen-specific controls, placed between the crumbs and the pills. */
   readonly children?: ReactNode;
 }) {
@@ -75,6 +78,8 @@ export function Topbar({
       </div>
 
       {children}
+
+      {nowPill}
 
       {model ? <span className="pill" title={model.full}>{model.text}</span> : null}
 

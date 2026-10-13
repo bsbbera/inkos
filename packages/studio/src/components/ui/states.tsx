@@ -85,6 +85,13 @@ export function Loading({
   );
 }
 
+/** Where each kind of fix lives, so the error can take you there. */
+const FIX_LINK: Partial<Record<string, { readonly href: string; readonly label: string }>> = {
+  models: { href: "#/setup/providers", label: "Open model settings" },
+  search: { href: "#/mcp", label: "Set up search" },
+  machine: { href: "#/setup/machine", label: "Open machine settings" },
+};
+
 export function Failed({
   what,
   detail,
@@ -120,7 +127,7 @@ export function Failed({
           </details>
         ) : null}
         {kept ? <p className="kept mt-1">{kept}</p> : null}
-        {retry || children || plain?.fix === "models" ? (
+        {retry || children || (plain?.fix && plain.fix !== "resume") ? (
           <div className="rowflex mt-2.5">
             {retry ? (
               <button type="button" className="btn btn-line btn-sm" onClick={retry}>
@@ -130,10 +137,10 @@ export function Failed({
             ) : null}
             {children}
             {/* The copy names where the fix lives; this goes there. */}
-            {plain?.fix === "models" ? (
-              <a className="btn btn-line btn-sm" href="#/setup/providers">
+            {plain?.fix && FIX_LINK[plain.fix] ? (
+              <a className="btn btn-line btn-sm" href={FIX_LINK[plain.fix]!.href}>
                 <Icon name="sliders" size={14} />
-                Open model settings
+                {FIX_LINK[plain.fix]!.label}
               </a>
             ) : null}
           </div>

@@ -1,3 +1,4 @@
+import { configFile } from "../utils/config-dir.js";
 import { Buffer } from "node:buffer";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -876,7 +877,7 @@ async function readProjectCoverConfig(root: string): Promise<{
   readonly baseUrl?: string;
 } | undefined> {
   try {
-    const raw = await readFile(join(root, "quire.json"), "utf-8");
+    const raw = await readFile(configFile(root), "utf-8");
     const parsed = JSON.parse(raw) as {
       llm?: { cover?: { service?: unknown; model?: unknown; baseUrl?: unknown } };
     };

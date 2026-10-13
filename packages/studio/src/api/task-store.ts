@@ -1,6 +1,8 @@
+import { stateDir } from "./config-dir.js";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { RequestedIntent } from "@actalk/quire-core";
+
 
 export type StudioTaskExecutionStatus = "running" | "processing" | "completed" | "error";
 
@@ -32,7 +34,6 @@ export interface StudioTaskSnapshot {
   readonly updatedAt: number;
 }
 
-const TASKS_DIR = ".quire/tasks";
 const writeQueues = new Map<string, Promise<void>>();
 
 function taskFileName(sessionId: string): string {
@@ -40,7 +41,7 @@ function taskFileName(sessionId: string): string {
 }
 
 export function studioTaskSnapshotPath(projectRoot: string, sessionId: string): string {
-  return join(projectRoot, TASKS_DIR, taskFileName(sessionId));
+  return join(stateDir(projectRoot), "tasks", taskFileName(sessionId));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -81,7 +82,7 @@ export async function saveStudioTaskSnapshot(
   const serialized = `${JSON.stringify(snapshot, null, 2)}\n`;
   const previous = writeQueues.get(path) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(async () => {
-    await mkdir(join(projectRoot, TASKS_DIR), { recursive: true });
+    await mkdir(join(stateDir(projectRoot), "tasks"), { recursive: true });
     await writeFile(path, serialized, "utf-8");
   });
   writeQueues.set(path, next);

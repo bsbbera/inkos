@@ -15,6 +15,8 @@ import { Icon } from "../ui/icon";
 import { Ring, orbForStage } from "../ui/working";
 import { NAV, activeNavId } from "./nav";
 import { useEffect, useRef, useState } from "react";
+import { StageDots } from "../stage-rail";
+import type { WorkflowStage } from "../workflow";
 
 /** "4m", "1h 12m": how long the run has been going. Ticks twice a minute. */
 function Elapsed({ since }: { readonly since: number }) {
@@ -52,6 +54,10 @@ export interface RailRun {
   readonly others?: ReadonlyArray<{ readonly what: string; readonly where: string }>;
   /** Epoch ms the running stage began, so the card can say how long. */
   readonly startedAt?: number;
+  /** A magazine run's stages, drawn as dots under its name. */
+  readonly stages?: ReadonlyArray<WorkflowStage>;
+  /** A magazine run opens its issue. */
+  readonly issueId?: string;
 }
 
 /** The ring's circumference at r=19, so a fraction can be written as an offset. */
@@ -62,6 +68,7 @@ export function Rail({
   tails,
   run,
   onOpenPalette,
+  onRun,
 }: {
   readonly route: HashRoute;
   readonly setRoute: (r: HashRoute) => void;
@@ -69,6 +76,8 @@ export function Rail({
   readonly tails?: Readonly<Record<string, string | number | undefined>>;
   readonly run?: RailRun | null;
   readonly onOpenPalette?: () => void;
+  /** Opens the Now drawer; without it the card walks to the run's page. */
+  readonly onRun?: () => void;
 }) {
   const active = activeNavId(route);
   /* The page you are on is never half under the fold of the rail. */
@@ -166,7 +175,12 @@ export function Rail({
       </div>
 
       {run ? (
-        <button type="button" className="railrun" aria-current={route.page === "run" ? "page" : undefined} onClick={() => setRoute({ page: "run" })}>
+        <button
+          type="button"
+          className="railrun"
+          aria-current={route.page === "run" ? "page" : undefined}
+          onClick={() => onRun ? onRun() : setRoute({ page: "run" })}
+        >
           <Ring value={run.progress} size="sm" orb={orbForStage(run.stage)} />
           <span className="grow">
             <span className="what">{run.what}</span>
@@ -174,6 +188,7 @@ export function Rail({
               {run.where}
               {run.startedAt ? <> · <Elapsed since={run.startedAt} /></> : null}
             </span>
+            {run.stages ? <StageDots stages={run.stages} /> : null}
           </span>
           {run.more && run.more > 0 && !run.others?.length ? (
             <em className="tail not-italic">+{run.more}</em>
@@ -185,7 +200,7 @@ export function Rail({
           key={`${o.what}-${o.where}-${i}`}
           type="button"
           className="railrun railrun-more"
-          onClick={() => setRoute({ page: "run" })}
+          onClick={() => onRun ? onRun() : setRoute({ page: "run" })}
         >
           <span className="grow">
             <span className="what">{o.what}</span>

@@ -10,6 +10,7 @@
  * issue meant every page got the same context and drifted towards the same few
  * facts; a pillar's own slice is what its pages actually need.
  */
+import { configFile } from "../utils/config-dir.js";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -24,6 +25,7 @@ import {
   type SearchSource,
 } from "../utils/search-sources.js";
 import { ResearchSearchConfigSchema } from "../models/project.js";
+import { GLOBAL_ENV_PATH, parseEnvFile } from "../utils/llm-env.js";
 import { retrieveMaterials } from "../materials/retrieve.js";
 
 /** What a page can actually use: a claim, and where it came from. */
@@ -81,7 +83,7 @@ export async function searchProviders(projectRoot: string): Promise<SearchSettin
 
   try {
     const raw = JSON.parse(
-      await readFile(`${projectRoot}/quire.json`, "utf-8"),
+      await readFile(configFile(projectRoot), "utf-8"),
     ) as Record<string, unknown>;
     const cfg = ResearchSearchConfigSchema.parse(raw.researchSearch ?? {});
     if (cfg.enabled && (cfg.apiKey || cfg.apiKeyEnv)) {
@@ -94,8 +96,13 @@ export async function searchProviders(projectRoot: string): Promise<SearchSettin
     }
   } catch { /* no config, or unreadable: the env vars below may still serve */ }
 
-  if (process.env.TAVILY_API_KEY) add({ provider: "tavily" });
-  if (process.env.BRAVE_API_KEY) add({ provider: "brave" });
+  // ~/.quire/.env is shared by every stage. A key that only lived in the dev
+  // install's own .env made dev search and prod fail on the same code (0.1.28).
+  const shared = await parseEnvFile(GLOBAL_ENV_PATH);
+  const tavily = process.env.TAVILY_API_KEY || shared.TAVILY_API_KEY;
+  const brave = process.env.BRAVE_API_KEY || shared.BRAVE_API_KEY;
+  if (tavily) add({ provider: "tavily", apiKey: tavily });
+  if (brave) add({ provider: "brave", apiKey: brave });
   return out;
 }
 

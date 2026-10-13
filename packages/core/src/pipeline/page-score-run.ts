@@ -65,6 +65,9 @@ function paletteOf(issue: PublicationIssue, n: number): Record<string, string> {
   const world = (issue.design?.sections ?? []).find((w) => w.n === section?.n);
   const spec = issue.design?.spec?.palette;
   const pick = (a?: string, b?: string) => a || b || "";
+  // A section that wrote its own language is scored against all of it.
+  const l = world?.language;
+  if (l) return { paper: l.paper, ink: l.ink, accent: l.accent, second: l.second, third: l.third, field: l.field };
   return {
     paper: pick(world?.paper, spec?.paper), ink: pick(world?.ink, spec?.ink),
     hue: pick(world?.hue, spec?.accent), ...(world?.field ? { field: world.field } : {}),
@@ -273,4 +276,130 @@ async function setVariant(ctx: RunnerContext, id: string, n: number, variant: Pa
     const page = spec?.pages?.[key] ?? { layout: "editorial", imageSlot: "none" as const };
     return { ...spec!, pages: { ...(spec?.pages ?? {}), [key]: { ...page, variant } } };
   });
+}
+
+/* ---------------------------------------------------------- the page made right */
+
+/** The eye's dimensions as the design chips a redesign and the taste stream know. */
+const CHIP_OF: Readonly<Record<string, string>> = {
+  hierarchy: "hierarchy", space: "whitespace", type: "typography", craft: "typography",
+  colour: "colour", picture: "image fit", language: "rules",
+};
+
+export interface Perfected {
+  readonly n: number;
+  readonly pass: boolean;
+  /** Pixels and eye together, the higher-is-better number the rounds chase. */
+  readonly total: number;
+  readonly pixels: number;
+  readonly eye: number | null;
+  readonly rounds: number;
+  readonly faults: ReadonlyArray<string>;
+  readonly lessons: ReadonlyArray<string>;
+}
+
+/**
+ * Make one page right by itself: lay it out, render it, score the pixels, show
+ * the proof to the eye (page-look.ts), and while either says no, redesign the
+ * page told everything that was found - at most `rounds` times. The best
+ * composition seen is the one that stays, laid out again if a later round was
+ * worse. A page already judged a pass on this very composition is not redone.
+ */
+export async function perfectPage(
+  ctx: RunnerContext, id: string, n: number,
+  opts: { rounds?: number; onProgress?: (line: string) => void } = {},
+): Promise<Perfected> {
+  const { lookAtPage, readLook, layoutHash, proposeLesson } = await import("./page-look.js");
+  const { redesignPage, replanPage } = await import("./publication-runner.js");
+  const say = (l: string) => opts.onProgress?.(l);
+  const layoutNow = async () => (await readIssue(ctx, id)).design?.spec?.pages?.[String(n)];
+
+  const done = await readLook(issueDir(ctx, id), n);
+  const known = await readScoreFile(ctx, id, n);
+  const now = await layoutNow();
+  if (done?.latest.pass && done.latest.layout === layoutHash(now) && known?.latest?.pass && !now?.composed?.problems?.length) {
+    say(`p${n}: already right (pixels ${known.latest.total}, eye ${done.latest.score})`);
+    return { n, pass: true, total: Math.round((known.latest.total + done.latest.score) / 2), pixels: known.latest.total, eye: done.latest.score, rounds: 0, faults: [], lessons: [] };
+  }
+
+  const max = opts.rounds ?? 3;
+  const tried = new Set<string>();
+  const lessons: string[] = [];
+  let best: { total: number; layout: unknown; out: Perfected; note: string; cause: string[] } | null = null;
+  for (let round = 0; ; round++) {
+    ctx.signal?.throwIfAborted();
+    const { findings, result } = await layoutScored(ctx, id, n, opts.onProgress ? { onProgress: opts.onProgress } : {});
+    const errors = findings.filter((f) => f.startsWith("error:")).map((f) => f.slice(7));
+    const look = await lookAtPage(ctx, id, n, errors);
+    const pixels = result.final;
+    const eye = look?.score ?? null;
+    const total = eye === null ? pixels.total : Math.round((pixels.total + eye) / 2);
+    // The composer's own unresolved problems ("no body frame for the 58 words") hold the build too.
+    const composed = (await layoutNow())?.composed?.problems ?? [];
+    const faults = [
+      ...composed.map((e) => `composition: ${e}`),
+      ...errors.map((e) => `measured: ${e}`),
+      ...(pixels.pass ? [] : [`pixels ${pixels.causeLine}`]),
+      ...(look?.defects ?? []).map((d) => `${d.severity}: ${d.what}${d.where ? ` (${d.where})` : ""}${d.fix ? ` - fix: ${d.fix}` : ""}`),
+    ];
+    // Without an eye a page is not known to be right, only not known to be wrong.
+    const pass = pixels.pass && !errors.length && !composed.length && Boolean(look?.pass);
+    if (look?.lesson) lessons.push(look.lesson);
+    say(`p${n} round ${round + 1}: pixels ${pixels.total}, eye ${eye ?? "none"}${pass ? " - right" : ` - ${faults.length} fault${faults.length === 1 ? "" : "s"}`}`);
+    const out: Perfected = { n, pass, total, pixels: pixels.total, eye, rounds: round + 1, faults, lessons };
+    const layout = await layoutNow();
+    if (layout?.plan) tried.add(layout.plan);
+    const cause = [...new Set(Object.entries(look?.dims ?? {}).filter(([, v]) => v < 80).map(([k]) => CHIP_OF[k]).filter(Boolean))] as string[];
+    if (!pixels.pass && pixels.cause) cause.push(({ G: "grid", H: "hierarchy", W: "whitespace", C: "colour", T: "typography", I: "image fit", R: "rules" } as const)[pixels.cause]);
+    const note = `The proof was judged. Keep what works and fix every one of these: ${faults.join("; ")}.`
+      + (look?.first ? ` The eye first lands on: ${look.first}.` : "");
+    if (!best || (pass && !best.out.pass) || (pass === best.out.pass && total > best.total)) best = { total, layout, out, note, cause: [...new Set(cause)] };
+    if (pass || round + 1 >= max + 1) break;
+
+    // Each redesign starts from the best round, not the last: Rain l2 p2 went 58 -> 52 redesigning a worse one.
+    if (layoutHash(best.layout) !== layoutHash(layout)) {
+      const kept = best;
+      await writeSpecPage(ctx, id, n, (spec) => (spec ? { ...spec, pages: { ...spec.pages, [String(n)]: kept.layout as NonNullable<typeof spec>["pages"][string] } } : spec));
+    }
+    // A planned page moves to its next arrangement, ranked for what the proof lacked: no
+    // model call, so a round is a layout and a look. A composed page is composed again.
+    const planned = (await layoutNow())?.plan;
+    if (planned) {
+      tried.add(planned);
+      const moved = await replanPage(ctx, id, n, tried, best.out.faults);
+      if (!moved) { say(`p${n}: every arrangement of this grid has been tried`); break; }
+      say(`p${n}: next arrangement - ${moved}`);
+    } else {
+      await redesignPage(ctx, id, n, { note: best.note, cause: best.cause });
+    }
+  }
+
+  // The best round stays: a redesign that made the page worse is undone.
+  if (best && layoutHash(best.layout) !== layoutHash(await layoutNow())) {
+    say(`p${n}: keeping round ${best.out.rounds} (${best.total}), laying it out again`);
+    await writeSpecPage(ctx, id, n, (spec) => (spec ? { ...spec, pages: { ...spec.pages, [String(n)]: best!.layout as NonNullable<typeof spec>["pages"][string] } } : spec));
+    await layoutScored(ctx, id, n, opts.onProgress ? { onProgress: opts.onProgress } : {});
+    await lookAtPage(ctx, id, n);
+  }
+  for (const l of lessons) await proposeLesson(ctx.projectRoot, l, `publication/${id} p${n}`).catch(() => false);
+  return best!.out;
+}
+
+/** Every page of an issue made right in turn; the pages that could not be, said. */
+export async function perfectIssue(
+  ctx: RunnerContext, id: string,
+  opts: { rounds?: number; pages?: ReadonlyArray<number>; onProgress?: (line: string) => void } = {},
+): Promise<ReadonlyArray<Perfected>> {
+  const issue = await readIssue(ctx, id);
+  const out: Perfected[] = [];
+  for (const p of [...issue.pages].sort((a, b) => a.n - b.n)) {
+    if (opts.pages && !opts.pages.includes(p.n)) continue;
+    out.push(await perfectPage(ctx, id, p.n, opts));
+  }
+  return out;
+}
+
+async function readScoreFile(ctx: RunnerContext, id: string, n: number) {
+  const { readScore } = await import("./page-score.js");
+  return readScore(issueDir(ctx, id), n);
 }

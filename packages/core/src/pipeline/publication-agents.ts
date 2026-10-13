@@ -17,6 +17,8 @@ export const PUBLICATION_AGENTS = {
   planner: "publication-planner",
   writer: "publication-writer",
   designer: "publication-designer",
+  /** The eye: looks at a rendered page. Its own pin, so it can be a vision model. */
+  critic: "publication-critic",
   factChecker: "publication-fact-checker",
   auditor: "publication-auditor",
   reviser: "publication-reviser",
@@ -37,7 +39,8 @@ export function agentForStage(tag: string): string {
   if (t.startsWith("research")) return PUBLICATION_AGENTS.researcher;
   if (t === "plan") return PUBLICATION_AGENTS.planner;
   if (t.startsWith("page-")) return PUBLICATION_AGENTS.writer;
-  if (t === "design") return PUBLICATION_AGENTS.designer;
+  if (t === "design-look") return PUBLICATION_AGENTS.critic;
+  if (t.startsWith("design")) return PUBLICATION_AGENTS.designer;
   if (t.startsWith("factcheck")) return PUBLICATION_AGENTS.factChecker;
   if (t.startsWith("audit")) return PUBLICATION_AGENTS.auditor;
   if (t.startsWith("revise") || t.startsWith("element-")) return PUBLICATION_AGENTS.reviser;

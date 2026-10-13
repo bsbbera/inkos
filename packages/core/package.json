@@ -47,6 +47,7 @@
     "!dist/__tests__",
     "audit-packs",
     "genres",
+    "brands",
     "skills",
     "publications",
     "providers.json"

@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  advance, approve, ensurePipeline, loadPipeline, pause, pipelinePath,
+  advance, approve, ensurePipeline, loadPipeline, markInterrupted, pause, pipelinePath,
   reject, reportUnitDone, reportUnitFailed, runStage, waitingOn, withdraw,
   type OrchestratorEvent, type ProductionRef,
 } from "../pipeline/orchestrator.js";
@@ -344,5 +344,28 @@ describe("a production's own model pins", () => {
     await savePipeline(root, book, { ...state, modelOverrides: { writer: "claude/opus" } });
     await runStage({ projectRoot: root, ref: book });
     expect(seen).toEqual({ writer: "claude/opus" });
+  });
+});
+
+describe("two apps on one workspace", () => {
+  // Dev and prod share Output. Dev booting marked prod's live magazine
+  // interrupted, and the run stalled at fact-check.
+  async function running(pid: number) {
+    await ensurePipeline({ projectRoot: root, ref: book, totalUnits: 2 });
+    const path = pipelinePath(root, book);
+    const raw = JSON.parse(await readFile(path, "utf-8"));
+    await writeFile(path, JSON.stringify({ ...raw, status: "running", owner: { pid } }));
+  }
+
+  it("leaves a run alone that another live process owns", async () => {
+    await running(process.ppid);
+    expect(await markInterrupted(root)).toEqual([]);
+    expect((await loadPipeline(root, book))!.status).toBe("running");
+  });
+
+  it("still marks a run whose owner is gone", async () => {
+    await running(2 ** 22 + 7);
+    expect(await markInterrupted(root)).toEqual([book]);
+    expect((await loadPipeline(root, book))!.status).toBe("failed");
   });
 });

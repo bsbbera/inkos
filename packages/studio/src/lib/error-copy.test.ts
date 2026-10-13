@@ -67,3 +67,17 @@ describe("plainError", () => {
     expect(plainError("Outline missing").rewritten).toBe(false);
   });
 });
+
+describe("Quire's own errors", () => {
+  it("says what to do when research has nothing to search with", () => {
+    const e = plainError("this issue would be written from memory alone: the model answering the research stage does not browse, and no search source is configured.");
+    expect(e).toMatchObject({ fix: "search", rewritten: true });
+    expect(e.text).toMatch(/search server/);
+  });
+  it("names a missing command-line app instead of printing ENOENT", () => {
+    expect(plainError("spawn devin ENOENT").fix).toBe("models");
+  });
+  it("tells someone an issue already exists and where to find it", () => {
+    expect(plainError("publication already exists: bioluminescence").text).toMatch(/Open it from Magazine/);
+  });
+});

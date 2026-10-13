@@ -182,6 +182,14 @@ export function auditPages(
 export function summarize(findings: ReadonlyArray<PublicationFinding>): string {
   if (findings.length === 0) return "no findings";
   const warnings = findings.filter((f) => f.severity === "warning").length;
-  const pages = new Set(findings.map((f) => f.page)).size;
-  return `${findings.length} findings (${warnings} warnings) across ${pages} pages`;
+  /* Only real pages count as pages: a finding about the whole issue has no
+     page, and counting its empty slot said "across 5 pages" of a 4-page folio. */
+  const onPages = findings.filter((f) => typeof f.page === "number" && f.page >= 1);
+  const pages = new Set(onPages.map((f) => f.page)).size;
+  const whole = findings.length - onPages.length;
+  const where = [
+    pages ? `on ${pages} page${pages === 1 ? "" : "s"}` : "",
+    whole ? `${whole} about the whole issue` : "",
+  ].filter(Boolean).join(", ");
+  return `${findings.length} finding${findings.length === 1 ? "" : "s"} (${warnings} warning${warnings === 1 ? "" : "s"}) ${where}`.trim();
 }

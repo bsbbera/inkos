@@ -2777,3 +2777,370 @@ fieldset.field { border: 0; padding: 0; margin: 0; min-width: 0; }
   content: ""; position: absolute; left: -8px; top: 24%; bottom: 24%; width: 3px;
   border-radius: 2px; background: var(--vermilion);
 }
+
+/* The House page's specimen: the house set in its own faces and colours,
+   which arrive as variables because they are the person's, not the app's. */
+.house-specimen { border-color: currentColor; }
+.house-display { font-family: var(--hs-display), serif; line-height: 1.1; }
+.house-text { font-family: var(--hs-text), serif; }
+.house-mast { font-size: var(--fs-d1); line-height: 1; }
+.house-body { line-height: 1.45; max-width: 52ch; }
+
+/* The stage rail: one drawing of where work stands (components/stage-rail).
+   Steps are buttons on a track; the line between two steps is green once the
+   left one is done, so progress reads left to right before any word is read. */
+.srail-wrap {
+  border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--paper); overflow: hidden;
+}
+.srail-head {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 6px 8px 0 14px; min-height: 40px;
+}
+.srail-sum { font-size: var(--fs-small); color: var(--ink-2); }
+.srail-sum b { color: var(--ink); font-weight: 600; }
+.srail-live { color: var(--vermilion-ink); font-weight: 500; }
+.srail {
+  list-style: none; margin: 0; padding: 6px 6px 10px;
+  display: grid; grid-template-columns: repeat(var(--n), minmax(104px, 1fr));
+  overflow-x: auto; scrollbar-width: thin;
+}
+.srail-step { position: relative; min-width: 0; }
+/* The track: from this dot to the next one. */
+.srail-step:not(:last-child)::after {
+  content: ""; position: absolute; top: 21px; left: calc(50% + 14px); right: calc(-50% + 14px);
+  height: 2px; border-radius: 2px; background: var(--line);
+}
+.srail-step.is-done:not(:last-child)::after { background: var(--ok); }
+.srail-step > button {
+  all: unset; box-sizing: border-box; cursor: pointer; width: 100%;
+  display: grid; justify-items: center; gap: 3px; padding: 8px 6px 7px;
+  border-radius: var(--r-ctl); text-align: center;
+  transition: background var(--fast) var(--ease);
+}
+.srail-step > button:hover { background: var(--line-soft); }
+.srail-step > button:focus-visible { outline: 2px solid var(--vermilion); outline-offset: -2px; }
+.srail-step.is-open > button { background: var(--line-soft); }
+.srail-dot {
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  border: 1.5px solid var(--line); background: var(--paper); color: var(--ink-3);
+  font-size: var(--fs-cap); font-weight: 600; position: relative; z-index: 1;
+}
+.srail-step.is-done .srail-dot { background: var(--ok); border-color: var(--ok); color: var(--paper); }
+.srail-step.is-running .srail-dot { border-color: var(--vermilion); }
+.srail-step.is-partial .srail-dot { border-color: var(--ok); color: var(--ok); }
+.srail-step.is-failed .srail-dot { background: var(--bad); border-color: var(--bad); color: var(--paper); }
+.srail-name { font-size: var(--fs-small); font-weight: 600; color: var(--ink-2); }
+.srail-step.is-pending .srail-name { color: var(--ink-3); font-weight: 500; }
+.srail-step.is-running .srail-name { color: var(--ink); }
+.srail-step.is-failed .srail-name { color: var(--bad); }
+.srail-detail {
+  font-size: var(--fs-cap); color: var(--ink-3); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.srail-bar { width: 72%; height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 2px; }
+.srail-bar i { display: block; height: 100%; background: var(--ok); transform-origin: left; transition: transform var(--med) var(--ease); }
+.srail-step.is-running .srail-bar i { background: var(--vermilion); }
+.srail-panel { border-top: 1px solid var(--line); padding: 12px 14px 14px; display: grid; gap: 6px; background: var(--line-soft); }
+.srail-panel-head { display: flex; align-items: center; gap: 10px; }
+.srail-pill.is-done { color: var(--ok); }
+.srail-pill.is-running { color: var(--vermilion-ink); }
+.srail-pill.is-failed { color: var(--bad); }
+
+/* One line of what is running, for chat and the rail. */
+.lstrip {
+  display: flex; align-items: center; gap: 10px; min-width: 0;
+  padding: 7px 8px 7px 12px; border: 1px solid var(--line); border-radius: var(--r-ctl);
+  background: var(--paper); font-size: var(--fs-small);
+}
+.lstrip-what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lstrip-what b { font-weight: 600; color: var(--ink); }
+.lstrips { display: grid; gap: 6px; padding: 8px clamp(16px, 3vw, 32px) 0; }
+
+/* One dot per stage. */
+.sdots { display: inline-flex; gap: 3px; flex: none; }
+.sdots i { width: 7px; height: 7px; border-radius: 50%; border: 1.25px solid var(--line); }
+.sdots i.is-done { background: var(--ok); border-color: var(--ok); }
+.sdots i.is-partial { border-color: var(--ok); background: linear-gradient(90deg, var(--ok) 50%, transparent 50%); }
+.sdots i.is-running { border-color: var(--vermilion); background: var(--vermilion); animation: sdot-pulse 1.4s var(--ease) infinite; }
+.sdots i.is-failed { background: var(--bad); border-color: var(--bad); }
+@keyframes sdot-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .sdots i.is-running { animation: none; } }
+/* The same rail, top to bottom, for a narrow column. */
+.srail.is-column { grid-template-columns: 1fr; padding: 4px 0; overflow: visible; }
+.srail.is-column .srail-step:not(:last-child)::after {
+  top: 30px; bottom: -6px; left: 19px; right: auto; width: 2px; height: auto;
+}
+.srail.is-column .srail-step > button {
+  grid-template-columns: 26px auto 1fr; justify-items: start; align-items: center;
+  column-gap: 10px; text-align: left; padding: 4px 6px;
+}
+.srail.is-column .srail-detail { justify-self: stretch; }
+.srail.is-column .srail-bar { grid-column: 2 / -1; width: 100%; }
+.srail-wrap:has(.srail.is-column) .srail-head { padding-left: 8px; }
+
+/* ---------------------------------------------------------------- now
+   The standing answer to "what is the machine doing", on every screen:
+   a pill in the topbar, a drawer from the right. */
+.nowpill {
+  display: inline-flex; align-items: center; gap: 7px; cursor: pointer; max-width: 260px;
+  font-size: var(--fs-cap); font-weight: 600; padding: 5px 12px 5px 9px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--paper); color: var(--ink-2);
+  transition: border-color var(--fast) var(--ease);
+}
+.nowpill:hover { border-color: var(--ink-3); }
+.nowpill.is-live { border-color: color-mix(in oklab, var(--vermilion) 55%, var(--line)); color: var(--ink); }
+.nowpill-say { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowpill-idle { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--ink-3); flex: none; }
+/* Floating, for the screens that draw no topbar. */
+.nowpill-float { position: absolute; top: 10px; right: 14px; z-index: 12; box-shadow: var(--e1); }
+
+.scrim-side { place-items: stretch end; padding-top: 0; }
+.drawer-now { position: relative; inset: auto; width: min(460px, 100%); height: 100%; animation: now-in var(--med) var(--ease); }
+@keyframes now-in { from { transform: translateX(24px); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .drawer-now { animation: none; } }
+
+.nowwait {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-decoration: none;
+  border: 1px solid var(--line); border-radius: var(--r-ctl); color: var(--ink);
+}
+.nowwait:hover { border-color: var(--vermilion); }
+
+.nowcard { border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper); overflow: hidden; }
+.nowcard.is-open { border-color: color-mix(in oklab, var(--vermilion) 40%, var(--line)); }
+.nowcard-head {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px;
+  background: transparent; border: 0; text-align: left; cursor: pointer; color: var(--ink);
+}
+.nowcard-head:hover { background: var(--line-soft); }
+.nowcard-title { display: block; font-weight: 600; font-size: var(--fs-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nowcard-doing { display: flex; align-items: center; gap: 6px; font-size: var(--fs-cap); color: var(--ink-2); min-width: 0; margin-top: 2px; }
+.nowcard-side { display: grid; justify-items: end; gap: 4px; flex: none; }
+.nowcard-body { padding: 0 14px 12px; }
+.nowcard-body .srail-wrap { border: 0; }
+.nowcard-foot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line); background: var(--line-soft); }
+.nowend { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); color: var(--ink-3); flex: none; }
+.nowend.is-ok { color: var(--ok); border-color: var(--ok); }
+.nowend.is-bad { color: var(--bad); border-color: var(--bad); }
+.scrim-side { position: fixed; }
+.main.chat { position: relative; }
+
+/* ---------------------------------------------------------- chat work
+   The work, told in the conversation (ChatWorkCards.tsx). The thread is a
+   charcoal surface, so the cards take the char tokens. */
+.wcards { display: grid; gap: 10px; margin: 6px 0 4px; }
+.wcard {
+  border: 1px solid var(--line-char); border-radius: var(--r-card);
+  background: var(--char-2); color: var(--on-char); overflow: hidden; text-align: left;
+}
+.wcard.is-live { border-color: color-mix(in oklab, var(--vermilion) 45%, var(--line-char)); }
+.wcard-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 8px; }
+.wcard-kind { display: block; font-size: var(--fs-cap); color: var(--on-char-2); letter-spacing: .02em; }
+.wcard-title { display: block; font-size: var(--fs-body); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcard-now { display: flex; align-items: center; gap: 9px; padding: 0 14px 10px; font-size: var(--fs-small); color: var(--on-char); }
+.wcard-bar { width: 84px; height: 3px; border-radius: 3px; background: var(--line-char); overflow: hidden; flex: none; }
+.wcard-bar i { display: block; height: 100%; background: var(--vermilion); transform-origin: left; transition: transform var(--med) var(--ease); }
+.wcard-steps { list-style: none; margin: 0; padding: 4px 14px 10px; display: grid; gap: 0; }
+.wcard-steps li {
+  position: relative; display: grid; grid-template-columns: 16px 92px minmax(0, 1fr); align-items: baseline;
+  gap: 8px; padding: 3px 0; font-size: var(--fs-cap); color: var(--on-char-2);
+}
+.wcard-steps li:not(:last-child)::before {
+  content: ""; position: absolute; left: 7px; top: 15px; bottom: -5px; width: 1.5px; background: var(--line-char);
+}
+.wcard-steps li.is-done:not(:last-child)::before { background: var(--ok); }
+.wcard-dot {
+  position: relative; z-index: 1; width: 15px; height: 15px; border-radius: 50%; align-self: center;
+  display: grid; place-items: center; border: 1.5px solid var(--line-char); background: var(--char-2); color: var(--char);
+}
+.wcard-steps li.is-done .wcard-dot { background: var(--ok); border-color: var(--ok); }
+.wcard-steps li.is-failed .wcard-dot { background: var(--bad); border-color: var(--bad); }
+.wcard-steps li.is-partial .wcard-dot { border-color: var(--ok); }
+.wcard-steps li.is-running .wcard-dot { border-color: var(--vermilion); animation: sdot-pulse 1.4s var(--ease) infinite; }
+.wcard-steps li.is-running, .wcard-steps li.is-done { color: var(--on-char); }
+.wcard-step-name { font-weight: 600; }
+.wcard-step-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wcard-foot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--line-char); }
+.wcard-end-glyph { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; flex: none; border: 1.5px solid currentColor; }
+.wcard-end.is-ok .wcard-end-glyph { color: var(--ok); }
+.wcard-end.is-bad { border-color: color-mix(in oklab, var(--bad) 50%, var(--line-char)); }
+.wcard-end.is-bad .wcard-end-glyph { color: var(--bad); }
+.wcard-end.is-stopped .wcard-end-glyph { color: var(--on-char-2); }
+.wcard-why { padding: 0 14px 10px; font-size: var(--fs-small); line-height: 1.5; }
+.wcard-wait { display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-decoration: none; width: 100%; max-width: 620px; }
+.wcard-wait:hover { border-color: var(--vermilion); }
+.wcard-wait .dim { color: var(--on-char-2); }
+
+.chat-thinking { display: flex; align-items: center; gap: 12px; }
+.chat-thinking-say { display: block; font-size: var(--fs-body); color: var(--on-char); font-weight: 500; }
+.chat-thinking-sub { display: block; font-size: var(--fs-cap); color: var(--on-char-2); }
+.chat-thinking-sub .dim { color: inherit; }
+
+.chat-starts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin-top: 8px; width: 100%; max-width: 640px; }
+.chat-start {
+  display: grid; gap: 8px; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--line-char); border-radius: var(--r-card); background: var(--char-2); color: var(--on-char);
+}
+.chat-start-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-small); }
+.chat-start-sizes { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-start .chip { background: transparent; color: var(--on-char); border-color: var(--line-char); font-size: var(--fs-cap); padding: 5px 11px; }
+.chat-start .chip:hover { border-color: var(--vermilion); color: var(--on-char); }
+
+/* ---------------------------------------------------------- audit strip
+   The work across the top of Audit (AuditPage WorkStrip): what it is, its
+   counts, and its run stage by stage. One panel, three bands that wrap. */
+.wstrip {
+  flex: none; display: grid; gap: 10px 22px; padding: 12px var(--inset, 16px);
+  grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "id stats" "run run";
+  border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper);
+}
+.wstrip.is-live { border-color: color-mix(in oklab, var(--vermilion) 40%, var(--line)); }
+.wstrip-id { grid-area: id; display: flex; align-items: center; gap: 12px; min-width: 0; }
+.wstrip-mark { flex: none; font-size: var(--fs-lead); display: flex; }
+.wstrip-name { min-width: 0; flex: 0 1 auto; }
+.wstrip-kind { display: block; font-size: var(--fs-cap); color: var(--ink-3); letter-spacing: .02em; }
+.wstrip-title {
+  font-size: var(--fs-lead); font-weight: 600; line-height: 1.2; margin: 1px 0 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.wstrip-links { display: flex; gap: 2px; flex-wrap: wrap; min-width: 0; }
+.wstrip-stats { grid-area: stats; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 18px; margin: 0; align-self: center; }
+.wstrip-stats > div { display: grid; gap: 1px; min-width: 0; }
+.wstrip-stats dt {
+  font-size: var(--fs-micro); letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3);
+  white-space: nowrap; order: 2;
+}
+.wstrip-stats dd { margin: 0; font-size: var(--fs-body); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wstrip-stats .is-bad dd { color: var(--bad); }
+.wstrip-stats .is-ok dd { color: var(--ok); }
+
+/* A count with its bar: "3/4" and how much of the way that is. */
+.meter { display: inline-flex; align-items: center; gap: 7px; }
+.meter-bar { width: 38px; height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.meter-bar i { display: block; height: 100%; background: var(--ink-3); transform-origin: left; transition: transform var(--slow) var(--ease); }
+.is-ok .meter-bar i { background: var(--ok); }
+
+.wstrip-run { grid-area: run; display: flex; align-items: center; gap: 10px 18px; flex-wrap: wrap; min-width: 0; padding-top: 10px; border-top: 1px solid var(--line); }
+.wstrip-stages {
+  list-style: none; margin: 0; padding: 0; flex: 1 1 520px; min-width: 0;
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 0;
+}
+.wstage { position: relative; display: flex; flex-direction: column; gap: 5px; padding-right: 14px; min-width: 0; }
+/* The line between two stages fills green once the left one is done. */
+.wstage:not(:last-child)::after {
+  content: ""; position: absolute; left: 26px; right: 6px; top: 10px; height: 1.5px; background: var(--line);
+  z-index: 0;
+}
+.wstage.is-done:not(:last-child)::after { background: var(--ok); }
+.wstage-dot {
+  position: relative; z-index: 1; width: 20px; height: 20px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-size: var(--fs-micro); color: var(--ink-3);
+  border: 1.5px solid var(--line); background: var(--paper);
+}
+.wstage.is-done .wstage-dot { background: var(--ok); border-color: var(--ok); color: var(--paper); }
+.wstage.is-partial .wstage-dot { border-color: var(--ok); color: var(--ok); }
+.wstage.is-failed .wstage-dot { background: var(--bad); border-color: var(--bad); color: var(--paper); }
+.wstage.is-running .wstage-dot { border-color: var(--vermilion); box-shadow: 0 0 0 4px color-mix(in oklab, var(--vermilion) 14%, transparent); animation: wstage-ring 1.6s var(--ease) infinite; }
+@keyframes wstage-ring { 50% { box-shadow: 0 0 0 7px color-mix(in oklab, var(--vermilion) 4%, transparent); } }
+.wstage-text { display: grid; min-width: 0; }
+.wstage-name { font-size: var(--fs-small); font-weight: 600; color: var(--ink-2); white-space: nowrap; }
+.wstage.is-pending .wstage-name { color: var(--ink-3); font-weight: 500; }
+.wstage.is-running .wstage-name { color: var(--ink); }
+.wstage.is-failed .wstage-name { color: var(--bad); }
+.wstage-detail { font-size: var(--fs-cap); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wstage.is-running .wstage-detail { color: var(--ink-2); }
+.wstage-bar { height: 3px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.wstage-bar i { display: block; height: 100%; background: var(--ok); transform-origin: left; transition: transform var(--slow) var(--ease); }
+.wstage.is-running .wstage-bar i { background: var(--vermilion); }
+.wstrip-say { display: flex; align-items: center; gap: 12px; flex: 0 1 auto; min-width: 0; font-size: var(--fs-small); }
+.wstrip-live { display: inline-flex; align-items: center; gap: 6px; color: var(--vermilion-ink); font-weight: 600; white-space: nowrap; }
+.wstrip-held, .wstrip-clear { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 46ch; }
+.wstrip-held { color: var(--bad); }
+.wstrip-clear { color: var(--ok); }
+@media (prefers-reduced-motion: reduce) { .wstage.is-running .wstage-dot { animation: none; } }
+/* Narrow: the counts drop under the name, and the stages scroll sideways
+   rather than squeezing every name to an ellipsis. */
+@media (max-width: 1100px) {
+  .wstrip { grid-template-columns: minmax(0, 1fr); grid-template-areas: "id" "stats" "run"; }
+  .wstrip-stats { justify-content: flex-start; }
+  .wstrip-stages { overflow-x: auto; grid-auto-columns: minmax(118px, 1fr); }
+}
+
+/* ------------------------------------------------------- audit: all work
+   The left column's list of every work, grouped by kind (ScopeColumn). */
+.scope-group + .scope-group { margin-top: 6px; }
+.scope-group-head {
+  display: flex; align-items: center; gap: 6px; width: 100%; padding: 8px 2px 6px;
+  background: transparent; border: 0; cursor: pointer; text-align: left;
+  font-size: var(--fs-micro); font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-3);
+}
+.scope-group-head:hover { color: var(--ink); }
+.scope-live-n { display: inline-flex; align-items: center; gap: 4px; color: var(--vermilion-ink); }
+.row-work .meta { font-size: var(--fs-cap); }
+.scope-doing { display: inline-flex; align-items: center; gap: 6px; color: var(--vermilion-ink); min-width: 0; }
+.row-work.is-live .name { color: var(--ink); }
+/* Read and signed on one track: grey to where it is read, green to where it is signed. */
+.scope-meter { position: relative; display: block; height: 3px; margin-top: 6px; border-radius: 3px; background: var(--line); overflow: hidden; max-width: 220px; }
+.scope-meter i { position: absolute; inset: 0; transform-origin: left; transition: transform var(--slow) var(--ease); }
+.scope-meter .is-read { background: color-mix(in oklab, var(--ink-3) 55%, transparent); }
+.scope-meter .is-signed { background: var(--ok); }
+.scope-files { padding: 2px 0 10px 2.2em; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.pgs .sheet-signed { position: absolute; left: 4px; bottom: 4px; color: var(--ok); display: flex; }
+.stats-6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fold-head { background: transparent; border-left: 0; border-right: 0; border-bottom: 0; cursor: pointer; }
+.fold-head:hover { background: var(--line-soft); }
+
+/* ----------------------------------------------------------------- library
+   A bookshelf (ProductionsPage): a shelf per kind; a finished work stands
+   with its cover, one still being made shows where it has got to. */
+.shelf-head {
+  display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px;
+  font-size: var(--fs-small); font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-2);
+  padding-bottom: 8px; border-bottom: 1px solid var(--line);
+}
+.shelf-row { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); }
+.book {
+  display: flex; flex-direction: column; text-align: left; padding: 0; cursor: pointer; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--r-card); background: var(--paper); color: var(--ink); overflow: hidden;
+  transition: transform var(--med) var(--ease), box-shadow var(--med) var(--ease), border-color var(--med) var(--ease);
+}
+.book:hover { transform: translateY(-4px); box-shadow: var(--e2); border-color: color-mix(in oklab, var(--vermilion) 40%, transparent); }
+.book:focus-visible { outline: 2px solid var(--vermilion); outline-offset: 2px; }
+.book.is-live { border-color: color-mix(in oklab, var(--vermilion) 45%, var(--line)); }
+/* Finished: a cover at a book's proportion. */
+.book-cover {
+  --glow: var(--vermilion);
+  position: relative; aspect-ratio: 3 / 4; display: flex; flex-direction: column; justify-content: space-between;
+  padding: 14px 16px; color: var(--on-char); overflow: hidden;
+  background: radial-gradient(120% 95% at 100% 100%, color-mix(in oklab, var(--glow) 24%, transparent), transparent 62%), var(--char);
+}
+.book-cover[data-kind="storybook"] { --glow: var(--warn); }
+.book-cover[data-kind="storyboard"], .book-cover[data-kind="script"] { --glow: var(--ok); }
+.book-cover[data-kind="magazine"], .book-cover[data-kind="folio"] { --glow: var(--vermilion-2); }
+.book-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.book-cover .cover-kind { font-size: var(--fs-cap); letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: color-mix(in oklab, var(--on-char) 62%, transparent); }
+.book-cover .cover-letter { align-self: flex-end; font-family: var(--font-read); font-size: 4.2rem; line-height: .8; font-weight: 600; color: var(--vermilion); transition: transform var(--med) var(--ease); }
+.book:hover .cover-letter { transform: translateY(-3px); }
+/* Not finished: the same footprint, holding where it stands instead. */
+.book-status {
+  aspect-ratio: 3 / 4; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
+  background: color-mix(in oklab, var(--ink) 3%, var(--paper)); border-bottom: 1px solid var(--line);
+}
+.book-status-kind { font-size: var(--fs-cap); letter-spacing: .14em; text-transform: uppercase; font-weight: 600; color: var(--ink-3); }
+.book-now { display: flex; align-items: flex-start; gap: 8px; margin-top: auto; font-size: var(--fs-small); min-width: 0; }
+.book-now > :first-child { margin-top: 2px; flex: none; }
+.book-now b { display: block; font-weight: 600; }
+.book-now-detail { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--ink-3); font-size: var(--fs-cap); line-height: 1.4; }
+.book-bar { height: 4px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.book-bar i { display: block; height: 100%; background: var(--vermilion); transform-origin: left; transition: transform var(--slow) var(--ease); }
+.book-stages { display: flex; align-items: center; gap: 8px; font-size: var(--fs-cap); color: var(--ink-3); }
+.book-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--fs-cap); color: var(--ink-3); padding-top: 8px; border-top: 1px solid var(--line); }
+.book-counts b { color: var(--ink); font-weight: 600; }
+.book-counts .is-bad b { color: var(--bad); }
+.book-counts .is-warn b { color: var(--warn); }
+.book-foot { display: grid; gap: 3px; padding: 12px 14px 14px; justify-items: start; }
+.book-foot h4 { font-size: var(--fs-body); font-weight: 600; line-height: 1.3; }
+.book-size { font-size: var(--fs-cap); color: var(--ink-3); }
+.book-foot .pill { margin-top: 5px; }
+.pill-live { color: var(--vermilion-ink); border-color: color-mix(in oklab, var(--vermilion) 45%, transparent); }

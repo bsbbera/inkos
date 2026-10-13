@@ -115,8 +115,11 @@ describe("hash route", () => {
         { page: "radar" },
         { page: "doctor" },
         { page: "audit" },
-        { page: "books" },
-        { page: "magazines" },
+        { page: "library" },
+        { page: "library", kind: "short" },
+        { page: "audit", kind: "short", id: "lamp" },
+        { page: "publication", issueId: "indigo" },
+        { page: "book", bookId: "lamp" },
         { page: "new" },
         { page: "run" },
         { page: "styleguide" },
@@ -129,6 +132,12 @@ describe("hash route", () => {
         expect(hash).not.toBe("");
         expect(parseHash(hash)).toEqual(route);
       }
+    });
+
+    it("sends the old shelves to the library and work links to Audit", () => {
+      expect(parseHash("#/books")).toEqual({ page: "library", kind: "book" });
+      expect(parseHash("#/magazines")).toEqual({ page: "library", kind: "publication" });
+      expect(parseHash("#/work/publication/indigo/read")).toEqual({ page: "audit", kind: "publication", id: "indigo" });
     });
 
     it("keeps a run id when there is one", () => {

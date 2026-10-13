@@ -18,9 +18,12 @@
  */
 
 import type { PageBlock } from "./page-blocks.js";
+import type { Shape } from "./page-art.js";
 
 /** Colour, type and grid for the whole publication. */
 export interface DesignSpec {
+  /** Who lays the pages out: the arithmetic planner (page-plan.ts, the default) or the model's composer. */
+  readonly composer?: "plan" | "model";
   readonly palette: {
     readonly paper: string;
     readonly ink: string;
@@ -35,6 +38,8 @@ export interface DesignSpec {
     readonly scale: readonly number[];
   };
   readonly grid: {
+    /** The composition system (house.ts GRID_SYSTEMS); columns when absent. */
+    readonly system?: "columns" | "modular" | "thirds" | "golden" | "canon";
     readonly columns: number;
     readonly gutterMm: number;
     readonly marginMm: number;
@@ -62,6 +67,42 @@ export interface PageLayout {
   readonly breaks?: readonly string[];
   /** An arrangement the page score chose when the page failed by W or H (page-score-run.ts). */
   readonly variant?: PageVariant;
+  /** The layout pattern the page wears (layout-engine.ts); its blocks are computed from it. */
+  readonly pattern?: string;
+  /** The arrangement the arithmetic planner chose (page-plan.ts), e.g. "head 0.618 / pull". */
+  readonly plan?: string;
+  readonly mirror?: boolean;
+  /** The fallback vector generator, drawn only when the page has no shapes. */
+  readonly art?: string;
+  /** The page's art, composed by the model from primitives (page-art.ts), in page mm. */
+  readonly shapes?: readonly Shape[];
+  /** One line: what the art shows. */
+  readonly artIdea?: string;
+  readonly seed?: number;
+  readonly kicker?: string;
+  readonly panelTitle?: string;
+  /** The page's vertical grid lines in mm, for the score's alignment check. */
+  readonly edges?: readonly number[];
+  /** The model's reading of the page's copy (plan 27, Phase 13): how it reads, what it shows. */
+  readonly reading?: string;
+  /** The model's own composition of the page (composition.ts), and what the checks still found wrong. */
+  readonly composed?: { readonly idea: string; readonly problems: readonly string[] };
+  /** What Affinity measured on the laid page at the last build: overset, overlapping frames. */
+  readonly measured?: readonly string[];
+}
+
+/**
+ * What is still wrong on the composed pages, as gate blockers. The composer
+ * gets three tries a page; a page that still breaks a rule after them used to
+ * be kept with a note, and the gate never read the note.
+ */
+export function pageBlockers(
+  spec: Pick<DesignSpec, "pages"> | null | undefined,
+  { measured = true }: { readonly measured?: boolean } = {},
+): string[] {
+  return Object.entries(spec?.pages ?? {})
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .flatMap(([n, l]) => [...(l.composed?.problems ?? []), ...(measured ? l.measured ?? [] : [])].map((x) => `p${n}: ${x}`));
 }
 
 /** What `onePageScript` (cli-shim/affinity.mjs) can do differently on an editorial page. */
@@ -161,32 +202,62 @@ dropcap, pull, panel, runhead, wordmark, rule, folio.
 - Only a page whose blocks all have grid slots is built from them; otherwise
   it gets its type's standard arrangement.`;
 
+/**
+ * How a page is laid out by pattern (layout-engine.ts, Phase 8): the art
+ * director chooses, the engine computes. Offered for the systems allowed.
+ */
+export function patternGuide(systems: readonly string[], catalogue: string): string {
+  return `PAGE LAYOUT. Choose a composition system for the issue (grid.system, one of: ${systems.join(", ")})
+and, for every page, a PATTERN of that system. You choose; the engine computes every
+position, fits the type and picks a roomier pattern if the copy does not fit.
+- "pattern": a pattern id below, of the system you chose, suited to what the page is.
+- "mirror": true to flip it left-right (alternate pages read better mirrored).
+- "kicker": 1-4 words over the title. "panelTitle": 1-3 words heading the facts panel.
+Vary the patterns: neighbouring pages never wear the same one.
+
+PATTERNS:
+${catalogue}`;
+}
+
 export const DEFAULT_DESIGN_PROMPT = `
 You are art-directing "{{title}}" — {{extent}} pages about {{subject}}.
 THESIS: {{thesis}}
 {{notes}}
 {{referenceNote}}
 
-The copy is finished and approved. Below is what is actually on each page:
-its real title, its type, its length, and the blocks it carries. Direct the
-design from what is there, not from what a page of this type usually holds.
+The copy is finished and approved. Below is each page as written: its title,
+type, length, the blocks it carries and how it opens. Read it before deciding
+anything: the design comes from this writing.
 
 {{pageDigest}}
 
-Decide, for the whole publication:
-- a palette: paper, ink, one accent. Ink on paper must be legible in print,
-  which is a harder floor than a screen — aim well past 7:1.
-- two typefaces: one for display, one for text, both widely available.
+First, READ. For every page write "reading": what it is and how it reads (its
+pace and register, in your words), what a reader should see first, what in it
+could be pictured, and what is better as a picture, as drawn vector art, or as
+type alone.
+
+Then write the DIRECTION for this issue, in your own words, from those readings:
+- composition: how pages are built (how full or empty, flat or deep, centred or
+  not, how type meets pictures, what reaches the edges)
+- type: how big, how tight, how titles behave
+- colour: the logic of colour across the issue and its sections
+- art: what the pictures and the drawn art are like, and how much of each
+- rhythm: how one page follows another across the issue
+Nothing is preset. It is decided from this writing, not from any other issue.
+{{recentBlock}}
+Then decide, for the whole publication:
+- a palette for the issue as a whole: paper, ink, accent (each section then
+  writes its own language, below). Ink on paper 7:1 or better for print.
+- two typefaces: one for display, one for text.
 - a type scale of at least three sizes, in points, largest first.
-- a grid: columns, gutter, margin, baseline, all in millimetres.
-- image direction: one paragraph describing how EVERY image in this
-  publication should look — medium, palette, light, treatment. It is prefixed
-  to each page's own brief, so it must not describe any single picture.
+- a grid: system, columns, gutter, margin, baseline, all in millimetres. Systems:
+  {{gridSystems}}.
+- image direction: one paragraph describing how EVERY generated picture in this
+  publication looks. It is prefixed to each picture's own brief, so it must not
+  describe any single picture.
 
-Then, for every page listed above, a layout: the arrangement, where the image
-sits, and where each of that page's blocks goes.
-
-${BLOCK_GUIDE}
+Each page is then composed on the grid by you, page by page, from its reading
+and the direction: you do not place frames here.
 {{fontBlock}}
 {{sectionBlock}}
 Also decide the FIXED FURNITURE — the few things that never change from
@@ -196,13 +267,14 @@ the grid in one line, and the divider that marks a section break.
 
 Return ONLY JSON:
 {
+  "direction": {"composition": "...", "type": "...", "colour": "...", "art": "...", "rhythm": "..."},
   "palette": {"paper": "#rrggbb", "ink": "#rrggbb", "accent": "#rrggbb"},
-  "fixed": {"folio": "...", "trim": "...", "grid": "...", "divider": "...", "blocks": [{"kind": "runhead", "slot": {"col": 1, "span": 12, "row": 0, "rows": 1}}]},
+  "fixed": {"folio": "...", "trim": "...", "grid": "why this system, one sentence", "divider": "..."},
   "type": {"display": "...", "text": "...", "scale": [48, 24, 10]},
-  "grid": {"columns": 12, "gutterMm": 5, "marginMm": 15, "baselineMm": 4},
+  "grid": {"system": "...", "columns": 12, "gutterMm": 5, "marginMm": 15, "baselineMm": 4.5},
   "imageDirection": "one paragraph, no single subject",
-  "pages": {"1": {"layout": "...", "imageSlot": "full-bleed|top|bottom|left|right|inset|none", "blocks": [{"kind": "drawn", "slot": {"col": 1, "span": 12, "row": 0, "rows": 30, "bleed": true}, "drawn": "contours+rain", "seed": 7}, {"kind": "title", "slot": {"col": 1, "span": 8, "row": 33, "rows": 4}}, {"kind": "body", "slot": {"col": 1, "span": 8, "row": 38, "rows": 16}, "columns": 2}], "note": "", "breaks": []}},
-  "sections": [{"n": 1, "register": "...", "technique": "...", "idiom": "...", "paper": "#rrggbb", "ink": "#rrggbb", "hue": "#rrggbb", "imagePrompt": "under 60 words, no single subject", "negative": "..."}]
+  "pages": {"1": {"reading": "..."}},
+  "sections": [{"n": 1, "register": "...", "technique": "...", "idiom": "...", "language": {...}, "imagePrompt": "under 60 words, no single subject", "negative": "..."}]
 }
 "sections" holds one world per section listed above, and is [] when none are.
 `.trim();

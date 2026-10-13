@@ -20,10 +20,11 @@ import type { HashRoute } from "../../hooks/use-hash-route";
 import { Rail, type RailRun } from "./Rail";
 import { Topbar, type Crumb } from "./Topbar";
 import { Palette, type PaletteEntry, usePaletteHotkey } from "./Palette";
+import { NowDrawer, NowPill, NowSlot, type NowState } from "./NowDrawer";
 import { Icon, IconSprite } from "../ui/icon";
 import { ToastHost, useListKeys } from "../ui/vermilion";
 import { AskHost } from "../ConfirmDialog";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useResumeTimer } from "../../lib/resume-later";
 
 export type ShellVariant = "stage" | "flush" | "chat";
@@ -39,6 +40,7 @@ export function Shell({
   waiting,
   paletteExtra,
   topbarExtras,
+  now,
   children,
 }: {
   readonly route: HashRoute;
@@ -52,8 +54,20 @@ export function Shell({
   readonly paletteExtra?: readonly PaletteEntry[];
   /** Controls that belong to this screen, sitting left of the standing pills. */
   readonly topbarExtras?: ReactNode;
+  /** Everything running, for the Now pill and drawer on every screen. */
+  readonly now?: NowState;
   readonly children: ReactNode;
 }) {
+  const [nowOpen, setNowOpen] = useState(false);
+  const openNow = useCallback(() => setNowOpen(true), []);
+  /* A drawer is a glance: walking anywhere, or Escape, puts it away. */
+  useEffect(() => { setNowOpen(false); }, [route]);
+  useEffect(() => {
+    if (!nowOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setNowOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nowOpen]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const openPalette = useCallback(() => setPaletteOpen(true), []);
   usePaletteHotkey(openPalette);
@@ -76,7 +90,7 @@ export function Shell({
   return (
     <div className={railOpen ? "screen embedded" : "screen embedded rail-off"}>
       <IconSprite />
-      <Rail route={route} setRoute={setRoute} tails={tails} run={run} onOpenPalette={openPalette} />
+      <Rail route={route} setRoute={setRoute} tails={tails} run={run} onOpenPalette={openPalette} {...(now ? { onRun: openNow } : {})} />
 
       <div className={variant === "chat" ? "main chat" : "main"}>
         {variant === "chat" ? (
@@ -95,7 +109,11 @@ export function Shell({
                 <Icon name="list" size={15} />
               </button>
             )}
-            {children}
+            {/* No app topbar here; the conversation's own topbar carries the
+                Now pill (NowPillHere), opening the same drawer. */}
+            <NowSlot.Provider value={now ? { now, open: openNow } : null}>
+              {children}
+            </NowSlot.Provider>
           </>
         ) : (
           <>
@@ -107,6 +125,7 @@ export function Shell({
               onOpenPalette={openPalette}
               railOpen={railOpen}
               onToggleRail={toggleRail}
+              {...(now ? { nowPill: <NowPill now={now} onOpen={openNow} /> } : {})}
             >
               {topbarExtras}
             </Topbar>
@@ -134,6 +153,7 @@ export function Shell({
         setRoute={setRoute}
         extra={paletteExtra}
       />
+      {now && nowOpen ? <NowDrawer now={now} waiting={waiting ?? 0} onClose={() => setNowOpen(false)} /> : null}
       <ToastHost />
       <AskHost />
     </div>

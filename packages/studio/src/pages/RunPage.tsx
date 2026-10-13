@@ -11,6 +11,8 @@
  * the transcript, the stage list and the clock are already shaped for it.
  */
 import { RunPins } from "./RunPins";
+import { StageRail } from "../components/stage-rail";
+import { useLiveRuns } from "../hooks/use-live-runs";
 import { when } from "../lib/when";
 import { useTitles } from "../hooks/use-titles";
 import { plainError } from "../lib/error-copy";
@@ -235,6 +237,12 @@ export function RunPage({
     () => (graph ? stagesFromGraph(graph) : deriveStages(sse.messages, since)),
     [graph, sse.messages, since],
   );
+  /* A magazine run is drawn with the issue page's own stages and words. The
+     pipeline graph names them "content.write", and the two screens used to
+     disagree about where the same run stood. */
+  const { runs: liveRuns } = useLiveRuns(sse.messages);
+  const issueRun = runRef?.type === "publication" ? liveRuns.find((r) => r.id === runRef.id && r.workflow) ?? null : null;
+  const issueFlow = issueRun?.workflow ?? null;
 
   const done = stages.filter((s) => s.state === "done").length;
   const pct = stages.length ? Math.round((done / stages.length) * 100) : 0;
@@ -284,7 +292,9 @@ export function RunPage({
         <div className="spread mb-5 relative">
           <div>
             <div className="label">
-              {stages.length ? `Stage ${Math.min(done + 1, stages.length)} of ${stages.length}` : "Working"}
+              {issueRun
+                ? `Stage ${Math.min(issueFlow!.stages.filter((x) => x.state === "done").length + 1, issueFlow!.stages.length)} of ${issueFlow!.stages.length}`
+                : stages.length ? `Stage ${Math.min(done + 1, stages.length)} of ${stages.length}` : "Working"}
             </div>
             <h3 className="text-lead mt-2">
               {head.what}
@@ -383,6 +393,15 @@ export function RunPage({
           </div>
         ) : null}
 
+        {issueRun ? (
+          <div className="panel">
+            <div className="spread items-start mb-2">
+              <h3 className="h-panel">Where it is</h3>
+              <a className="btn btn-line btn-sm" href={`#/audit/publication/${encodeURIComponent(issueRun.id)}`}>Open in Audit</a>
+            </div>
+            <StageRail workflow={issueFlow!} layout="column" {...(issueRun.startedAt ? { startedAt: issueRun.startedAt } : {})} />
+          </div>
+        ) : (
         <div className="panel">
           <div className="spread items-start">
             <div>
@@ -417,6 +436,7 @@ export function RunPage({
             ))}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

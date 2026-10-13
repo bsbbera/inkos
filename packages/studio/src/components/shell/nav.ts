@@ -40,12 +40,15 @@ export const NAV: readonly NavGroup[] = [
         owns: ["book-create", "film-author"],
       },
       {
-        id: "books",
+        /* The bookshelf: everything made, grouped by kind. A finished work
+           shows its cover; anything still in progress opens in Audit. */
+        id: "library",
         icon: "book",
-        label: "Books",
-        route: { page: "books" },
+        label: "Library",
+        route: { page: "library" },
         owns: [
           "book",
+          "publication",
           "truth",
           "chapter",
           "book-settings",
@@ -56,15 +59,14 @@ export const NAV: readonly NavGroup[] = [
           "flow",
         ],
       },
+      /* Where the work is done: files and pages, progress, findings and the
+         manuscript itself. */
       { id: "audit", icon: "pulse", label: "Audit", route: { page: "audit" } },
       { id: "gallery", icon: "grid", label: "Gallery", route: { page: "gallery" } },
-      {
-        id: "magazine",
-        icon: "magazine",
-        label: "Magazine",
-        route: { page: "magazines" },
-        owns: ["publication"],
-      },
+      /* What every issue shares: masthead, type, margins, rules, grids. */
+      { id: "house", icon: "layers", label: "House", route: { page: "house" } },
+      /* The brand new issues are held to, and its design system. */
+      { id: "brand", icon: "drop", label: "Brand", route: { page: "brand" } },
     ],
   },
   {

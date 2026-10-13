@@ -1,133 +1,96 @@
 ---
 name: quire-magazine-page
-description: "Authors one magazine page as a single bundle - copy, page furniture and image briefs written together against the section's world, the archetype's density budget and the audience's reading bar, so the words are already layoutable when they arrive. Use for magazine and publication page authoring, not for prose chapters."
-version: 1.0.0
+description: "Authors one magazine page as a single bundle - copy, furniture, picture briefs and, under a bilingual brand, its Bengali line and word box - written together so the words arrive already layoutable and already in the brand's voice. Use for magazine and publication page authoring, not prose chapters."
+version: 2.0.0
 ---
-# Magazine page authoring
+# Writing one magazine page
 
-Apply this method when writing a page of a publication issue.
+The copy, the furniture and the pictures are one decision. A page written without its furniture is a
+page the layout has to fight. **One turn produces the whole bundle.**
 
-A magazine page is not prose that gets designed afterwards. The copy, the
-furniture and the pictures are one decision, and a page written without them is
-a page the layout has to fight. **One turn produces the whole bundle.**
+## Voice
 
-## What you are given
+Under a brand, its voice is the page's voice. Ochin: an elder sibling at the window - curious, warm,
+exact. Simple enough for a ten-year-old to follow, layered enough that an adult keeps finding more. It
+asks before it tells, names real people, and admits what nobody knows yet. It never says "Discover the
+amazing world of..." or "Did you know there are many fascinating facts...".
 
-- The **section brief** — what this run of pages is for, and the question it opens on.
-- The **world spec** — the section's visual world; its prompt fragment is appended to
-  every brief you write, so do not restate its style in your own words.
-- The **archetype and density** — `L`, `M` or `H`, which is a word budget, not a mood.
-- The **pillar** and **premise** — the one idea this page carries.
-- **Sources** — facts already gathered. A fact with no source is not a fact yet.
+The promise behind the voice: we never pretend to catch the bird. A page shows where its open
+question flies, who chased it before, and what is still unknown.
 
-## The writing bar
+## The bar (checked per page, before the content gate)
 
-These are checked automatically, per page, before the content gate, and they
-fail loudly. Write to them the first time rather than being sent back.
+| reader | words/sentence | longest paragraph | words: light / feature / dense |
+|---|---|---|---|
+| around 9 | 14 | 60 | 120 / 220 / 300 |
+| teen | 18 | 90 | 180 / 350 / 450 |
+| general | 20 | 110 | 180 / 350 / 450 |
+| expert | 26 | 160 | 350 / 500 / 650 |
 
-| Reader | Avg words/sentence | Grade | Longest paragraph | Words: light / feature / dense |
-|---|---|---|---|---|
-| around 5 | 12 | 4 | 45 | 60 / 120 / 180 |
-| around 9 | 14 | 6 | 60 | 120 / 220 / 300 |
-| teen | 18 | 8 | 90 | 180 / 350 / 450 |
-| general | 20 | 10 | 110 | 180 / 350 / 450 |
-| expert | 26 | 14 | 160 | 350 / 500 / 650 |
+Over the cap is a hard fail: cut, never hope.
 
-Chinese counts characters where the table says words.
+## How a page is written
 
-Then, in order of how often they are the reason a page comes back:
+- **Open on a scene or an object**, never a definition. The definition, if any, comes second, in one sentence.
+- **One idea per page.** The premise is the idea; a second idea is a different page.
+- **Open a feature on a question** the page then answers: a question block, or a deck ending in "?".
+- **Every big number gets something the reader already holds**: "150 tonnes - as heavy as 25 elephants".
+- **Every hard noun** is explained in its own sentence or becomes a glossary chip.
+- **Subheads are twists**, read alone in order they tell the story. Never labels.
+- **Section names are ways of looking** ("Zoom in", "Long ago", "What if"), three words at most.
+- **Build the bridges you were given**: write the tie to the neighbouring pages the way a person would say it.
+- **Threads surface in passing**, from this page's side, never as a recap.
+- **Keep the hard parts in**: who was exploited, who resisted, what it cost.
+- **Voices are real or absent**: a quotation only when the research holds those exact words with a source.
+- **The last page answers the first**, and ends in the reader's own hands. No summary, no moral.
+- **A section is wonder -> how -> so what.** Know which beat this page is before writing.
 
-- **Never open on a definition.** "A volcano is a mountain that…" is a failed
-  first sentence for every reader, including experts. Open on a concrete scene
-  or object; the definition comes second, in one sentence, if at all.
-- **One idea per page.** The premise is the idea. A second idea belongs on a
-  different page, not in a second half.
-- **Compare every big number to something the reader already holds.** `150
-  tonnes` fails; `150 tonnes — as heavy as 25 elephants` passes. Words that
-  satisfy the check are `as heavy/big/tall/long/fast as`, `than`, `times`,
-  `like`, `the size of`, `enough to`.
-- **Source every did-you-know.** A `didyouknow` or `fact` block without a
-  `source` is flagged, and a spread with no such block at all is flagged too.
-- **No subject labels.** Section names are ways of looking — "Zoom in", "Long
-  ago", "What if" — never "Physics", "Biology", "History". Three words at most.
-- **Explain or chip every hard noun.** A word the reader would not know either
-  gets explained in the sentence that uses it, or becomes a glossary chip. It
-  never just stands there.
-- **Open a feature on a question the page then answers.** Either the first block
-  is a `question` or the deck ends in `?`.
+## Two languages (bilingual brands)
 
-## The section spine
+Ochin: English carries the reading; Bengali carries the heart. Write title, deck and body in English.
+Then, as furniture (always allowed, whatever the archetype):
 
-A section is three beats across its pages: **wonder → how → so what**. Know
-which beat this page is before writing a word. A page that restates its
-neighbour's beat is why sections read flat, and the section — not the page — is
-what the person approves.
+- `{"kind": "wordbox", "text": "<Bengali word> | <how it sounds> | <what it means, under 18 words>"}` -
+  when a Bengali word names this page's idea better than English (ছায়া, chhaya: shadow, and also
+  shelter). At most one, features only.
+- `{"kind": "bengali-line", "text": "<one line of Bengali> | <its English>"}` - on the page that opens
+  or closes a story: an epigraph, a line from a real Bengali source (Lalon, Tagore, a proverb), or a
+  closing line. Quoted lines must be real; otherwise write your own and do not attribute it.
 
-## Every page is a stop on the web
+Bengali is never a translation of the English beside it, and never more than one line. Write it in
+Bengali script; the build shapes it.
 
-The magazine takes one thing and follows it through every connection. A page
-that stands alone, however good, is a page from some other magazine.
+## Pictures
 
-- **Build the bridges you were given.** The page arrives with the pages it is
-  tied to and the word they share. Write that tie into the text the way a
-  person would say it — "the same blue the farmers of Champaran refused to
-  grow" — not as a cross-reference. A bridge left unwritten is caught by the
-  audit and the page comes back.
-- **Let the threads surface.** A thread is a moment, a person, a place or an
-  object that recurs. It reappears in passing, from this page's own side, never
-  as a recap.
-- **Subheads are twists.** Read alone, in order, they tell the story: "Before
-  blue had a name", "The blue that begins green". Never a label.
-- **The wonder moment is told more than once,** each time from a different
-  side — the chemist's, the dyer's, the reader's.
-- **The last page answers the first.** The closing page returns to the
-  question the issue opened on, with what the reader now holds, and ends in
-  their own hands. No summary, no moral.
-- **Keep the hard parts in.** Who was exploited, who resisted, what it cost.
-- **Voices are real or absent.** A quotation only when the research holds
-  those exact words with a source. Otherwise describe the person's work and use
-  no quotation marks.
+As many briefs as the page actually wants - often none. Each names things and where they sit, in forty
+to sixty words, with a role (hero, inset, diagram, portrait, detail, background) and an orientation.
+No style, no lighting, no lens talk: the brand's picture style is prefixed by code, and a brief that
+describes a photograph gets a photograph. A real person or place wants a real photograph, which
+research finds; an exact thing (a scale, a timeline, a curve) wants a measured figure, which design
+draws. Never brief an ornament - borders, stitches, birds and alpanas are the brand's shapes.
 
-## Output contract
+## Output
 
 One JSON object, nothing else.
 
 ```json
 {
-  "title": "The animal that never sleeps",
-  "deck": "How do you rest when stopping would kill you?",
-  "body": "markdown for the page, inside the word cap",
-  "pullQuote": "Half a brain at a time.",
+  "title": "The window at Le Gras",
+  "deck": "A roof, a pear tree and eight hours of sun: what does the oldest photograph remember?",
+  "body": "plain prose, blank line between paragraphs, inside the word cap",
+  "pull_quote": "Where light fell, the bitumen hardened.",
   "furniture": [
-    {"kind": "didyouknow", "text": "A dolphin sleeps one half of its brain at a time.", "source": "src-114"},
-    {"kind": "bignumber", "text": "15 years — as long as a dolphin can go without ever fully sleeping", "source": "src-118"}
+    {"kind": "pull-number", "text": "8 hours - as long as a school day, for one picture", "source": "https://..."},
+    {"kind": "wordbox", "text": "ছায়া | chhaya | shadow, and also shelter: every photograph is made of what the light did not reach"}
   ],
-  "image_prompts": [
-    {"prompt": "a bottlenose dolphin just under a bright surface, seen from below, one eye open", "orientation": "landscape"}
-  ],
-  "sources": ["src-114", "src-118"],
-  "uncertain": ["whether the 15-year figure covers captive animals too"]
+  "image_prompts": [{"prompt": "a pewter plate on a stone window sill, a roof and a pear tree outside", "orientation": "landscape", "role": "hero"}],
+  "sources": ["https://..."],
+  "uncertain": ["whether the exposure was eight hours or several days"]
 }
 ```
 
-- `furniture` kinds in use: `didyouknow` / `fact`, `bignumber` / `stat`,
-  `question`, `timeline`, `vs`, `process`, `map`, `glossary`. The design layer
-  decides whether one renders as vectors or as a picture — that is not your call.
-- `image_prompts` may be empty. A type-only page is a legal page, and inventing
-  a picture to fill the field is how a spread ends up decorated rather than
-  illustrated.
-- Write the subject, action, setting, composition and light. Do **not** write the
-  style: the world's own fragment is appended after yours, and two style
-  statements fight.
-- `uncertain` is for what you could not confirm. It costs nothing and is the
-  only thing standing between a confident sentence and a wrong one.
-
-## Do / don't
-
-- **Do** cut to the cap rather than writing long and hoping. Over-cap is a hard fail.
-- **Do** let the furniture carry the numbers and the surprises, so the body can stay a
-  single clean line of thought.
-- **Don't** write a caption that repeats the sentence beside it.
-- **Don't** use a decorative detail nothing later needs.
-- **Don't** restate the section's world, palette or technique in prose. It is already
-  law, and repeating it in a brief only competes with it.
+- Furniture kinds are the archetype's allowed ones (pull-number, sidefact, did-you-know, question,
+  timeline, vs, process, map, glossary), plus the two bilingual kinds under a bilingual brand.
+- Every fact block carries its `source`. `uncertain` costs nothing and stands between a confident
+  sentence and a wrong one.
+- A caption never repeats the sentence beside it; a decorative detail nothing later needs is cut.

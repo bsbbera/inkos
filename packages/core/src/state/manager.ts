@@ -1,3 +1,4 @@
+import { configFile } from "../utils/config-dir.js";
 import { readFile, writeFile, mkdir, readdir, rm, stat, unlink, open } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
@@ -383,13 +384,13 @@ export class StateManager {
   }
 
   async loadProjectConfig(): Promise<Record<string, unknown>> {
-    const configPath = join(this.projectRoot, "quire.json");
+    const configPath = configFile(this.projectRoot);
     const raw = await readFile(configPath, "utf-8");
     return JSON.parse(raw);
   }
 
   async saveProjectConfig(config: Record<string, unknown>): Promise<void> {
-    const configPath = join(this.projectRoot, "quire.json");
+    const configPath = configFile(this.projectRoot);
     await writeFile(configPath, JSON.stringify(config, null, 2), "utf-8");
   }
 

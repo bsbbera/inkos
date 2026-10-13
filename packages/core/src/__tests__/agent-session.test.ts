@@ -715,6 +715,7 @@ describe("runAgentSession cache — bookId switch", () => {
       // not, because the run it belonged to is over and nothing else can reach
       // the art, layout and build stages once it is.
       "publication_art",
+      "publication_look",
       "publication_layout",
       "publication_render",
       // One element of one page, so a note about a sidebar stops

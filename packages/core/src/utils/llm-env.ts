@@ -1,9 +1,11 @@
+import { configDir } from "./config-dir.js";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse } from "dotenv";
 
-export const GLOBAL_CONFIG_DIR = join(homedir(), ".quire");
+// The app names its own settings folder; dev and prod each have one.
+export const GLOBAL_CONFIG_DIR = process.env.QUIRE_CONFIG_DIR?.trim() || join(homedir(), ".quire");
 export const GLOBAL_ENV_PATH = join(GLOBAL_CONFIG_DIR, ".env");
 
 export type LLMEnvMap = Record<string, string | undefined>;
@@ -19,7 +21,7 @@ export async function loadLLMEnvLayers(
   processEnv: NodeJS.ProcessEnv = process.env,
 ): Promise<LLMEnvLayers> {
   const global = await parseEnvFile(GLOBAL_ENV_PATH);
-  const project = await parseEnvFile(join(root, ".env"));
+  const project = await parseEnvFile(join(configDir(root), ".env"));
   // Compatibility: modelOverrides.apiKeyEnv and detector config still read process.env directly.
   hydrateProcessEnvFromEnvFiles(processEnv, global, project);
 
@@ -52,7 +54,7 @@ export function legacyEnv(layers: LLMEnvLayers): LLMEnvMap {
   return mergeEnvMaps(layers.global, layers.project, layers.process);
 }
 
-async function parseEnvFile(path: string): Promise<LLMEnvMap> {
+export async function parseEnvFile(path: string): Promise<LLMEnvMap> {
   try {
     return parse(await readFile(path, "utf-8"));
   } catch {

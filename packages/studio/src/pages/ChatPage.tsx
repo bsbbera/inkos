@@ -34,6 +34,10 @@ import {
 import { ProjectArtifactDrawer } from "../components/chat/ProjectArtifactDrawer";
 import { PlayHud } from "../components/chat/PlayHud";
 import { Orb, Working } from "../components/ui/working";
+import { TypeMark } from "../components/TypeMark";
+import { NowPillHere } from "../components/shell/NowDrawer";
+import { EndCard, Ticker, WaitingCard, WorkCard, useChatRuns } from "../components/chat/ChatWorkCards";
+import { useLiveRuns } from "../hooks/use-live-runs";
 import { PlayChoicePanel } from "../components/chat/PlayChoicePanel";
 import { latestPlayChoiceSet } from "../components/chat/play-choices";
 import {
@@ -100,6 +104,8 @@ export interface ChatPageProps {
   readonly theme: Theme;
   readonly t: TFunction;
   readonly sse: { messages: ReadonlyArray<SSEMessage>; connected: boolean };
+  /** Sign-offs and reads waiting on a person, said in the conversation too. */
+  readonly waiting?: number;
 }
 
 interface ServiceConfigPayload {
@@ -333,14 +339,22 @@ function wordsSoFar(text: string): number {
   return text.trim() ? text.trim().split(/\s+/).length : 0;
 }
 
-export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-create", nav, theme, t, sse: _sse }: ChatPageProps) {
+export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-create", nav, theme, t, sse: _sse, waiting = 0 }: ChatPageProps) {
   // -- Store selectors --
   const messages = useChatStore(chatSelectors.activeMessages);
   const activeSession = useChatStore(chatSelectors.activeSession);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  /* What is running, in the conversation: a magazine started from here used
+     to vanish into the background with no word of where it stood, and its end
+     - finished, or stopped on page 3 - was news only if you went looking. */
+  const { runs: liveRuns, recent: recentRuns, stop: stopRun } = useLiveRuns(_sse.messages);
+  const { ended: endedRuns, dismiss: dismissRun } = useChatRuns(liveRuns, recentRuns);
   const [artifactsOpen, setArtifactsOpen] = useState(true);
   const input = useChatStore((s) => s.input);
   const loading = useChatStore(chatSelectors.isActiveSessionStreaming);
+  /* When the current answer was asked for, so "Thinking" can say for how long. */
+  const [askedAt, setAskedAt] = useState<number | null>(null);
+  useEffect(() => { setAskedAt(loading ? Date.now() : null); }, [loading]);
   const chatStreaming = useChatStore(chatSelectors.isActiveSessionChatStreaming);
   const lastFailedSend = useChatStore(chatSelectors.activeSessionLastFailedSend);
   const selectedModel = useChatStore((s) => s.selectedModel);
@@ -977,6 +991,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           ) : null}
           <h1>{isZh ? "对话" : "Chat"}</h1>
         </div>
+        <NowPillHere />
         <button type="button" className="btn btn-quiet btn-sm" onClick={() => setArtifactsOpen((open) => !open)}>
           <Layers size={15} aria-hidden="true" />
           {isZh ? "产出" : "Artifacts"}
@@ -991,6 +1006,7 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
           {isZh ? "新会话" : "New session"}
         </button>
       </div>
+
 
       <div className="dark crop">
       {/* Message scroll area */}
@@ -1057,16 +1073,49 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
             <h2 className="h-panel">{isZh ? "想写点什么？" : "What are we making?"}</h2>
             <p className="muted text-body max-w-measure">{emptyGuidance}</p>
             {!isZh ? (
-              <div className="chat-hello-ways stagger">
-                {[
-                  "A short story about ",
-                  "A 16-page magazine issue on ",
-                  "Read chapter 1 back to me and say where it drags",
-                  "Check the facts in ",
-                ].map((s) => (
-                  <button key={s} type="button" className="chip" onClick={() => setInput(s)}>
-                    {s.trim().replace(/ (about|on|in)$/, " $1…")}
-                  </button>
+              /* Ways in, each with its size said up front: a 4-page folio is
+                 a ten-minute try, a 16-page issue an afternoon. They fill the
+                 composer rather than send, so the subject is yours. */
+              <div className="chat-starts stagger">
+                {([
+                  { kind: "publication", what: "Magazine", sizes: [
+                    { label: "Folio · 4 pages", fill: "A 4-page folio on " },
+                    { label: "Issue · 16 pages", fill: "A 16-page magazine issue on " },
+                  ] },
+                  { kind: "short", what: "Short story", sizes: [
+                    { label: "Flash · ~1,000 words", fill: "A 1,000-word flash story about " },
+                    { label: "Short · ~5,000 words", fill: "A 5,000-word short story about " },
+                  ] },
+                  { kind: "book", what: "Book", sizes: [
+                    { label: "Novella · 12 chapters", fill: "A 12-chapter novella about " },
+                    { label: "Novel · 30 chapters", fill: "A 30-chapter novel about " },
+                  ] },
+                  { kind: "script", what: "Check or rework", sizes: [
+                    { label: "Fact-check a page", fill: "Check the facts in " },
+                    { label: "Read it back to me", fill: "Read chapter 1 back to me and say where it drags" },
+                  ] },
+                ] as const).map((g) => (
+                  <div key={g.what} className="chat-start">
+                    <span className="chat-start-head"><TypeMark kind={g.kind} /><b>{g.what}</b></span>
+                    <span className="chat-start-sizes">
+                      {g.sizes.map((z) => (
+                        <button key={z.label} type="button" className="chip" onClick={() => { setInput(z.fill); textareaRef.current?.focus(); }}>
+                          {z.label}
+                        </button>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <WaitingCard waiting={waiting} />
+            {liveRuns.length > 0 || endedRuns.length > 0 ? (
+              <div className="wcards w-full">
+                {endedRuns.map((r) => (
+                  <EndCard key={r.jobId ?? r.id} run={r} onDismiss={() => dismissRun(r.jobId)} />
+                ))}
+                {liveRuns.map((r) => (
+                  <WorkCard key={r.jobId ?? `${r.kind}/${r.id}`} run={r} {...(r.jobId ? { onStop: () => void stopRun(r.jobId!) } : {})} />
                 ))}
               </div>
             ) : null}
@@ -1196,13 +1245,32 @@ export function ChatPage({ activeBookId, mode = activeBookId ? "book" : "book-cr
               </div>
             ))}
 
+            {/* The work this conversation set going, told where it was asked for:
+                each card fills in its stages as they finish, then becomes what
+                came of it. */}
+            {liveRuns.length > 0 || endedRuns.length > 0 ? (
+              <div className="wcards">
+                {endedRuns.map((r) => (
+                  <EndCard key={r.jobId ?? r.id} run={r} onDismiss={() => dismissRun(r.jobId)} />
+                ))}
+                {liveRuns.map((r) => (
+                  <WorkCard key={r.jobId ?? `${r.kind}/${r.id}`} run={r} {...(r.jobId ? { onStop: () => void stopRun(r.jobId!) } : {})} />
+                ))}
+              </div>
+            ) : null}
+
             {/* Loading indicator — only when loading and no streaming activity */}
             {loading && !isStreaming && (
               <Message from="assistant">
                 <MessageContent>
-                  <span className="flex items-center gap-2.5 text-body text-muted-foreground">
+                  <span className="chat-thinking">
                     <Orb state="composing" size={32} />
-                    {isZh ? "思考中" : "Thinking"}
+                    <span className="grow">
+                      <span className="chat-thinking-say">{isZh ? "思考中" : "Thinking"}</span>
+                      <span className="chat-thinking-sub">
+                        {runningBar.text ? `${runningBar.text} · ` : ""}{askedAt ? <Ticker since={askedAt} /> : null}
+                      </span>
+                    </span>
                   </span>
                 </MessageContent>
               </Message>
