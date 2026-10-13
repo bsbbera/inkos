@@ -57,7 +57,7 @@ describe("Studio skill endpoints", () => {
     expect(skill.id).toBe("quire-magazine-page");
     expect(skill.source).toBe("builtin");
     // The body is the point of asking for one rather than the list.
-    expect(skill.body).toContain("writing bar");
+    expect(skill.body).toContain("## The bar");
 
     expect((await app.request("/api/v1/skills/no-such-skill")).status).toBe(404);
   });

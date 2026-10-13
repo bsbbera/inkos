@@ -72,15 +72,15 @@ export function BrandPage() {
           <iframe
             title={`${brand.name} design system`}
             src={`/api/v1/brands/${brand.id}/design-system`}
-            style={{ width: "100%", height: "78vh", border: "1px solid var(--line, #ddd)", borderRadius: 6, background: "#fff" }}
+            className="brand-frame"
           />
           {refs.length > 0 && (
             <section className="stack">
               <h2 className="h3">Reference spreads</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+              <div className="brand-refs">
                 {refs.map((f) => (
                   <a key={f} href={`/api/v1/brands/${brand.id}/references/${f}`} target="_blank" rel="noreferrer">
-                    <img src={`/api/v1/brands/${brand.id}/references/${f}`} alt={f} loading="lazy" style={{ width: "100%", display: "block", borderRadius: 4 }} />
+                    <img src={`/api/v1/brands/${brand.id}/references/${f}`} alt={f} loading="lazy" />
                   </a>
                 ))}
               </div>
