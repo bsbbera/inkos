@@ -412,9 +412,10 @@ export function publicationWorkflow(
   math?: DesignMath,
 ): Workflow {
   const g = gateState(issue, pack, math);
+  const stages = stageStates(issue, inFlight);
   return {
     kind: issue.type || "publication",
-    stages: stageStates(issue, inFlight).map((s) => ({
+    stages: stages.map((s) => ({
       stage: s.stage,
       // The publication side has always spoken these three words; it just
       // never had a type saying so.
@@ -433,8 +434,23 @@ export function publicationWorkflow(
     ],
     done: { can: g.build.canBuild, blockers: g.build.blockers },
     running: isRunning,
-    lastError: issue.lastError ?? null,
+    lastError: issue.lastError ?? (isRunning ? null : cutShort(issue, stages)),
   };
+}
+
+const STATUS_STAGE: Record<string, string> = { researching: "research", planning: "plan", writing: "write", designing: "design", building: "build" };
+
+/*
+ * A run that died with the app - closed, crashed, the laptop asleep - writes no
+ * error, so the issue page had no button to continue it: 27 pages written and
+ * nothing to press. Work left half done with nothing running is said as a run
+ * that stopped, at the stage it stopped in.
+ */
+function cutShort(issue: PublicationIssue, stages: readonly StageRow[]): Workflow["lastError"] {
+  const half = stages.find((s) => s.state === "partial");
+  const stage = half?.stage ?? STATUS_STAGE[issue.status ?? ""];
+  if (!stage) return null;
+  return { stage, message: `It stopped part-way${half?.detail ? ` (${half.detail})` : ""} without finishing - Quire was closed or the run broke off. Pick it up to carry on; what is done is kept.` };
 }
 
 /** Runs in flight, so a second resume on the same issue is refused rather than raced. */

@@ -41,6 +41,7 @@ import { useTitles } from "../hooks/use-titles";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../components/ui/dropdown-menu";
 import { PicturesStrip } from "../components/PicturesStrip";
 import { SettingCard } from "../components/SettingCard";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Verdict } from "../components/Verdict";
 import {
   Grip, ReadAloud, ReadingSize, useColumns, useReadingSize, type Workflow,
@@ -550,6 +551,22 @@ export function AuditPage({ sse, open }: {
     );
   };
 
+  /* Delete the work: its folders go to .quire/trash, so a wrong press is not final. */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteWork = async () => {
+    setConfirmDelete(false);
+    if (!picked) return;
+    try {
+      await fetchJson(`/work/${encodeURIComponent(picked.kind)}/${encodeURIComponent(picked.id)}`, { method: "DELETE" });
+      toast("Deleted. It is in the trash folder (.quire/trash) if you need it back.");
+      setPicked(null);
+      refetchProjects();
+      refetchSummary();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "That did not delete.");
+    }
+  };
+
   /* Revise and the de-AI pass, on the page you are looking at. Same route as
      the reporting run, with the flag that lets it write.
 
@@ -865,6 +882,17 @@ export function AuditPage({ sse, open }: {
         />
       ) : null}
 
+      <ConfirmDialog
+        open={confirmDelete}
+        title="Delete this work?"
+        message="It leaves the Library and every list. Its folders move to .quire/trash in your workspace, so it can still be put back by hand."
+        confirmLabel="Delete"
+        cancelLabel="Keep it"
+        variant="danger"
+        onConfirm={() => void deleteWork()}
+        onCancel={() => setConfirmDelete(false)}
+      />
+
       <div
         className="cols cols-audit"
         style={template ? ({ "--cols": template } as React.CSSProperties) : undefined}
@@ -930,6 +958,7 @@ export function AuditPage({ sse, open }: {
           declared={declared}
           onStart={() => void startNext()}
           onResume={(a, b) => void resume(a, b)}
+          onDelete={() => setConfirmDelete(true)}
           onRevise={(deslop) => void revisePage(deslop)}
           onRestyle={(whole) => void restylePage(whole)}
           voice={stylePlan?.voice ?? null}
@@ -1442,8 +1471,10 @@ function StateColumn({
   onRestyle, voice, restyling,
   pipeRun, onGate, onWorkGate, declared, onStart,
   here,
-  pageName, queue, counts, filter, onFilter, at, onPick,
+  pageName, queue, counts, filter, onFilter, at, onPick, onDelete,
 }: {
+  /** Delete this work (it goes to the trash folder), after asking. */
+  readonly onDelete: () => void;
   readonly detail: Detail | null;
   /** The gates and stages the registry declares for this kind of work. */
   readonly declared: { readonly gates?: readonly string[]; readonly design?: readonly string[]; readonly build?: readonly string[] } | null;
@@ -1874,7 +1905,19 @@ function StateColumn({
                       url: `/api/v1/publications/${encodeURIComponent(detail.id)}/resume`,
                       body: { from: workflow.lastError.stage ?? from, stopAt },
                     } } : {})}
-                  />
+                  >
+                    {detail?.resumable && !running ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        disabled={busy !== null}
+                        onClick={() => onResume(workflow.lastError?.stage ?? from, stopAt)}
+                      >
+                        <Icon name="play" size={13} />
+                        {busy === "resume" ? "Starting…" : `Pick up from ${workflow.lastError.stage ?? from}`}
+                      </button>
+                    ) : null}
+                  </RunError>
                 </div>
               ) : null}
             </div>
@@ -1947,6 +1990,14 @@ function StateColumn({
         {detail ? (
           <div className="panel-body py-3 border-t border-t-(--line)">
             <SettingCard type={detail.kind} id={detail.id} />
+          </div>
+        ) : null}
+
+        {detail ? (
+          <div className="panel-body py-2.5 border-t border-t-(--line)">
+            <button type="button" className="btn btn-quiet btn-sm text-(--bad)" disabled={running || busy !== null} onClick={onDelete}>
+              <Icon name="trash" size={13} />Delete this {(detail.kindLabel ?? "work").toLowerCase()}
+            </button>
           </div>
         ) : null}
 

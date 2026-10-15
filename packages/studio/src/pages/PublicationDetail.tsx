@@ -23,6 +23,7 @@ import { vtName } from "../lib/view-transition";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Icon } from "../components/ui/icon";
 import { RunError } from "../components/ui/run-error";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Empty, Failed, Loading } from "../components/ui/states";
 import { Tabs, toast, useQueueKeys } from "../components/ui/vermilion";
 import { BeautyGate } from "../components/BeautyGate";
@@ -177,6 +178,7 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
   const [from, setFrom] = useState<Stage>("write");
   const [stopAt, setStopAt] = useState<Stage>("write");
   const [looks, setLooks] = useState(1);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [openPage, setOpenPage] = useState<number | null>(null);
   const [tab, setTab] = useState<"brief" | "sections" | "pages" | "audit" | "proofs" | "build">("pages");
   const [note, setNote] = useState("");
@@ -286,9 +288,33 @@ export function PublicationDetail({ issueId, nav }: { issueId: string; nav: Nav 
               {issue.type} · {issue.pages.length} pages
             </p>
           </div>
-          <button type="button" className="btn btn-quiet btn-sm" onClick={() => void load()}>
-            <Icon name="redo" size={14} />Refresh
-          </button>
+          <div className="rowflex gap-2">
+            <button type="button" className="btn btn-quiet btn-sm" onClick={() => void load()}>
+              <Icon name="redo" size={14} />Refresh
+            </button>
+            <button type="button" className="btn btn-quiet btn-sm text-(--bad)" disabled={busy !== null || data.running} onClick={() => setConfirmDelete(true)}>
+              <Icon name="trash" size={14} />Delete
+            </button>
+          </div>
+          <ConfirmDialog
+            open={confirmDelete}
+            title="Delete this issue?"
+            message="It leaves the Library and every list. Its folders move to .quire/trash in your workspace, so it can still be put back by hand."
+            confirmLabel="Delete"
+            cancelLabel="Keep it"
+            variant="danger"
+            onConfirm={() => {
+              setConfirmDelete(false);
+              void fetch(`/api/v1/work/publication/${encodeURIComponent(issue.id)}`, { method: "DELETE" })
+                .then(async (r) => {
+                  if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? "That did not delete.");
+                  toast("Deleted. It is in the trash folder (.quire/trash) if you need it back.");
+                  nav.toDashboard();
+                })
+                .catch((e: unknown) => toast(e instanceof Error ? e.message : "That did not delete."));
+            }}
+            onCancel={() => setConfirmDelete(false)}
+          />
         </div>
       </section>
 

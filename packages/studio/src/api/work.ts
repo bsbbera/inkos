@@ -14,6 +14,9 @@
  * already exist and says which job, if any, is on the work.
  */
 import type { Hono } from "hono";
+import { existsSync } from "node:fs";
+import { mkdir, rename } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { PRODUCTIONS, liveJobFor, listJobs, openPublicationIssue, type Job } from "@actalk/quire-core";
 import { publicationMath, publicationPack, publicationRunning, publicationWorkflow, runningPublicationIds } from "./publications.js";
 import { readAuditProject } from "./audit.js";
@@ -165,5 +168,29 @@ export function registerWorkRoutes(app: Hono, deps: WorkDeps): void {
       }));
 
     return c.json({ live: items, recent });
+  });
+
+  /*
+   * Delete a piece of work, any kind. Its folders move to .quire/trash, out of
+   * every listing, rather than being erased: one wrong press should not cost a
+   * magazine. Refused while anything is working on it.
+   */
+  app.delete("/api/v1/work/:kind/:id", async (c) => {
+    const kind = c.req.param("kind");
+    const id = c.req.param("id");
+    const spec = PRODUCTIONS.find((p) => p.id === kind);
+    if (!spec || !id || /[\\/]|\.\./.test(id)) return c.json({ error: "There is no such work in this folder." }, 404);
+    if (liveJobFor({ type: kind, id }) || (kind === "publication" && publicationRunning(id))) {
+      return c.json({ error: "It is being worked on. Stop it first, then delete it." }, 409);
+    }
+    const homes = [join(spec.outDir, id), ...(kind === "publication" ? [join(spec.outDir, "issues", id)] : [])]
+      .filter((rel) => existsSync(join(deps.root, rel)));
+    if (!homes.length) return c.json({ error: "There is no such work in this folder." }, 404);
+    const trash = join(deps.root, ".quire", "trash", `${new Date().toISOString().replace(/[:.]/g, "-")}-${kind}-${id}`);
+    for (const rel of homes) {
+      await mkdir(dirname(join(trash, rel)), { recursive: true });
+      await rename(join(deps.root, rel), join(trash, rel));
+    }
+    return c.json({ ok: true, trash });
   });
 }

@@ -39,7 +39,7 @@ import {
   blendTarget, loadPipeline, pipelineFor, readLexicon, readSetting, refFromPath, reportUnitDone,
   type StyleProfileV2,
 } from "@actalk/quire-core";
-import { gateState, publicationMath, publicationPack, publicationWorkflow, stageStates } from "./publications.js";
+import { gateState, publicationMath, publicationPack, publicationRunning, publicationWorkflow, stageStates } from "./publications.js";
 import { projectWorkflow, type Workflow } from "./workflow.js";
 import {
   isApproved, passCounts, readAuditState, updateFileAudit, type FileAudit,
@@ -1538,7 +1538,7 @@ export async function readAuditProject(
         subtitle: `${issue.type} · ${issue.pages.length} pages · ${issue.status}`,
         stages: stageStates(issue),
         gates: gateState(issue, pack, math),
-        workflow: publicationWorkflow(issue, false, null, pack, math),
+        workflow: publicationWorkflow(issue, publicationRunning(id), null, pack, math),
         /* Only a publication keeps a ladder of stages its runner can re-enter. */
         resumable: true,
         findings: (issue.audit?.findings ?? []).map((f) => ({

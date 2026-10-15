@@ -218,7 +218,10 @@ function ShelfWork({ work, live, onOpen }: {
   }, [finished, work.kind, work.id]);
 
   const now = stages.find((s) => s.state === "running") ?? null;
-  const failed = stages.find((s) => s.state === "failed") ?? null;
+  /* A run that broke off (an error, or the app closed under it) shows where it stopped. */
+  const failed = stages.find((s) => s.state === "failed")
+    ?? (workflow?.lastError && !live && !workflow.lastError.stopped ? stages.find((s) => s.stage === workflow.lastError?.stage) : undefined)
+    ?? null;
   const next = stages.find((s) => s.state !== "done") ?? null;
 
   return (
